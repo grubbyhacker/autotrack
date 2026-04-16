@@ -6,22 +6,36 @@
 -- On session start all sectors begin as flat (no mechanic, no pads).
 -- Jobs mutate a working copy; commit/revert update or restore Main.
 
-local Types = require(script.Parent.Parent.common.Types)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 
 type SectorState = Types.SectorState
 
 local SectorRegistry = {}
-SectorRegistry.__index = SectorRegistry
 
 -- Internal state
 local _committed: { [number]: SectorState } = {}
 local _straightCount: number = 0
+local _straightSectorIds = { 2, 3, 4, 7, 8, 9 }
 
 -- Called once by the orchestrator after TrackGenerator runs.
 function SectorRegistry.init(straightCount: number)
+	assert(straightCount == #_straightSectorIds, "SectorRegistry.init: unexpected straightCount")
 	_straightCount = straightCount
 	_committed = {}
-	-- TODO: Phase 1 — populate with flat baseline SectorState entries
+
+	for _, sectorId in ipairs(_straightSectorIds) do
+		_committed[sectorId] = {
+			sector_id = sectorId,
+			mechanic = nil,
+			params = {},
+			pads = {
+				ingress = "None",
+				egress = "None",
+			},
+			version = 0,
+		}
+	end
 end
 
 -- Returns the committed state for a sector, or nil if sector_id is out of range.
@@ -29,10 +43,26 @@ function SectorRegistry.getCommitted(sector_id: number): SectorState?
 	return _committed[sector_id]
 end
 
+function SectorRegistry.get(sector_id: number): SectorState?
+	return SectorRegistry.getCommitted(sector_id)
+end
+
+function SectorRegistry.getStraights(): { SectorState }
+	local states = {}
+
+	for _, sectorId in ipairs(_straightSectorIds) do
+		local state = _committed[sectorId]
+		if state then
+			table.insert(states, state)
+		end
+	end
+
+	return states
+end
+
 -- Commits a new state for a sector (called on job success).
 function SectorRegistry.commit(state: SectorState)
-	assert(state.sector_id >= 1 and state.sector_id <= _straightCount,
-		"commit: sector_id out of range")
+	assert(_committed[state.sector_id] ~= nil, "commit: sector_id is not an editable straight")
 	_committed[state.sector_id] = state
 end
 

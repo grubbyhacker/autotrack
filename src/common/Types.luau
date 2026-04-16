@@ -2,6 +2,9 @@
 -- Shared type definitions for all AutoTrack modules.
 -- These mirror the normative schemas in prd_plan.md §15.
 
+export type SectorKind = "Straight" | "Corner"
+export type SectorMeta = { id: number, kind: SectorKind, entry: CFrame, exit: CFrame, partGroup: Folder? }
+
 export type Mechanic = "RampJump" | "Chicane" | "CrestDip"
 export type PadValue = "None" | "Boost" | "Brake"
 export type PadSide = "ingress" | "egress"
@@ -42,7 +45,7 @@ export type Pads = {
 
 export type SectorState = {
 	sector_id: number,
-	mechanic: Mechanic,
+	mechanic: Mechanic?,
 	params: SectorParams,
 	pads: Pads,
 	version: number,

@@ -8,12 +8,25 @@ Constants.TRACK_ROWS = 2
 Constants.TRACK_COLS = 5
 
 -- Sector geometry (studs)
-Constants.STRAIGHT_LENGTH = 60      -- fixed uniform length for all straight sectors
-Constants.TRACK_WIDTH = 20
+Constants.STRAIGHT_LENGTH = 120     -- fixed uniform length for all straight sectors
+Constants.TRACK_WIDTH = 16
 Constants.TRACK_THICKNESS = 2
 
 -- Corner geometry
 Constants.CORNER_RADIUS = 20        -- centerline radius for 90-degree corners
+
+-- Physics / boost pads
+Constants.BASELINE_SPEED = 40
+Constants.PAD_BOOST_FORCE = 6000
+Constants.PAD_BRAKE_FORCE = -4000
+
+-- Car dimensions (studs)
+Constants.CAR_WIDTH = 4
+Constants.CAR_HEIGHT = 2
+Constants.CAR_LENGTH = 8
+
+-- Waypoint follower
+Constants.WAYPOINT_LOOKAHEAD = 1
 
 -- Verifier car
 Constants.CAR_TARGET_SPEED = 40     -- studs/s baseline forward speed

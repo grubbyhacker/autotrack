@@ -1,44 +1,52 @@
 -- VerifierCar.luau
--- Owns the single verifier car Model in the Workspace.
--- prd_plan.md §6.2, Phase 3
---
--- Responsibilities:
---   - spawn the car at the canonical start CFrame
---   - expose the car's root part for physics queries
---   - reset the car to canonical start state between runs
---
--- The car model itself is placed via MCP; this module holds a reference
--- and provides a typed API over it.
+-- Owns the single verifier car BasePart in the Workspace.
+-- prd_plan.md §6.2, Phase 1 baseline slice
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 local VerifierCar = {}
 
-local _car: Model? = nil
-local _rootPart: BasePart? = nil
+local _part: BasePart? = nil
 
--- Called once at startup.  car is the Model placed by MCP.
-function VerifierCar.init(car: Model)
-	_car = car
-	_rootPart = car.PrimaryPart
-	assert(_rootPart, "VerifierCar.init: car has no PrimaryPart")
+function VerifierCar.spawn(startCFrame: CFrame): BasePart
+	if _part then
+		VerifierCar.destroy()
+	end
+
+	local part = Instance.new("Part")
+	part.Name = "VerifierCar"
+	part.Size = Vector3.new(Constants.CAR_WIDTH, Constants.CAR_HEIGHT, Constants.CAR_LENGTH)
+	part.Anchored = false
+	part.CanCollide = true
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.BrickColor = BrickColor.new("Bright red")
+	part.CustomPhysicalProperties = PhysicalProperties.new(1, 0.5, 0)
+	part.CFrame = startCFrame
+	part.Parent = workspace
+
+	_part = part
+	return part
 end
 
--- Reset car to a given CFrame with zero velocity.
-function VerifierCar.resetTo(cf: CFrame)
-	assert(_car and _rootPart, "VerifierCar not initialised")
-	-- TODO: Phase 3 — zero out all VectorForce/BodyVelocity, set PrimaryPart CFrame
-	error("VerifierCar.resetTo: not yet implemented")
+function VerifierCar.reset(startCFrame: CFrame)
+	local part = VerifierCar.getPart()
+	part.CFrame = startCFrame
+	part.AssemblyLinearVelocity = Vector3.zero
+	part.AssemblyAngularVelocity = Vector3.zero
 end
 
--- Returns the current root CFrame.
-function VerifierCar.getCFrame(): CFrame
-	assert(_rootPart, "VerifierCar not initialised")
-	return _rootPart.CFrame
+function VerifierCar.destroy()
+	if _part then
+		_part:Destroy()
+		_part = nil
+	end
 end
 
--- Returns the current velocity vector.
-function VerifierCar.getVelocity(): Vector3
-	assert(_rootPart, "VerifierCar not initialised")
-	return _rootPart.AssemblyLinearVelocity
+function VerifierCar.getPart(): BasePart
+	assert(_part, "VerifierCar not spawned")
+	return _part
 end
 
 return VerifierCar
