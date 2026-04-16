@@ -12,6 +12,7 @@
     },
     "ServerScriptService": {
       "AutoTrackCore": {
+        "$className": "Folder",
         "Track": { "$path": "src/track" },
         "Mechanics": { "$path": "src/mechanics" },
         "Verifier": { "$path": "src/verifier" },

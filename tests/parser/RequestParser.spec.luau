@@ -1,0 +1,13 @@
+-- RequestParser.spec.luau
+-- Unit tests for RequestParser.
+-- prd_plan.md §20.1
+
+-- TODO: Phase 6 — test cases:
+--   valid: "Add a jump in sector 3" → RampJump, sector 3
+--   valid: "Add a chicane in sector 5" → Chicane, sector 5
+--   valid: "Add a crest in sector 2" → CrestDip, sector 2
+--   synonym: "Add an s-curve in sector 1" → Chicane, sector 1
+--   reject: missing sector
+--   reject: multiple sectors ("sector 2 and sector 3")
+--   reject: unsupported mechanic
+--   reject: ambiguous mechanic

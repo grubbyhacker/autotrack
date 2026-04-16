@@ -1,0 +1,31 @@
+-- ChicaneIntegrity.luau
+-- Evaluates whether a completed run satisfies Chicane mechanic integrity.
+-- prd_plan.md §11.3, §15.7, Phase 5
+
+local Types = require(script.Parent.Parent.common.Types)
+local Constants = require(script.Parent.Parent.common.Constants)
+
+type RunMetrics = Types.RunMetrics
+type SectorState = Types.SectorState
+
+local ChicaneIntegrity = {}
+
+function ChicaneIntegrity.evaluate(
+	state: SectorState,
+	metrics: RunMetrics
+): (boolean, { string })
+	local hints: { string } = {}
+	local p = state.params
+
+	-- Geometry-based checks (evaluable without runtime data)
+	if (p.amplitude or 0) < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT then
+		table.insert(hints, "amplitude below minimum lateral displacement")
+	end
+
+	-- TODO: Phase 5 — add runtime alternation count and curvature severity checks
+	-- once the metric collector tracks lateral path data.
+
+	return #hints == 0, hints
+end
+
+return ChicaneIntegrity
