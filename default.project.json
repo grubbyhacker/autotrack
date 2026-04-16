@@ -1,0 +1,24 @@
+{
+  "name": "AutoTrack",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "AutoTrackCommon": {
+        "$path": "src/common"
+      },
+      "AutoTrackUI": {
+        "$path": "src/ui"
+      }
+    },
+    "ServerScriptService": {
+      "AutoTrackCore": {
+        "Track": { "$path": "src/track" },
+        "Mechanics": { "$path": "src/mechanics" },
+        "Verifier": { "$path": "src/verifier" },
+        "Integrity": { "$path": "src/integrity" },
+        "Agent": { "$path": "src/agent" },
+        "Orchestrator": { "$path": "src/orchestrator" }
+      }
+    }
+  }
+}

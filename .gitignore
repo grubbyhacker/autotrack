@@ -1,0 +1,16 @@
+# Roblox / Rojo
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+.rojo/
+
+# Tooling
+bin/
+.wally/
+vendor/
+
+# System / OS
+.DS_Store
+Thumbs.db
+*.log
