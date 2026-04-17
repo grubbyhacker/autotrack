@@ -146,6 +146,45 @@ Every phase must include a `TestPhaseN.luau` module (in `src/orchestrator/`) wit
 
 **No screen capture. No mouse. No UI reading.** All verification is through console output.
 
+### Local CLI workflow
+
+For normal local development, prefer the checked-in terminal runner over Claude/MCP:
+
+```sh
+make phase6_integration
+make phase7_unit
+make test TEST=phase6_integration
+```
+
+This requires the local Studio bridge plugin from `studio/AutoTrackTestBridge.server.lua` to be installed and enabled in Studio, with localhost HTTP access allowed.
+
+The suite/boot-mode mapping lives in `tools/test_bridge_config.json`.
+
+This workflow is now a maintained project contract, not an optional convenience.
+
+- New test suites must be runnable through `make`, either as `make phaseN...` or via `make test TEST=...`.
+- When adding a new `TestPhaseN.luau` suite or any new targeted suite command, update all of:
+  - `src/orchestrator/TestDispatcher.luau`
+  - `tools/test_bridge_config.json`
+  - `Makefile` if a direct target should exist
+- Do not add new test flows that are only reachable through Claude/MCP unless there is a strong technical reason and that exception is documented.
+- Preserve the terminal contract:
+  - `make test-list` lists every supported suite
+  - unit/synthetic suites choose `skip_baseline` automatically
+  - integration/live-lap suites choose `baseline` automatically
+- Keep the local runner sequential. Do not assume parallel `make phase...` invocations on the same Studio session are supported.
+- If a future change breaks the local plugin bridge, fix that before considering the phase complete.
+
+The checked-in components for this path are:
+
+- `Makefile`
+- `tools/autotrack_test_cli.py`
+- `tools/test_bridge_config.json`
+- `studio/AutoTrackTestBridge.server.lua`
+- `src/orchestrator/TestSession.luau`
+- `src/orchestrator/TestDispatcher.luau`
+- `src/orchestrator/StudioTestBootstrap.server.luau`
+
 For Phase 1, tests also auto-run at boot end (see `Main.server.luau`). Later phases may do the same.
 
 ### Fast inner-loop workflow

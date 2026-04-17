@@ -1,0 +1,33 @@
+{
+  "listen_host": "127.0.0.1",
+  "listen_port": 8765,
+  "plugin_poll_seconds": 1.0,
+  "timeouts": {
+    "plugin_connect_seconds": 20,
+    "runner_ready_seconds": 20,
+    "baseline_ready_seconds": 60,
+    "suite_seconds": 240
+  },
+  "suites": {
+    "phase1": { "boot_mode": "baseline" },
+    "phase2": { "boot_mode": "baseline" },
+    "phase3": { "boot_mode": "baseline" },
+    "phase4": { "boot_mode": "baseline" },
+    "phase4_pads": { "boot_mode": "baseline" },
+    "phase4_rampjump": { "boot_mode": "baseline" },
+    "phase4_crestdip": { "boot_mode": "baseline" },
+    "phase4_chicane": { "boot_mode": "baseline" },
+    "phase4_5": { "boot_mode": "baseline" },
+    "phase4_5_geometry": { "boot_mode": "skip_baseline" },
+    "phase4_5_lap": { "boot_mode": "baseline" },
+    "phase4_5_speed": { "boot_mode": "baseline" },
+    "phase5": { "boot_mode": "skip_baseline" },
+    "phase5_unit": { "boot_mode": "skip_baseline" },
+    "phase6": { "boot_mode": "baseline" },
+    "phase6_unit": { "boot_mode": "skip_baseline" },
+    "phase6_integration": { "boot_mode": "baseline" },
+    "phase7": { "boot_mode": "baseline" },
+    "phase7_unit": { "boot_mode": "skip_baseline" },
+    "phase7_integration": { "boot_mode": "baseline" }
+  }
+}

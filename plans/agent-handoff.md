@@ -12,6 +12,7 @@
 | 5 | Complete (integrity evaluators + FailurePacket wiring) |
 | 6 | Complete (CI orchestrator state machine + no-LLM vertical slice) |
 | 7 | Complete (LLM adapter boundary + swappable mock/stub backend) |
+| Local CLI | Complete (terminal-triggered Studio test bridge + make targets) |
 | 8 | Pending |
 
 ---
@@ -250,3 +251,41 @@ This enforces the PRD/UI rule early and prevents long reasoning traces from leak
 ### 5. Provider injection is the right way to test the orchestrator boundary
 
 The most useful Phase 7 integration test was not a fake prompt assertion. It was a real `JobRunner.submit(...)` run with an injected stub provider, proving the orchestrator now depends on `LLMAdapter` rather than `MinimalProposer` directly.
+
+---
+
+## Local CLI lessons learned
+
+### 1. Studio should return structured results, not just console text
+
+The old MCP flow relied on console scraping. That was fine for agent-driven validation, but it is a poor contract for a local terminal runner.
+
+`src/orchestrator/TestSession.luau` now records:
+
+- suite name
+- status
+- pass/fail/error counts
+- ordered output lines
+
+under `ReplicatedStorage.AutoTrackTestStatus`, while preserving the existing console output.
+
+### 2. The terminal bridge must be outbound from Studio, not inbound to Studio
+
+Studio plugins can call localhost via `HttpService`, but Studio does not host a local HTTP listener.
+
+The working direction is:
+
+- `make` starts a one-shot localhost server
+- the Studio plugin polls it
+- the plugin runs the suite and posts the result back
+
+### 3. `StudioTestService` is cleaner than trying to fake a client RemoteEvent call from a plugin
+
+The MCP path triggered `AutoTrack_TestCmd` from a client. For local CLI runs, the better model is:
+
+- plugin receives command
+- plugin calls `StudioTestService:ExecutePlayModeAsync(...)`
+- server-side bootstrap reads `StudioTestService:GetTestArgs()`
+- bootstrap runs the suite directly and returns the snapshot with `StudioTestService:EndTest(...)`
+
+That keeps the manual RemoteEvent path intact while giving the terminal runner a synchronous Play-mode result.
