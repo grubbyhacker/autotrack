@@ -147,6 +147,15 @@ local function buildSectors(rows: number, cols: number): { SectorDescriptorInter
 	return sectors
 end
 
+local function slerpDir(a: Vector3, b: Vector3, t: number): Vector3
+	local cosTheta = math.clamp(a:Dot(b), -1, 1)
+	local theta = math.acos(cosTheta)
+	if math.abs(theta) < 1e-6 then return a end
+	local sinTheta = math.sin(theta)
+	return a * (math.sin((1 - t) * theta) / sinTheta)
+		+ b * (math.sin(t * theta) / sinTheta)
+end
+
 local function buildLapWaypoint(position: Vector3, forward: Vector3): CFrame
 	return CFrame.lookAt(position, position + forward)
 end
@@ -210,9 +219,10 @@ end
 function TrackGenerator.getLapPath(
 	sectors: { SectorDescriptor },
 	stateOverrides: { [number]: SectorState }?
-): ({ CFrame }, { number })
+): ({ CFrame }, { number }, { [number]: string })
 	local waypoints = {}
 	local waypointSectorIds = {}
+	local sectorKinds: { [number]: string } = {}
 
 	local function ridePos(p: Vector3): Vector3
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
@@ -220,19 +230,23 @@ function TrackGenerator.getLapPath(
 
 	for _, rawSector in ipairs(sectors) do
 		local sector = rawSector :: SectorDescriptorInternal
+		sectorKinds[sector.id] = sector.kind
 
 		if sector.kind == "Corner" then
-			local entryPosition = sector.entry.Position
-			local exitPosition = sector.exit.Position
-			local arcDirection = (sector.entry.LookVector + sector.exit.LookVector)
-			local arcMidpoint = sector.center + arcDirection.Unit * Constants.CORNER_RADIUS
-
-			table.insert(waypoints, buildLapWaypoint(ridePos(entryPosition), sector.entry.LookVector))
-			table.insert(waypointSectorIds, sector.id)
-			table.insert(waypoints, buildLapWaypoint(ridePos(arcMidpoint), (exitPosition - entryPosition).Unit))
-			table.insert(waypointSectorIds, sector.id)
-			table.insert(waypoints, buildLapWaypoint(ridePos(exitPosition), sector.exit.LookVector))
-			table.insert(waypointSectorIds, sector.id)
+			local up = Vector3.new(0, 1, 0)
+			local R = Constants.CORNER_RADIUS + Constants.TRACK_WIDTH * 0.5
+			local arcCenter = sector.entry.Position + sector.entry.LookVector:Cross(up) * R
+			local dirToEntry = (sector.entry.Position - arcCenter).Unit
+			local dirToExit  = (sector.exit.Position  - arcCenter).Unit
+			local N = Constants.CORNER_ARC_SAMPLES
+			for i = 0, N - 1 do
+				local t = i / (N - 1)
+				local dir = slerpDir(dirToEntry, dirToExit, t)
+				local pos = arcCenter + dir * R
+				local tangent = dir:Cross(up)
+				table.insert(waypoints, buildLapWaypoint(ridePos(pos), tangent))
+				table.insert(waypointSectorIds, sector.id)
+			end
 		else
 			buildStraightWaypoints(waypoints, waypointSectorIds, sector, stateOverrides and stateOverrides[sector.id] or nil)
 		end
@@ -240,7 +254,7 @@ function TrackGenerator.getLapPath(
 
 	table.insert(waypoints, buildLapWaypoint(ridePos(sectors[1].entry.Position), sectors[1].entry.LookVector))
 	table.insert(waypointSectorIds, sectors[1].id)
-	return waypoints, waypointSectorIds
+	return waypoints, waypointSectorIds, sectorKinds
 end
 
 function TrackGenerator.getLapWaypoints(

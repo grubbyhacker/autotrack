@@ -14,6 +14,8 @@ Constants.TRACK_THICKNESS = 2
 
 -- Corner geometry
 Constants.CORNER_RADIUS = 20        -- centerline radius for 90-degree corners
+Constants.CORNER_ARC_SAMPLES = 5    -- waypoints per corner arc (includes endpoints)
+Constants.CORNER_SPEED_FACTOR = 0.6 -- speed multiplier in corner sectors (40*0.6=24 studs/s)
 
 -- Physics / boost pads
 Constants.BASELINE_SPEED = 40

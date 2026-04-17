@@ -24,7 +24,7 @@ local function runFlatLap()
 	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
-	return VerifierController.runLap(car, waypoints, waypointSectors, nil)
+	return VerifierController.runLap(car, waypoints, waypointSectors, nil, nil)
 end
 
 function TestPhase3.run()

@@ -19,7 +19,7 @@ SectorRegistry.init(6)
 
 local startCF = TrackGenerator.canonicalStart()
 local car = VerifierCar.spawn(startCF)
-local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
+local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
 
 local function onSectorChange(id: number, entering: boolean)
 	if entering then
@@ -39,7 +39,7 @@ else
 	assert(JobLock.tryAcquire(), "JobLock busy")
 	Tracer.log("lap_start")
 	local ok, result = pcall(function()
-		return VerifierController.runLap(car, waypoints, waypointSectors, onSectorChange)
+		return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, onSectorChange)
 	end)
 	JobLock.release()
 

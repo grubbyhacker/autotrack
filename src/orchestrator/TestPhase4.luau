@@ -83,10 +83,10 @@ end
 
 local function runLapOnCurrentTrack(stateOverrides: { [number]: SectorState }?): Types.RunResult
 	local _, sectors = getSectorMeta(TARGET_SECTOR_ID)
-	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors, stateOverrides)
+	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors, stateOverrides)
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
-	return VerifierController.runLap(car, waypoints, waypointSectors, nil)
+	return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, nil)
 end
 
 local function waitForBaseline(): (boolean, number?)

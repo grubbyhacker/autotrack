@@ -72,6 +72,7 @@ function VerifierController.runLap(
 	car: BasePart,
 	waypoints: { CFrame },
 	waypointSectors: { number }?,
+	sectorKinds: { [number]: string }?,
 	onSectorChange: ((id: number, entering: boolean) -> ())?
 ): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
@@ -181,7 +182,9 @@ function VerifierController.runLap(
 
 		MetricCollector.record(speed, carPosition, isAirborne, lateralError)
 
-		local targetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + getPadSpeedDelta(currentSectorId))
+		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
+		local speedFactor = isCorner and Constants.CORNER_SPEED_FACTOR or 1
+		local targetSpeed = math.max(5, Constants.CAR_TARGET_SPEED * speedFactor + getPadSpeedDelta(currentSectorId))
 		local vectorVelocity = moveDirection * targetSpeed
 		if not isAirborne and lateralError > 1 then
 			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)
