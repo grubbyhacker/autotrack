@@ -6,6 +6,7 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local JobLock = require(script.Parent.JobLock)
+local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 
 local baselineLapTime: number? = nil
@@ -58,6 +59,13 @@ else
 	workspace:SetAttribute("AutoTrack_BaselineLapDone", result.success)
 	workspace:SetAttribute("AutoTrack_BaselineLapTime", result.success and result.metrics.lap_time or -1)
 end
+
+RuntimeContext.init({
+	sectors = sectors,
+	car = car,
+	canonicalStart = startCF,
+	baselineLapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime") or -1,
+})
 
 -- Run Phase 1 test suite automatically after boot.
 -- TestRunner.server.luau handles on-demand re-runs once Rojo syncs src/test/.

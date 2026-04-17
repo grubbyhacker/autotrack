@@ -10,8 +10,8 @@
 | 4 | Complete |
 | 4.5 | Complete (corner arc paths + speed reduction) |
 | 5 | Complete (integrity evaluators + FailurePacket wiring) |
-| 6 | **Next** — CI orchestrator state machine (no LLM) |
-| 7 | Pending |
+| 6 | Complete (CI orchestrator state machine + no-LLM vertical slice) |
+| 7 | **Next** — LLM adapter (narrow boundary, swappable backend) |
 | 8 | Pending |
 
 ---
@@ -156,3 +156,50 @@ function LapEvaluator.evaluate(
 **SectorRollback** exists in `src/track/SectorRollback.luau` — use it on job failure or exhaustion.
 
 **JobStateMachine** exists in `src/orchestrator/JobStateMachine.luau` (scaffolded) — read it before designing the Phase 6 state transitions.
+
+---
+
+## Phase 6 lessons learned
+
+### 1. Agent-side modules had latent Rojo require-path bugs too
+
+Phase 5 found this in `src/integrity/`. Phase 6 hit the same class of issue in `src/agent/` and `src/orchestrator/`.
+
+Anything that needs `src/common/` at runtime must require it from:
+
+```lua
+game:GetService("ReplicatedStorage"):WaitForChild("AutoTrackCommon")
+```
+
+not from a relative `script.Parent.Parent.common` path.
+
+### 2. Runtime context must be published explicitly after boot
+
+`Main.server.luau` previously held `sectors`, `car`, and the canonical start only as script locals. That is fine for boot-time code, but the CI orchestrator runs later and needs those exact live objects.
+
+`src/orchestrator/RuntimeContext.luau` now owns that shared boot-produced state. Future phases should read from it instead of rebuilding track metadata ad hoc.
+
+### 3. The no-LLM proposer should stay as a mock backend, not dead code
+
+`MinimalProposer` is now a stable deterministic backend that:
+
+- produces valid initial `SectorState` values
+- emits single-action repairs
+- is already proven end-to-end against the live loop
+
+Phase 7 should keep it as the default/mock backend behind `LLMAdapter` rather than deleting it.
+
+### 4. Verifier metrics need the target sector, not the current sector at termination
+
+`VerifierController.runLap(...)` had to accept an optional `targetSectorId` and thread it into `MetricCollector.finalise(...)`.
+
+Without that, failures outside the target sector produce the wrong entry/exit speed attribution for the repaired sector.
+
+### 5. Chicane is a reliable integration-test mechanic; CrestDip is a good revert case right now
+
+On the current track:
+
+- `Chicane` on sector 3 commits reliably and is good for commit/version-bump assertions
+- `CrestDip` on sector 3 currently exhausts repairs and reverts, which is useful for rollback assertions
+
+Do not assume every supported mechanic is currently a stable "successful commit" fixture for integration tests.

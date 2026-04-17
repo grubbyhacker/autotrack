@@ -73,7 +73,8 @@ function VerifierController.runLap(
 	waypoints: { CFrame },
 	waypointSectors: { number }?,
 	sectorKinds: { [number]: string }?,
-	onSectorChange: ((id: number, entering: boolean) -> ())?
+	onSectorChange: ((id: number, entering: boolean) -> ())?,
+	targetSectorId: number?
 ): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
 
@@ -209,7 +210,7 @@ function VerifierController.runLap(
 			speed
 		)
 		if failure then
-			local metrics = MetricCollector.finalise(currentSectorId or 1, elapsed, baselineLapTime)
+			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 			cleanup(attachment, linearVelocity, alignOrientation)
 			return {
 				success = false,
@@ -222,7 +223,7 @@ function VerifierController.runLap(
 	end
 
 	local lapTime = os.clock() - startTime
-	local metrics = MetricCollector.finalise(currentSectorId or 1, lapTime, baselineLapTime)
+	local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, lapTime, baselineLapTime)
 	cleanup(attachment, linearVelocity, alignOrientation)
 
 	return {

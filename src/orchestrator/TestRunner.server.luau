@@ -42,6 +42,12 @@ testEvent.OnServerEvent:Connect(function(_player, cmd)
 			require(script.Parent.TestPhase5).run()
 		elseif cmd == "phase5_unit" then
 			require(script.Parent.TestPhase5).runUnit()
+		elseif cmd == "phase6" then
+			require(script.Parent.TestPhase6).run()
+		elseif cmd == "phase6_unit" then
+			require(script.Parent.TestPhase6).runUnit()
+		elseif cmd == "phase6_integration" then
+			require(script.Parent.TestPhase6).runIntegration()
 		else
 			print("[TEST FAIL: unknown_suite] " .. tostring(cmd))
 		end

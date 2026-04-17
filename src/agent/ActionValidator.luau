@@ -8,8 +8,10 @@
 --   - SetPad: pad must be "ingress" or "egress"; value must be "None"|"Boost"|"Brake"
 --   - initial proposal must conform to SectorState schema
 
-local Types = require(script.Parent.Parent.common.Types)
-local LevelMappings = require(script.Parent.Parent.common.LevelMappings)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 
 type AgentAction = Types.AgentAction
 type SectorState = Types.SectorState
@@ -52,8 +54,38 @@ end
 -- Validate a proposed SectorState (from initial proposal).
 -- Returns (true, nil) or (false, errorString).
 function ActionValidator.validateSectorState(state: SectorState): (boolean, string?)
-	-- TODO: Phase 7 — check all required fields are present and within schema
-	error("ActionValidator.validateSectorState: not yet implemented")
+	if type(state) ~= "table" then
+		return false, "sector state must be a table"
+	end
+	if type(state.sector_id) ~= "number" then
+		return false, "sector_id must be a number"
+	end
+	if type(state.mechanic) ~= "string" or LevelMappings.DEFAULTS[state.mechanic] == nil then
+		return false, "mechanic must be a supported mechanic"
+	end
+	if type(state.params) ~= "table" then
+		return false, "params must be a table"
+	end
+	if type(state.pads) ~= "table" then
+		return false, "pads must be a table"
+	end
+	if state.pads.ingress ~= "None" and state.pads.ingress ~= "Boost" and state.pads.ingress ~= "Brake" then
+		return false, "pads.ingress must be None, Boost, or Brake"
+	end
+	if state.pads.egress ~= "None" and state.pads.egress ~= "Boost" and state.pads.egress ~= "Brake" then
+		return false, "pads.egress must be None, Boost, or Brake"
+	end
+	if type(state.version) ~= "number" then
+		return false, "version must be a number"
+	end
+
+	for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic]) do
+		if type(state.params[lever]) ~= "number" then
+			return false, "missing numeric lever: " .. lever
+		end
+	end
+
+	return true, nil
 end
 
 return ActionValidator

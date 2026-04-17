@@ -29,6 +29,50 @@ export type State =
 local JobStateMachine = {}
 JobStateMachine.__index = JobStateMachine
 
+local LEGAL_TRANSITIONS = {
+	Idle = {
+		ParseRequest = true,
+	},
+	ParseRequest = {
+		RejectRequest = true,
+		AcquireTrack = true,
+	},
+	RejectRequest = {
+		Idle = true,
+	},
+	AcquireTrack = {
+		RejectRequest = true,
+		GenerateInitialProposal = true,
+	},
+	GenerateInitialProposal = {
+		ApplyWorkingSector = true,
+		RejectRequest = true,
+	},
+	ApplyWorkingSector = {
+		RunVerification = true,
+	},
+	RunVerification = {
+		EvaluateResult = true,
+	},
+	EvaluateResult = {
+		Commit = true,
+		AnalyzeFailure = true,
+	},
+	AnalyzeFailure = {
+		ApplyRepair = true,
+		Revert = true,
+	},
+	ApplyRepair = {
+		ApplyWorkingSector = true,
+	},
+	Commit = {
+		Idle = true,
+	},
+	Revert = {
+		Idle = true,
+	},
+}
+
 function JobStateMachine.new(): typeof(JobStateMachine)
 	return setmetatable({
 		state = "Idle" :: State,
@@ -36,7 +80,8 @@ function JobStateMachine.new(): typeof(JobStateMachine)
 end
 
 function JobStateMachine:transition(next: State)
-	-- TODO: Phase 6 — add guard assertions for legal transitions
+	local legal = LEGAL_TRANSITIONS[self.state]
+	assert(legal and legal[next], string.format("illegal transition: %s -> %s", self.state, next))
 	self.state = next
 end
 
