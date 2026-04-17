@@ -20,6 +20,16 @@ testEvent.OnServerEvent:Connect(function(_player, cmd)
 			require(script.Parent.TestPhase2).run()
 		elseif cmd == "phase3" then
 			require(script.Parent.TestPhase3).run()
+		elseif cmd == "phase4" then
+			require(script.Parent.TestPhase4).run()
+		elseif cmd == "phase4_pads" then
+			require(script.Parent.TestPhase4).runPads()
+		elseif cmd == "phase4_rampjump" then
+			require(script.Parent.TestPhase4).runRampJump()
+		elseif cmd == "phase4_crestdip" then
+			require(script.Parent.TestPhase4).runCrestDip()
+		elseif cmd == "phase4_chicane" then
+			require(script.Parent.TestPhase4).runChicane()
 		else
 			print("[TEST FAIL: unknown_suite] " .. tostring(cmd))
 		end

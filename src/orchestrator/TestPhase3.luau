@@ -21,10 +21,10 @@ end
 
 local function runFlatLap()
 	local sectors = TrackGenerator.generate()
-	local waypoints = TrackGenerator.getLapWaypoints(sectors)
+	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
-	return VerifierController.runLap(car, waypoints, sectors, nil)
+	return VerifierController.runLap(car, waypoints, waypointSectors, nil)
 end
 
 function TestPhase3.run()
@@ -68,9 +68,9 @@ function TestPhase3.run()
 	VerifierCar.reset(offTrackStart)
 	local offTrackCar = VerifierCar.getPart()
 	local sectors = TrackGenerator.generate()
-	local waypoints = TrackGenerator.getLapWaypoints(sectors)
+	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
 	local ok, offTrackResult = pcall(function()
-		return VerifierController.runLap(offTrackCar, waypoints, sectors, nil)
+		return VerifierController.runLap(offTrackCar, waypoints, waypointSectors, nil)
 	end)
 	T.expect(
 		"failure_off_track_detected",

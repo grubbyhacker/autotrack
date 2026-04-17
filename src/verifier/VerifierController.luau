@@ -32,26 +32,54 @@ local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, a
 	alignOrientation:Destroy()
 end
 
+local function getPadSpeedDelta(currentSectorId: number?): number
+	if not currentSectorId then
+		return 0
+	end
+
+	local track = workspace:FindFirstChild("Track")
+	local folder = track and track:FindFirstChild(string.format("Sector_%02d", currentSectorId))
+	if not folder then
+		return 0
+	end
+
+	local car = workspace:FindFirstChild("VerifierCar")
+	if not car or not car:IsA("BasePart") then
+		return 0
+	end
+
+	for _, padName in ipairs({ "IngressPad", "EgressPad" }) do
+		local pad = folder:FindFirstChild(padName)
+		if pad and pad:IsA("BasePart") then
+			local localPoint = pad.CFrame:PointToObjectSpace(car.Position)
+			if math.abs(localPoint.X) <= pad.Size.X * 0.5
+				and math.abs(localPoint.Y) <= math.max(pad.Size.Y, Constants.CAR_HEIGHT) * 0.5
+				and math.abs(localPoint.Z) <= pad.Size.Z * 0.5 then
+				local padType = pad:GetAttribute("PadType")
+				if padType == "Boost" then
+					return Constants.BOOST_SPEED_DELTA
+				elseif padType == "Brake" then
+					return Constants.BRAKE_SPEED_DELTA
+				end
+			end
+		end
+	end
+
+	return 0
+end
+
 function VerifierController.runLap(
 	car: BasePart,
 	waypoints: { CFrame },
-	sectors: { any }?,
+	waypointSectors: { number }?,
 	onSectorChange: ((id: number, entering: boolean) -> ())?
 ): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
 
-	local waypointSectors: { number }? = nil
 	local currentSectorId: number? = nil
 	local handleSectorChange = onSectorChange
-	if sectors then
-		waypointSectors = {}
-		for _, sector in ipairs(sectors) do
-			local count = sector.kind == "Corner" and 3 or 2
-			for _ = 1, count do
-				table.insert(waypointSectors :: { number }, sector.id)
-			end
-		end
-		table.insert(waypointSectors :: { number }, (sectors :: { any })[1].id)
+	if waypointSectors then
+		assert(#waypointSectors == #waypoints, "VerifierController.runLap: waypoint sector map mismatch")
 		currentSectorId = (waypointSectors :: { number })[1]
 
 		handleSectorChange = function(id: number, entering: boolean)
@@ -96,6 +124,7 @@ function VerifierController.runLap(
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 	MetricCollector.reset(car.Position.Y)
+	FailureDetector.reset()
 	local baselineLapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime") or 30
 
 	local startTime = os.clock()
@@ -152,7 +181,8 @@ function VerifierController.runLap(
 
 		MetricCollector.record(speed, carPosition, isAirborne, lateralError)
 
-		local vectorVelocity = moveDirection * Constants.CAR_TARGET_SPEED
+		local targetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + getPadSpeedDelta(currentSectorId))
+		local vectorVelocity = moveDirection * targetSpeed
 		if not isAirborne and lateralError > 1 then
 			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)
 			vectorVelocity += lateralNudge
@@ -172,7 +202,8 @@ function VerifierController.runLap(
 			currentSectorId or 1,
 			carPosition,
 			projectedPoint,
-			isAirborne
+			isAirborne,
+			speed
 		)
 		if failure then
 			local metrics = MetricCollector.finalise(currentSectorId or 1, elapsed, baselineLapTime)

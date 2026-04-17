@@ -113,6 +113,15 @@ Keep these contracts explicit in code. Fail fast on invalid agent output or inva
 - Pads have three values: `None`, `Boost`, `Brake`. No numeric magnitudes. No stacking.
 - Session state is ephemeral — no cross-session persistence in v1.
 
+### Sector completeness invariant
+
+When a mechanic builder does not consume the full straight-sector length, it must still leave a continuous drivable path to the sector boundary.
+
+- Do not end authored geometry early and leave empty space to the corner.
+- If a mechanic intentionally includes a gap, the gap must be the designed obstacle and the sector must still include a valid landing/rejoin path afterward.
+- Future builder changes should add or preserve an explicit exit/runout segment when the authored obstacle ends before `Constants.STRAIGHT_LENGTH`.
+- Tests should assert this directly for any mechanic whose geometry occupies less than the full sector.
+
 ---
 
 ## Testing philosophy
@@ -136,6 +145,55 @@ Every phase must include a `TestPhaseN.luau` module (in `src/orchestrator/`) wit
 **No screen capture. No mouse. No UI reading.** All verification is through console output.
 
 For Phase 1, tests also auto-run at boot end (see `Main.server.luau`). Later phases may do the same.
+
+### Fast inner-loop workflow
+
+When iterating on a specific test or mechanic slice, the automatic boot baseline lap can be skipped to avoid paying the full startup lap time on every run.
+
+- In edit mode before starting Play, set:
+  ```lua
+  workspace:SetAttribute("AutoTrack_SkipBootBaseline", true)
+  ```
+- `Main.server.luau` will then skip the automatic flat baseline lap and set:
+  - `AutoTrack_BootBaselineSkipped = true`
+  - `AutoTrack_BaselineLapDone = false`
+  - `AutoTrack_BaselineLapTime = -1`
+- Targeted test suites that understand this mode should proceed without blocking on baseline completion.
+
+For normal full validation, leave `AutoTrack_SkipBootBaseline` unset or `false`.
+
+### Phase 4 targeted suites
+
+Phase 4 supports narrower commands in `TestRunner.server.luau` so mechanics can be tested independently:
+
+- `phase4` — full sequential Phase 4 suite
+- `phase4_pads` — pads only
+- `phase4_rampjump` — RampJump only
+- `phase4_crestdip` — CrestDip only
+- `phase4_chicane` — Chicane only
+
+Trigger them the same way as other suites:
+
+```lua
+game.ReplicatedStorage:WaitForChild("AutoTrack_TestCmd", 5):FireServer("phase4_rampjump")
+```
+
+Do not fire multiple targeted suites back-to-back on the same live sector at the same time. Run them sequentially.
+
+### Rojo / Play-mode rule
+
+Do not assume local file edits are live in a currently running Play session.
+
+Safe workflow:
+
+1. Edit local files in `/src`
+2. Stop Play
+3. Start Play again
+4. Wait for the desired boot mode (`AutoTrack_SkipBootBaseline` or normal boot)
+5. Trigger the target test suite
+6. Stop Play again after validation
+
+Use this especially when changing test modules, builders, or verifier logic.
 
 ### Trace hooks
 

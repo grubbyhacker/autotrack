@@ -17,13 +17,20 @@ function ChicaneIntegrity.evaluate(
 	local hints: { string } = {}
 	local p = state.params
 
-	-- Geometry-based checks (evaluable without runtime data)
+	-- Geometry-based checks (evaluable without runtime path telemetry)
 	if (p.amplitude or 0) < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT then
 		table.insert(hints, "amplitude below minimum lateral displacement")
 	end
 
-	-- TODO: Phase 5 — add runtime alternation count and curvature severity checks
-	-- once the metric collector tracks lateral path data.
+	local transitionLength = p.transition_length or 0
+	if transitionLength <= 0 then
+		table.insert(hints, "transition_length must be positive")
+	elseif (p.amplitude or 0) / transitionLength < Constants.CHICANE_MIN_CURVATURE then
+		table.insert(hints, "effective curvature below minimum")
+	end
+
+	-- TODO: Phase 5 — add runtime alternation and speed-management checks
+	-- once the metric collector tracks lateral path data through the sector.
 
 	return #hints == 0, hints
 end

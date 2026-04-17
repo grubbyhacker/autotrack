@@ -35,6 +35,8 @@ Constants.CAR_MAX_ORIENT_CORRECTION = 10    -- deg/s heading correction cap
 
 -- Lap timing
 Constants.LAP_TIMEOUT = 120         -- seconds before a run is declared system_failure
+Constants.STALL_SPEED_THRESHOLD = 2
+Constants.STALL_TIME_THRESHOLD = 2.5
 
 -- CI loop
 Constants.MAX_REPAIR_ATTEMPTS = 5

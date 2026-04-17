@@ -15,6 +15,11 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 type FailureInfo = Types.FailureInfo
 
 local FailureDetector = {}
+local _stallStartTime: number? = nil
+
+function FailureDetector.reset()
+	_stallStartTime = nil
+end
 
 -- Called each frame during a run.
 -- Returns a FailureInfo if a definitive failure is detected, else nil.
@@ -25,7 +30,8 @@ function FailureDetector.check(
 	currentSector: number,
 	carPosition: Vector3,
 	trackCenterlinePoint: Vector3,
-	isAirborne: boolean
+	isAirborne: boolean,
+	speed: number
 ): FailureInfo?
 	if elapsed >= Constants.LAP_TIMEOUT then
 		return { type = "system_failure", sector_id = currentSector }
@@ -37,6 +43,16 @@ function FailureDetector.check(
 
 	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.TRACK_WIDTH * 1.5 then
 		return { type = "local_execution_failure", sector_id = currentSector }
+	end
+
+	if not isAirborne and speed <= Constants.STALL_SPEED_THRESHOLD then
+		if _stallStartTime == nil then
+			_stallStartTime = elapsed
+		elseif elapsed - _stallStartTime >= Constants.STALL_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector }
+		end
+	else
+		_stallStartTime = nil
 	end
 
 	return nil

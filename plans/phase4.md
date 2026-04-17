@@ -1,38 +1,111 @@
-# Phase 4 — Mechanic Builders
+# Phase 4 — Staged Mechanic Builders
+
+## Summary
+
+Phase 4 is no longer a single all-at-once mechanic drop. Build and validate it in four staged subphases:
+
+1. `PadBuilder` + shared Phase 4 test harness
+2. `RampJumpBuilder`
+3. `CrestDipBuilder`
+4. `ChicaneBuilder`
+
+Keep the current startup behavior unchanged:
+
+- boot the track
+- run one flat, no-pad baseline lap
+- persist `AutoTrack_BaselineLapDone` and `AutoTrack_BaselineLapTime`
+
+That boot lap remains the control run. Phase 4 authored-content validation happens only after the baseline lap succeeds.
+
+---
 
 ## Deliverable
 
-All three mechanic builders (RampJump, Chicane, CrestDip) and PadBuilder fully implemented. `SectorApplier.apply()` no longer errors for any mechanic. Any legal `SectorState` can be rendered deterministically.
+By the end of Phase 4, every legal v1 mechanic sector can be rendered deterministically by `SectorApplier.apply()`. Delivery is staged so testing lessons from pads and `RampJump` are applied before `CrestDip` and `Chicane`.
+
+Intermediate success criteria:
+
+- Phase 4A: pads render deterministically and can be reapplied/cleared safely
+- Phase 4B: `RampJump` renders correctly and survives a post-baseline second-lap validation run
+- Phase 4C: `CrestDip` renders correctly and survives a post-baseline second-lap validation run
+- Phase 4D: `Chicane` renders as linked slow corners in an overall S shape and preserves entry/exit alignment; stronger runtime integrity remains deferred until observability is sufficient
 
 ---
 
-## Files to create/modify
+## Files to Create or Modify
 
 | File | Action |
 |------|--------|
-| `src/mechanics/PadBuilder.luau` | Implement stub |
-| `src/mechanics/RampJumpBuilder.luau` | Implement stub |
-| `src/mechanics/CrestDipBuilder.luau` | Implement stub |
-| `src/mechanics/ChicaneBuilder.luau` | Implement stub |
-| `src/track/SectorApplier.luau` | Pass `sector_id` as 4th arg to `applyPads` |
-| `src/orchestrator/TestPhase4.luau` | New test suite |
+| `src/mechanics/PadBuilder.luau` | Implement in Phase 4A |
+| `src/mechanics/RampJumpBuilder.luau` | Implement in Phase 4B |
+| `src/mechanics/CrestDipBuilder.luau` | Implement in Phase 4C |
+| `src/mechanics/ChicaneBuilder.luau` | Implement in Phase 4D |
+| `src/track/SectorApplier.luau` | Pass `sector_id` into pad application |
+| `src/orchestrator/TestPhase4.luau` | New staged test suite |
 | `src/orchestrator/TestRunner.server.luau` | Add `phase4` dispatch branch |
+
+Optional persisted note:
+
+| File | Action |
+|------|--------|
+| `plans/phase4-testing.md` | Detailed baseline-first and second-lap test methodology |
 
 ---
 
-## Coordinate convention
+## Test Methodology
+
+Do not fold Phase 4 authored content into the startup lap.
+
+### Control run
+
+`Main.server.luau` continues to:
+
+1. generate the flat track
+2. spawn/reset the verifier car
+3. run one flat full-lap baseline verification
+4. write baseline attributes used by later tests
+
+This keeps boot diagnostics stable and preserves a clean slowdown baseline.
+
+### Phase 4 authored-content tests
+
+`TestPhase4.luau` is responsible for all Phase 4 content validation:
+
+1. assert baseline boot lap already succeeded
+2. apply authored content to one straight sector
+3. inspect Workspace geometry directly
+4. reset the verifier car to canonical start
+5. run a second full lap when runtime validation is needed
+6. assert on returned `RunResult` and on live Workspace state
+7. restore the target sector to flat before the next case
+
+Use direct module calls. Do not simulate UI input.
+
+---
+
+## Coordinate Convention
 
 All builders receive `entryFrame: CFrame` and `exitFrame: CFrame` from `SectorApplier`. The entry frame is the local origin for all geometry:
 
 - `worldCF = entryFrame * localOffset`
-- Local `+Z` = forward (car travel direction = `entryFrame.LookVector`)
-- Local `+Y` = up (`entryFrame.UpVector`)
-- Local `+X` = right (`entryFrame.RightVector`)
-- `entryFrame.Position.Y` = track center Y = `TRACK_THICKNESS / 2 = 1`
+- local `+Z` = forward (`entryFrame.LookVector`)
+- local `+Y` = up (`entryFrame.UpVector`)
+- local `+X` = right (`entryFrame.RightVector`)
+- `entryFrame.Position.Y` = track center Y = `TRACK_THICKNESS / 2`
+
+All Phase 4 geometry must stay inside the targeted straight sector and must not alter neighboring sectors, corners, or track topology.
+
+Sector completeness invariant:
+
+- if a mechanic uses less than `STRAIGHT_LENGTH`, it must still provide a continuous drivable path to the sector boundary
+- intentional gaps are allowed only when the mechanic explicitly defines the landing/rejoin surface afterward
+- no builder may terminate early and leave empty space to the next corner
 
 ---
 
-## Shared helpers (copy into each builder file)
+## Shared Helpers
+
+Use the same deterministic helper pattern across builders:
 
 ```lua
 local function getSectorFolder(sector_id: number): Folder
@@ -43,8 +116,13 @@ local function getSectorFolder(sector_id: number): Folder
     return folder :: Folder
 end
 
-local function makePart(name: string, size: Vector3, cf: CFrame,
-        color: BrickColor, parent: Instance): Part
+local function makePart(
+    name: string,
+    size: Vector3,
+    cf: CFrame,
+    color: BrickColor,
+    parent: Instance
+): Part
     local p = Instance.new("Part")
     p.Name = name
     p.Size = size
@@ -60,313 +138,204 @@ local function makePart(name: string, size: Vector3, cf: CFrame,
 end
 ```
 
+Use matching helper functions in `TestPhase4.luau` for:
+
+- finding sector folders and authored parts
+- asserting deterministic child sets
+- resetting the car and running a second lap
+- restoring a sector to flat between cases
+
 ---
 
-## SectorApplier.luau change
+## SectorApplier Change
 
-One-line change — pass `state.sector_id` to `applyPads`:
+Pass `state.sector_id` to `PadBuilder.applyPads`.
 
 ```lua
 -- Before:
 PadBuilder.applyPads(state.pads, entryFrame, exitFrame)
+
 -- After:
 PadBuilder.applyPads(state.pads, entryFrame, exitFrame, state.sector_id)
 ```
 
 ---
 
-## PadBuilder.luau
+## Phase 4A — PadBuilder
 
-**Signature**: `applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number)`
+### Scope
 
-```lua
-function PadBuilder.applyPads(pads, ingressFrame, egressFrame, sector_id)
-    local folder = getSectorFolder(sector_id)
+Implement visible deterministic ingress/egress pads for straight sectors.
 
-    -- Clear stale pads
-    for _, child in ipairs(folder:GetChildren()) do
-        if child.Name == "IngressPad" or child.Name == "EgressPad" then
-            child:Destroy()
-        end
-    end
+### Signature
 
-    local padSize = Vector3.new(Constants.TRACK_WIDTH, 0.2, 4)
-    local yOff = Constants.TRACK_THICKNESS * 0.5 + 0.1   -- just above track surface
+`applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number)`
 
-    local function makePadPart(name, padValue, frame)
-        if padValue == "None" then return end
-        local p = Instance.new("Part")
-        p.Name = name
-        p.Size = padSize
-        p.CFrame = frame * CFrame.new(0, yOff, 0)
-        p.Anchored = true
-        p.CanCollide = false
-        p.Transparency = 0.5
-        p.BrickColor = padValue == "Boost"
-            and BrickColor.new("Bright green")
-            or  BrickColor.new("Bright red")
-        p:SetAttribute("PadType", padValue)
-        p.Parent = folder
-    end
+### Behavior
 
-    makePadPart("IngressPad", pads.ingress, ingressFrame)
-    makePadPart("EgressPad",  pads.egress,  egressFrame)
-end
-```
+- destroy stale `IngressPad` / `EgressPad` parts before rebuilding
+- create no pad part for `None`
+- create one visible non-colliding part per non-`None` pad
+- set `PadType` attribute to `Boost` or `Brake`
+- keep pad placement just above the track surface
+- parent pad parts into the target sector folder only
+
+### Phase 4A tests
+
+- `baseline_control_still_complete`
+- `pads_none_creates_no_parts`
+- `pads_boost_and_brake_create_expected_named_parts`
+- `pads_reapply_replaces_stale_parts`
+- `pads_apply_does_not_break_traversal` if a light second-lap sanity run is desired
+
+Do not require quantitative speed-change assertions in this slice unless pad effects already exist in the runtime. The required outcome is correct rendering and non-breaking traversal.
 
 ---
 
-## RampJumpBuilder.luau
+## Phase 4B — RampJumpBuilder
 
-**Params**: `ramp_angle` (°), `ramp_length` (horizontal studs), `gap_length`, `landing_length`.
+### Why RampJump first
 
-**Derived values**:
+`RampJump` is the first full mechanic because Phase 3 already exposes the runtime signals needed to validate it:
+
+- `metrics.airborne`
+- `metrics.air_distance`
+- `metrics.reacquired`
+- `metrics.lap_time`
+
+This makes it the best first end-to-end authored mechanic.
+
+### Params
+
+- `ramp_angle`
+- `ramp_length`
+- `gap_length`
+- `landing_length`
+
+### Derived values
 
 ```lua
-local angleRad    = math.rad(p.ramp_angle)
-local rampH       = p.ramp_length * math.tan(angleRad)         -- height gained
-local rampSurfLen = p.ramp_length / math.cos(angleRad)         -- part length along surface
-local totalHoriz  = p.ramp_length + p.gap_length + p.landing_length
-assert(totalHoriz <= Constants.STRAIGHT_LENGTH,
-    "RampJumpBuilder: geometry exceeds STRAIGHT_LENGTH (" .. totalHoriz .. ")")
+local angleRad = math.rad(p.ramp_angle)
+local rampH = p.ramp_length * math.tan(angleRad)
+local rampSurfLen = p.ramp_length / math.cos(angleRad)
+local totalHoriz = p.ramp_length + p.gap_length + p.landing_length
+
+assert(
+    totalHoriz <= Constants.STRAIGHT_LENGTH,
+    "RampJumpBuilder: geometry exceeds STRAIGHT_LENGTH (" .. totalHoriz .. ")"
+)
 ```
 
-**Parts**:
+### Geometry
 
-```lua
-local W = Constants.TRACK_WIDTH
-local T = Constants.TRACK_THICKNESS
-local folder = getSectorFolder(state.sector_id)
+- one tilted `Ramp` part
+- one flat `Landing` part
+- empty gap between them
+- no part may extend beyond the owning straight sector
 
--- Ramp: tilted nose-up, center at (0, rampH/2, ramp_length/2) in local frame
--- CFrame.Angles(-angleRad, 0, 0) rotates the part's Z-axis upward
-local rampCF = entryFrame
-    * CFrame.new(0, rampH / 2, p.ramp_length / 2)
-    * CFrame.Angles(-angleRad, 0, 0)
-makePart("Ramp", Vector3.new(W, T, rampSurfLen),
-    rampCF, BrickColor.new("Bright orange"), folder)
+### Phase 4B tests
 
--- Landing: flat at track level after the gap
-local landZ = p.ramp_length + p.gap_length + p.landing_length / 2
-local landCF = entryFrame * CFrame.new(0, 0, landZ)
-makePart("Landing", Vector3.new(W, T, p.landing_length),
-    landCF, BrickColor.new("Dark stone grey"), folder)
-```
+Geometry assertions:
 
-The gap (between ramp top and landing) is empty air — no part needed.
+- `rampjump_build_creates_ramp_and_landing`
+- `rampjump_gap_has_no_middle_part`
+- `rampjump_ramp_tilt_is_positive`
+- `rampjump_invalid_length_errors`
+
+Runtime second-lap assertions:
+
+1. baseline lap already complete
+2. apply one legal `RampJump` state to a straight sector
+3. reset car to canonical start
+4. run a second full lap
+5. assert:
+   - `result.success == true`
+   - `result.metrics.airborne == true`
+   - `result.metrics.air_distance > 0`
+   - `result.metrics.reacquired == true`
+   - `result.metrics.lap_time > 0`
+
+Add one negative authored case that is either rejected fast or predictably fails the run. Do not attempt to fully implement Phase 5 integrity semantics here.
 
 ---
 
-## CrestDipBuilder.luau
+## Phase 4C — CrestDipBuilder
 
-**Params**: `height_or_depth` (pos = crest, neg = dip), `radius` (reserved for integrity checks), `sector_length`.
+### Why next
 
-```lua
-local h       = p.height_or_depth
-local L       = p.sector_length
-local halfL   = L / 2
-local absH    = math.abs(h)
-assert(L <= Constants.STRAIGHT_LENGTH,
-    "CrestDipBuilder: sector_length exceeds STRAIGHT_LENGTH")
+`CrestDip` can reuse the same second-lap methodology as `RampJump` and already has supporting telemetry:
 
-local rampAngle  = math.atan(absH / halfL)
-local rampSurf   = halfL / math.cos(rampAngle)
-local partSize   = Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, rampSurf)
-local color      = BrickColor.new("Medium stone grey")
-local folder     = getSectorFolder(state.sector_id)
+- `metrics.vertical_displacement`
+- `metrics.reacquired`
 
-if h >= 0 then
-    -- Crest: up-ramp then down-ramp, peak at center
-    -- Part A rises: center at (0, h/2, halfL/2), nose-up tilt
-    local cfA = entryFrame
-        * CFrame.new(0, h / 2, halfL / 2)
-        * CFrame.Angles(-rampAngle, 0, 0)
-    -- Part B descends: center at (0, h/2, halfL + halfL/2), nose-down tilt
-    local cfB = entryFrame
-        * CFrame.new(0, h / 2, halfL + halfL / 2)
-        * CFrame.Angles(rampAngle, 0, 0)
-    makePart("CrestUp",   partSize, cfA, color, folder)
-    makePart("CrestDown", partSize, cfB, color, folder)
-else
-    -- Dip: down-ramp then up-ramp, valley at center
-    -- h is negative, so h/2 offsets downward
-    local cfA = entryFrame
-        * CFrame.new(0, h / 2, halfL / 2)
-        * CFrame.Angles(rampAngle, 0, 0)
-    local cfB = entryFrame
-        * CFrame.new(0, h / 2, halfL + halfL / 2)
-        * CFrame.Angles(-rampAngle, 0, 0)
-    makePart("DipDown", partSize, cfA, color, folder)
-    makePart("DipUp",   partSize, cfB, color, folder)
-end
-```
+### Params
+
+- `height_or_depth`
+- `radius`
+- `sector_length`
+
+### Geometry
+
+- crest: one up-ramp part and one down-ramp part
+- dip: one down-ramp part and one up-ramp part
+- geometry must stay inside the straight sector
+
+### Phase 4C tests
+
+- `crestdip_crest_builds_two_parts`
+- `crestdip_dip_builds_two_parts`
+- `crestdip_illegal_length_errors`
+- one second-lap case asserting successful traversal and non-zero `vertical_displacement`
 
 ---
 
-## ChicaneBuilder.luau
+## Phase 4D — ChicaneBuilder
 
-**Params**: `amplitude` (AMP, lateral offset studs), `transition_length` (TL, horizontal length per diagonal), `corridor_width` (reserved for integrity checks).
+### Why last
 
-**Layout** (7 segments, viewed from above; all at local Y=0):
+`Chicane` is last because current runtime observability is weakest for its integrity model. The PRD now treats it as a compound-corner S, not a lane shift, but current `RunMetrics` still does not expose full lateral-path telemetry.
 
-```
-Z=0                          Z=40+3*TL
-[Entry]-[Diag1→]-[Corr1]-[Diag2←]-[Corr2]-[Diag3→]-[Exit]
-   X=0    X=0→AMP   X=AMP  X=AMP→-AMP X=-AMP X=-AMP→0  X=0
-```
+### Params
 
-Assert: `40 + 3 * p.transition_length <= Constants.STRAIGHT_LENGTH`
+- `amplitude` = peak lateral centerline offset reached during the linked turns
+- `transition_length` = longitudinal budget for each turning phase in the S
+- `corridor_width` = actual rendered drivable width
 
-```lua
-local AMP = p.amplitude
-local TL  = p.transition_length
-local W   = Constants.TRACK_WIDTH
-local T   = Constants.TRACK_THICKNESS
-local SL  = 10  -- short straight length
-local color  = BrickColor.new("Bright blue")
-local folder = getSectorFolder(state.sector_id)
+### Geometry
 
-assert(40 + 3 * TL <= Constants.STRAIGHT_LENGTH,
-    "ChicaneBuilder: geometry exceeds STRAIGHT_LENGTH (" .. (40 + 3*TL) .. ")")
+Build deterministic compound-corner geometry that:
 
--- Diagonal lengths
-local diagLen  = math.sqrt(TL^2 + AMP^2)
-local diag2Len = math.sqrt(TL^2 + (2*AMP)^2)
+- enters on the original sector centerline
+- traverses to one lateral side
+- reverses through the opposite side
+- unwinds back to the original exit line
+- preserves the sector entry and exit transforms
 
--- Yaw angles (rotation around Y)
-local yaw1 = math.atan(AMP / TL)       -- Diag1 and Diag3: AMP offset
-local yaw2 = math.atan(2*AMP / TL)     -- Diag2: crosses 2*AMP
+Use multiple short authored subsegments to approximate the three turning phases. Do not model this as flat-offset corridors joined by a couple of diagonals.
 
-local function straight(name, cx, cz, len)
-    makePart(name, Vector3.new(W, T, len),
-        entryFrame * CFrame.new(cx, 0, cz), color, folder)
-end
+### Phase 4D tests
 
-local function diag(name, cx, cz, dlen, yaw)
-    makePart(name, Vector3.new(W, T, dlen),
-        entryFrame * CFrame.new(cx, 0, cz) * CFrame.Angles(0, -yaw, 0),
-        color, folder)
-end
+Required now:
 
--- Segment Z start positions
-local z1 = SL                   -- after entry straight
-local z2 = z1 + TL              -- after Diag1
-local z3 = z2 + SL              -- after Corr1
-local z4 = z3 + TL              -- after Diag2
-local z5 = z4 + SL              -- after Corr2
-local z6 = z5 + TL              -- after Diag3
+- `chicane_build_creates_expected_segment_set`
+- `chicane_geometry_uses_both_lateral_sides`
+- `chicane_entry_and_exit_centerlines_preserved`
+- `chicane_illegal_total_length_errors`
+- `chicane_apply_is_deterministic`
+- basic second-lap traversability sanity check if the current verifier can complete it reliably
 
-straight("ChicEntry",  0,      SL/2,              SL)
-diag    ("ChicDiag1",  AMP/2,  z1 + TL/2,         diagLen,  yaw1)
-straight("ChicCorr1",  AMP,    z2 + SL/2,         SL)
-diag    ("ChicDiag2",  0,      z3 + TL/2,         diag2Len, yaw2)   -- crosses center
-straight("ChicCorr2", -AMP,    z4 + SL/2,         SL)
-diag    ("ChicDiag3", -AMP/2,  z5 + TL/2,         diagLen, -yaw1)
-straight("ChicExit",   0,      z6 + SL/2,         SL)
-```
+Deferred:
 
-**Note on rotation signs**: `CFrame.Angles(0, -yaw, 0)` rotates the part's Z-axis toward +X (right shift). `CFrame.Angles(0, yaw, 0)` shifts toward -X (left). The sign convention must be validated in Studio — flip signs if parts appear mirrored. The invariant: `ChicDiag1` shifts track center from X=0 to X=AMP, `ChicDiag2` crosses back from X=AMP to X=-AMP.
+- stronger runtime assertions for alternating signed lateral deflections, curvature severity, and speed-management behavior until telemetry is extended
 
 ---
 
-## TestPhase4.luau
+## Recovery Notes
 
-```lua
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TrackGenerator  = require(script.Parent.Parent.Track.TrackGenerator)
-local SectorApplier   = require(script.Parent.Parent.Track.SectorApplier)
-local PadBuilder      = require(script.Parent.Parent.Mechanics.PadBuilder)
-local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
-local T = require(script.Parent.TestUtils)
-```
+If work is interrupted:
 
-Helper:
-
-```lua
-local function getFrames(id)
-    local sectors = TrackGenerator.generate()
-    for _, s in ipairs(sectors) do
-        if s.id == id then return s.entry, s.exit end
-    end
-    error("sector not found: " .. id)
-end
-
-local function childCount(sectorId)
-    local name = string.format("Sector_%02d", sectorId)
-    local folder = workspace:FindFirstChild("Track")
-        and workspace.Track:FindFirstChild(name)
-    return folder and #folder:GetChildren() or 0
-end
-```
-
-Default test states:
-
-```lua
-local RAMP_STATE = { sector_id=2, mechanic="RampJump",
-    params={ramp_angle=20, ramp_length=12, gap_length=8, landing_length=12},
-    pads={ingress="None", egress="None"}, version=1 }
-
-local CHIC_STATE = { sector_id=2, mechanic="Chicane",
-    params={amplitude=6, transition_length=15, corridor_width=16},
-    pads={ingress="None", egress="None"}, version=1 }
-
-local CREST_STATE = { sector_id=2, mechanic="CrestDip",
-    params={height_or_depth=4, radius=10, sector_length=60},
-    pads={ingress="None", egress="None"}, version=1 }
-```
-
-Eight tests:
-
-| # | Name | How |
-|---|------|-----|
-| 1 | `rampjump_builds_parts` | `apply(RAMP_STATE, ...)` → `childCount(2) > 1` |
-| 2 | `rampjump_has_ramp_part` | `Sector_02:FindFirstChild("Ramp") ~= nil` |
-| 3 | `chicane_builds_parts` | `apply(CHIC_STATE, ...)` → `childCount(2) > 1` |
-| 4 | `crestdip_builds_parts` | `apply(CREST_STATE, ...)` → `childCount(2) > 1` |
-| 5 | `pad_boost_creates_part` | `PadBuilder.applyPads({ingress="Boost",egress="None"}, e, x, 2)` → 1 child with `PadType` attribute |
-| 6 | `pad_none_creates_no_part` | `applyPads({ingress="None",egress="None"}, ...)` → 0 children with `PadType` |
-| 7 | `rollback_after_rampjump` | `apply(RAMP_STATE)`, then `clear(2)` → `childCount(2) == 1` |
-| 8 | `all_mechanics_fit_sector` | Assert ramp_total, chicane_total, crest sector_length all ≤ 120 |
-
-Test 5: get pad count by iterating `folder:GetChildren()` and checking `:GetAttribute("PadType") ~= nil`.
-
-### TestRunner.server.luau
-
-Add:
-```lua
-elseif cmd == "phase4" then
-    require(script.Parent.TestPhase4).run()
-```
-
----
-
-## Test pass criteria
-
-| Test | Pass condition |
-|------|---------------|
-| `rampjump_builds_parts` | `childCount(2) > 1` after RampJump apply |
-| `rampjump_has_ramp_part` | `Sector_02:FindFirstChild("Ramp") ~= nil` |
-| `chicane_builds_parts` | `childCount(2) > 1` after Chicane apply |
-| `crestdip_builds_parts` | `childCount(2) > 1` after CrestDip apply |
-| `pad_boost_creates_part` | Exactly 1 child with `PadType` attribute |
-| `pad_none_creates_no_part` | 0 children with `PadType` attribute |
-| `rollback_after_rampjump` | `childCount(2) == 1` after `SectorApplier.clear(2)` |
-| `all_mechanics_fit_sector` | All computed totals ≤ `STRAIGHT_LENGTH` (120) |
-
----
-
-## Verification steps
-
-1. Start Play, await `[AutoTrack] Baseline lap complete`.
-2. `FireServer("phase4")` — expect 8 `[TEST PASS]` lines and `[TEST] Suite done: phase4`.
-3. Inspect `workspace.Track.Sector_02` in Studio Explorer: should show "Ramp" + "Landing" (orange + grey).
-4. Regression: run `FireServer("phase2")` and `FireServer("phase3")` — all must still pass.
-5. Optional visual check: with a RampJump applied to sector 2, start Play and confirm car visually goes airborne over the ramp.
-
----
-
-## Notes
-
-- The `radius` param in CrestDip is intentionally unused in Phase 4 geometry (kept for Phase 5 integrity evaluators).
-- The `corridor_width` param in Chicane is intentionally unused in Phase 4 (geometry uses full TRACK_WIDTH; used for Phase 5 integrity).
-- ChicaneBuilder diagonal rotation signs must be validated in Studio — the mathematical direction depends on Roblox's Y-axis rotation convention. If parts appear mirrored horizontally, flip the sign of `yaw` on Diag1/Diag3.
+- resume from `PadBuilder` first if Phase 4A is incomplete
+- do not start `CrestDip` before `RampJump` is validated end-to-end
+- do not regress `Chicane` back toward lane-shift geometry
+- do not treat `Chicane` as complete based only on rendering if stronger runtime observability becomes available during the phase
+- keep `Main.server.luau` baseline-only unless a later explicit plan changes that policy

@@ -4,6 +4,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local ChicanePath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath"))
+
+type SectorState = Types.SectorState
 
 export type SectorKind = "Straight" | "Corner"
 
@@ -147,6 +151,50 @@ local function buildLapWaypoint(position: Vector3, forward: Vector3): CFrame
 	return CFrame.lookAt(position, position + forward)
 end
 
+local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
+	return entryFrame.Position
+		+ entryFrame.RightVector * point.X
+		+ entryFrame.UpVector * point.Y
+		+ entryFrame.LookVector * point.Z
+end
+
+local function buildStraightWaypoints(
+	waypoints: { CFrame },
+	waypointSectorIds: { number },
+	sector: SectorDescriptorInternal,
+	overrideState: SectorState?
+)
+	local function ridePos(p: Vector3): Vector3
+		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
+	end
+
+	if overrideState and overrideState.mechanic == "Chicane" then
+		local params = overrideState.params
+		assert(params.amplitude, "TrackGenerator.buildStraightWaypoints: chicane amplitude missing")
+		assert(params.transition_length, "TrackGenerator.buildStraightWaypoints: chicane transition_length missing")
+
+		local points = ChicanePath.buildLocalCenterlinePoints(params.amplitude, params.transition_length)
+		for index = 2, #points do
+			local current = worldPoint(sector.entry, points[index])
+			local previous = worldPoint(sector.entry, points[index - 1])
+			local forward = (current - previous).Magnitude > 0 and (current - previous).Unit or sector.exit.LookVector
+			table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
+			table.insert(waypointSectorIds, sector.id)
+		end
+
+		if points[#points].Z < Constants.STRAIGHT_LENGTH then
+			table.insert(waypoints, buildLapWaypoint(ridePos(sector.exit.Position), sector.exit.LookVector))
+			table.insert(waypointSectorIds, sector.id)
+		end
+	else
+		local midpoint = sector.entry.Position:Lerp(sector.exit.Position, 0.5)
+		table.insert(waypoints, buildLapWaypoint(ridePos(midpoint), sector.entry.LookVector))
+		table.insert(waypointSectorIds, sector.id)
+		table.insert(waypoints, buildLapWaypoint(ridePos(sector.exit.Position), sector.exit.LookVector))
+		table.insert(waypointSectorIds, sector.id)
+	end
+end
+
 function TrackGenerator.generate(rows: number?, cols: number?): { SectorDescriptor }
 	rows = rows or Constants.TRACK_ROWS
 	cols = cols or Constants.TRACK_COLS
@@ -159,8 +207,12 @@ function TrackGenerator.canonicalStart(): CFrame
 	return CFrame.new(entry.Position + Vector3.new(0, CAR_RIDE_Y - TRACK_Y, 0)) * (entry - entry.Position)
 end
 
-function TrackGenerator.getLapWaypoints(sectors: { SectorDescriptor }): { CFrame }
+function TrackGenerator.getLapPath(
+	sectors: { SectorDescriptor },
+	stateOverrides: { [number]: SectorState }?
+): ({ CFrame }, { number })
 	local waypoints = {}
+	local waypointSectorIds = {}
 
 	local function ridePos(p: Vector3): Vector3
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
@@ -176,16 +228,26 @@ function TrackGenerator.getLapWaypoints(sectors: { SectorDescriptor }): { CFrame
 			local arcMidpoint = sector.center + arcDirection.Unit * Constants.CORNER_RADIUS
 
 			table.insert(waypoints, buildLapWaypoint(ridePos(entryPosition), sector.entry.LookVector))
+			table.insert(waypointSectorIds, sector.id)
 			table.insert(waypoints, buildLapWaypoint(ridePos(arcMidpoint), (exitPosition - entryPosition).Unit))
+			table.insert(waypointSectorIds, sector.id)
 			table.insert(waypoints, buildLapWaypoint(ridePos(exitPosition), sector.exit.LookVector))
+			table.insert(waypointSectorIds, sector.id)
 		else
-			local midpoint = sector.entry.Position:Lerp(sector.exit.Position, 0.5)
-			table.insert(waypoints, buildLapWaypoint(ridePos(midpoint), sector.entry.LookVector))
-			table.insert(waypoints, buildLapWaypoint(ridePos(sector.exit.Position), sector.exit.LookVector))
+			buildStraightWaypoints(waypoints, waypointSectorIds, sector, stateOverrides and stateOverrides[sector.id] or nil)
 		end
 	end
 
 	table.insert(waypoints, buildLapWaypoint(ridePos(sectors[1].entry.Position), sectors[1].entry.LookVector))
+	table.insert(waypointSectorIds, sectors[1].id)
+	return waypoints, waypointSectorIds
+end
+
+function TrackGenerator.getLapWaypoints(
+	sectors: { SectorDescriptor },
+	stateOverrides: { [number]: SectorState }?
+): { CFrame }
+	local waypoints = TrackGenerator.getLapPath(sectors, stateOverrides)
 	return waypoints
 end
 

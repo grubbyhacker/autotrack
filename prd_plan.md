@@ -181,18 +181,26 @@ Important v1 decision:
 
 ## 4.2 Chicane
 
-A geometry-only S-shaped high-curvature mechanic.
+A geometry-only compound-corner mechanic that forms an overall S shape.
+
+In v1, a Chicane is modeled as **three linked turning phases** inside one straight sector:
+- turn away from centerline
+- reverse across centerline
+- unwind back to the original exit line
+
+This is not a lane-shift gimmick. The intended challenge is a sequence of slow corners that penalizes excess entry speed and rewards better setup.
 
 Agent-tunable levers:
-- `amplitude`
-- `transition_length`
-- `corridor_width`
+- `amplitude` — peak lateral centerline offset reached during the linked turns
+- `transition_length` — longitudinal budget for each turning phase in the S
+- `corridor_width` — actual rendered drivable width of the chicane corridor
 - `ingress pad`
 - `egress pad`
 
 Important v1 decision:
 - **no explicit speed gate**
-- integrity is enforced by geometry guardrails
+- pads are optional optimization aids, not mandatory for validity
+- integrity is enforced by geometry guardrails plus later runtime telemetry
 - anti-crawl pressure comes from overall lap-time slowdown vs baseline
 
 ## 4.3 CrestDip
@@ -443,12 +451,14 @@ No obstacle-clearance requirement exists in v1.
 
 ## 11.3 Chicane integrity
 
-A valid Chicane must satisfy geometry guardrails so it does not regress toward a straight.
+A valid Chicane must satisfy geometry guardrails so it behaves like linked slow corners rather than a disguised straight.
 
 Required properties include:
-- at least two alternating lateral deflections
+- an overall S-shaped path formed by linked turning phases
+- lateral travel to both sides of the sector centerline
+- return to the original exit line and heading by sector end
 - minimum lateral displacement
-- minimum curvature severity
+- minimum effective curvature severity, initially approximated from authored geometry and later strengthened with runtime telemetry
 
 No explicit per-sector speed gate exists in v1.
 
