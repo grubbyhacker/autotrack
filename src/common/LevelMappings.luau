@@ -7,7 +7,7 @@ local LevelMappings = {}
 
 -- Synonym → canonical mechanic name
 -- Keys are lowercase for case-insensitive matching.
-LevelMappings.MECHANIC_SYNONYMS: { [string]: string } = {
+LevelMappings.MECHANIC_SYNONYMS = {
 	["jump"]         = "RampJump",
 	["ramp"]         = "RampJump",
 	["ramp jump"]    = "RampJump",
@@ -24,14 +24,14 @@ LevelMappings.MECHANIC_SYNONYMS: { [string]: string } = {
 }
 
 -- Legal numeric levers per mechanic (used to populate FailurePacket.legal_actions)
-LevelMappings.NUMERIC_LEVERS: { [string]: { string } } = {
+LevelMappings.NUMERIC_LEVERS = {
 	RampJump = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
 	Chicane  = { "amplitude", "transition_length", "corridor_width" },
 	CrestDip = { "height_or_depth", "radius", "sector_length" },
 }
 
 -- Default parameter values per mechanic (initial proposal baseline before qualifier biasing)
-LevelMappings.DEFAULTS: { [string]: { [string]: number } } = {
+LevelMappings.DEFAULTS = {
 	RampJump = {
 		ramp_angle      = 20,
 		ramp_length     = 12,

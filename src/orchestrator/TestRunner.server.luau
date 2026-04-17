@@ -38,6 +38,10 @@ testEvent.OnServerEvent:Connect(function(_player, cmd)
 			require(script.Parent.TestPhase4_5).runLap()
 		elseif cmd == "phase4_5_speed" then
 			require(script.Parent.TestPhase4_5).runSpeed()
+		elseif cmd == "phase5" then
+			require(script.Parent.TestPhase5).run()
+		elseif cmd == "phase5_unit" then
+			require(script.Parent.TestPhase5).runUnit()
 		else
 			print("[TEST FAIL: unknown_suite] " .. tostring(cmd))
 		end

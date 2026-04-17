@@ -2,8 +2,9 @@
 -- Evaluates whether a completed run satisfies CrestDip mechanic integrity.
 -- prd_plan.md §11.4, §15.7, Phase 5
 
-local Types = require(script.Parent.Parent.common.Types)
-local Constants = require(script.Parent.Parent.common.Constants)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 type RunMetrics = Types.RunMetrics
 type SectorState = Types.SectorState
