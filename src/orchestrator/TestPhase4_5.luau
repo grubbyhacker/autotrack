@@ -60,12 +60,13 @@ function TestPhase4_5.runGeometry()
 	T.expect("sectorKinds_straights_labeled", straightsLabeled,
 		"expected straight sectors 2-4,7-9 labeled Straight")
 
-	-- Build per-sector waypoint lists and sector lookup
+	-- Build per-sector waypoint lists, excluding the lap-closing waypoint (always last).
+	-- The closing waypoint duplicates sector 1's entry and must not inflate the arc count.
 	local sectorWpts: { [number]: { CFrame } } = {}
-	for i, wpt in ipairs(waypoints) do
+	for i = 1, #waypoints - 1 do
 		local sid = waypointSectors[i]
 		if not sectorWpts[sid] then sectorWpts[sid] = {} end
-		table.insert(sectorWpts[sid], wpt)
+		table.insert(sectorWpts[sid], waypoints[i])
 	end
 
 	local sectorById = {}
