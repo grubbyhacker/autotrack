@@ -11,7 +11,7 @@
 | 4.5 | Complete (corner arc paths + speed reduction) |
 | 5 | Complete (integrity evaluators + FailurePacket wiring) |
 | 6 | Complete (CI orchestrator state machine + no-LLM vertical slice) |
-| 7 | **Next** — LLM adapter (narrow boundary, swappable backend) |
+| 7 | Complete (LLM adapter boundary + swappable mock/stub backend) |
 | 8 | Pending |
 
 ---
@@ -203,3 +203,50 @@ On the current track:
 - `CrestDip` on sector 3 currently exhausts repairs and reverts, which is useful for rollback assertions
 
 Do not assume every supported mechanic is currently a stable "successful commit" fixture for integration tests.
+
+---
+
+## Phase 7 lessons learned
+
+### 1. The adapter should own JSON parsing, not the backend
+
+The backend boundary is cleaner when providers may return either a Lua table or a JSON string and `LLMAdapter` is the only place that normalizes and validates that data.
+
+That keeps:
+
+- prompt construction in `PromptBuilder`
+- response decoding in `LLMAdapter`
+- schema enforcement in `ActionValidator`
+
+instead of spreading parsing logic across multiple providers.
+
+### 2. Keep the deterministic proposer as the default backend
+
+The mock backend now wraps `MinimalProposer` but still goes through the same prompt → backend → decode → validate path as any injected provider.
+
+This matters because it means:
+
+- the adapter is exercised continuously in normal development
+- future real backends can be swapped in without changing orchestrator code
+- integration tests can still run without network dependencies
+
+### 3. Validate request identity, not just schema shape
+
+A structurally valid `SectorState` is still wrong if it targets the wrong sector or mechanic.
+
+`LLMAdapter.propose(...)` must reject:
+
+- `sector_id` mismatch
+- `mechanic` mismatch
+
+even when `ActionValidator.validateSectorState(...)` passes.
+
+### 4. Explanation strings need an explicit UI-safe policy
+
+Repair responses now require a short, non-empty explanation and reject empty or overlong strings.
+
+This enforces the PRD/UI rule early and prevents long reasoning traces from leaking into later phases.
+
+### 5. Provider injection is the right way to test the orchestrator boundary
+
+The most useful Phase 7 integration test was not a fake prompt assertion. It was a real `JobRunner.submit(...)` run with an injected stub provider, proving the orchestrator now depends on `LLMAdapter` rather than `MinimalProposer` directly.

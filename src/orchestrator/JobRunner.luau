@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
@@ -17,7 +18,6 @@ local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local JobStateMachine = require(script.Parent.JobStateMachine)
 local JobLock = require(script.Parent.JobLock)
-local MinimalProposer = require(script.Parent.MinimalProposer)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 
@@ -110,7 +110,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		))
 
 		sm:transition("GenerateInitialProposal")
-		local initialState, proposalErr = MinimalProposer.initial(request)
+		local initialState, proposalErr = LLMAdapter.propose(request)
 		if not initialState then
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
@@ -199,7 +199,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			)
 
 			sm:transition("ApplyRepair")
-			local action, explanation, repairErr = MinimalProposer.repair(packet)
+			local action, explanation, repairErr = LLMAdapter.repair(packet)
 			if not action then
 				sm:transition("Revert")
 				finishRevert(job, targetSector, "revert reason=" .. tostring(repairErr))
