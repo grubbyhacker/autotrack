@@ -6,6 +6,8 @@ AutoTrack is an **Autonomous Level-Design CI Pipeline** running inside a Roblox 
 
 See `prd_plan.md` for the full authoritative PRD, schema contracts, mechanic specs, and build order.
 
+See `plans/agent-handoff.md` for **phase completion status and lessons learned** from every previous agent session. Read this before starting any work.
+
 ---
 
 ## Authority boundaries — read this first
@@ -226,6 +228,23 @@ To test code paths that would normally be triggered by LLM output or user input,
 
 ---
 
+## Agent startup checklist
+
+**Read these two files at the start of every session before touching any code:**
+
+1. `plans/agent-handoff.md` — phase completion status, lessons learned, and what the next phase needs to know
+2. `plans/phaseN.md` where N is the phase you are about to implement — the detailed plan
+
+If either file is missing or stale, update it before proceeding.
+
+---
+
 ## Plans
 
-Implementation plans live in `plans/` at the project root (e.g., `plans/phase2.md`). Each plan covers the deliverable, files to change, test cases, and verification steps. Plans are committed alongside code so the project is restartable from any phase.
+Implementation plans live in `plans/` at the project root (e.g., `plans/phase5.md`). Each plan covers the deliverable, files to change, test cases, and verification steps. Plans are committed alongside code so the project is restartable from any phase.
+
+**Plans must be written and committed to `plans/phaseN.md` before implementation begins.** Do not start writing code until the plan file exists in the repo. This is a hard requirement — a plan that only exists in Claude's plan-mode working memory is not sufficient.
+
+When a phase completes:
+1. Update `plans/agent-handoff.md` with the phase completion status and lessons learned
+2. Ensure `plans/phaseN.md` reflects the final state (update if the plan deviated during implementation)

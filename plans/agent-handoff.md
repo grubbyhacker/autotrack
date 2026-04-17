@@ -1,5 +1,21 @@
 # Agent Handoff
 
+## Phase completion status
+
+| Phase | Status |
+|-------|--------|
+| 1 | Complete |
+| 2 | Complete |
+| 3 | Complete |
+| 4 | Complete |
+| 4.5 | Complete (corner arc paths + speed reduction) |
+| 5 | Complete (integrity evaluators + FailurePacket wiring) |
+| 6 | **Next** — CI orchestrator state machine (no LLM) |
+| 7 | Pending |
+| 8 | Pending |
+
+---
+
 ## Phase 4 lessons learned
 
 ### 1. Geometry and guidance must match
@@ -23,102 +39,120 @@ This must be treated as a hard rule, not an aesthetic preference:
 - any mechanic that consumes less than `Constants.STRAIGHT_LENGTH` must still provide continuous drivable surface to the sector boundary
 - intentional gaps are allowed only if the mechanic explicitly defines a valid landing/rejoin path afterward
 
-This rule is now also documented in:
-
-- `AGENTS.md`
-- `plans/phase4.md`
-
-Tests should continue to assert this directly.
-
 ### 3. Fast inner-loop mode is essential
 
-The fast test loop was necessary to make Phase 4 practical.
-
-Use:
-
-```lua
-workspace:SetAttribute("AutoTrack_SkipBootBaseline", true)
-```
-
-before starting Play when iterating on a targeted mechanic slice.
-
-Targeted Phase 4 commands supported in `TestRunner.server.luau`:
-
-- `phase4`
-- `phase4_pads`
-- `phase4_rampjump`
-- `phase4_crestdip`
-- `phase4_chicane`
-
-Workflow reminder:
-
-1. edit local files in `/src`
-2. stop Play
-3. start Play again
-4. trigger the desired test suite
-5. stop Play again after validation
+Use `workspace:SetAttribute("AutoTrack_SkipBootBaseline", true)` before starting Play when iterating on a targeted mechanic slice. This avoids the ~25s baseline lap on every restart.
 
 ### 4. Runtime pass is not enough for shape-heavy mechanics
 
-`CrestDip` originally passed runtime traversal, but the motion and shape were wrong because it was effectively a two-ramp sawtooth.
-
-For future mechanics, visual/kinematic quality should be treated as a first-class acceptance criterion when curvature is the point of the obstacle.
-
-`CrestDip` was improved by replacing the wedge with a sampled eased vertical curve in:
-
-- `src/mechanics/CrestDipBuilder.luau`
+`CrestDip` originally passed runtime traversal but the shape was wrong. Visual/kinematic quality must be treated as a first-class acceptance criterion when curvature is the point of the obstacle.
 
 ### 5. Pads must affect runtime, not just rendering
 
-Pads were initially only visual. The Phase 4 pad runtime test did not stabilize until pad speed effects were wired into the verifier loop.
-
-Current runtime handling lives in:
-
-- `src/verifier/VerifierController.luau`
-
-Future pad-related changes should assume that rendering alone is insufficient; the runtime contract must be explicit.
+Pads were initially only visual. Runtime handling lives in `src/verifier/VerifierController.luau`.
 
 ### 6. TrackGenerator now has a mechanic dependency
 
-`src/track/TrackGenerator.luau` now requires:
+`src/track/TrackGenerator.luau` requires `ChicanePath` from Mechanics. Acceptable for now; revisit in a future refactor.
 
-- `game.ServerScriptService.AutoTrackCore.Mechanics.ChicanePath`
+---
 
-That is acceptable for the current runtime, but a future refactor may want a cleaner dependency boundary between track generation and mechanic path providers.
+## Phase 4.5 lessons learned
 
-### 7. Repo state at handoff
+### 1. Corner arc geometry derivation
 
-Phase 4 passed end to end at the conclusion of this work, but the repo is still mid-stream rather than cleaned up.
+All four corners are clockwise (right turns). Arc center formula:
+```lua
+arcCenter = entry.Position + entry.LookVector:Cross(Vector3.new(0,1,0)) * R
+```
+where `R = CORNER_RADIUS + TRACK_WIDTH * 0.5 = 28` studs. Verified: distance from arcCenter to entry/exit = R for all 4 corners.
 
-A follow-on agent should start with:
+### 2. Closing waypoint inflates corner waypoint count
 
-```bash
-git status
+`getLapPath` appends a lap-closing waypoint at the end tagged as sector 1. When collecting per-sector waypoints for tests, exclude `waypoints[#waypoints]` to avoid inflating corner 1's count by 1.
+
+### 3. Corner speed reduction is automatic, not pad-driven
+
+Corners are fixed/uneditable. The agent can never place pads there. Corner speed reduction (`CORNER_SPEED_FACTOR = 0.6`) is applied automatically in `VerifierController` when `sectorKinds[currentSectorId] == "Corner"`. Anticipatory braking (slowing on the preceding straight) is deferred — it conflicts with egress pads at straight sector ends.
+
+---
+
+## Phase 5 lessons learned
+
+### 1. Integrity scaffolding had latent require path bugs
+
+All four `src/integrity/` files used `script.Parent.Parent.common.Types` which resolves to `AutoTrackCore.common`. But `src/common/` maps to `ReplicatedStorage.AutoTrackCommon`, not `AutoTrackCore`. These files had never been `require`d before Phase 5 so the bug was latent.
+
+**Rule:** Modules in `src/integrity/`, `src/track/`, `src/verifier/`, `src/mechanics/`, `src/orchestrator/` must reference `src/common/` via `ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ModuleName")`, not via relative `script.Parent.Parent.common`.
+
+### 2. Luau type annotations on table field assignments are invalid
+
+```lua
+-- INVALID — colon after table access is parsed as method call:
+LevelMappings.NUMERIC_LEVERS: { [string]: { string } } = { ... }
+
+-- Valid alternatives:
+local x: { string } = { ... }       -- local variable annotation
+LevelMappings.NUMERIC_LEVERS = { ... }  -- no annotation needed
 ```
 
-and read the current diffs carefully rather than assuming only one narrow area changed.
+### 3. LapEvaluator.evaluate now returns two values
 
-## Recommendation before Phase 5
+Callers must destructure `(RunResult, { string })`:
+```lua
+local result, hints = LapEvaluator.evaluate(lapFailure, state, metrics, targetSectorId)
+```
+The second return (hints) is needed to build a meaningful FailurePacket. If you ignore it, `buildFailurePacket` will have empty `diagnostics.hints`.
 
-Address fixed-corner dynamics before starting Phase 5.
+### 4. targetSectorId vs lapFailure.sector_id
 
-Reason:
+`LapEvaluator.evaluate` takes `targetSectorId` (the job's intended target sector) as the 4th argument. This is NOT `lapFailure.sector_id` (which is where the car actually failed). Always pass the job's target, not what FailureDetector reported. The reclassification logic uses this to detect downstream failures.
 
-- the current baseline track appears to allow unrealistic constant-speed cornering
-- if corners behave like near-straight connectors, baseline lap time and slowdown measurements are distorted
-- that would make Phase 5 mechanic integrity thresholds less trustworthy, especially for speed-management-heavy mechanics like `Chicane`
+### 5. The get_console_output MCP tool has a short line buffer
 
-Recommended scope:
+The tool appears to return only the most recent ~10–15 console lines. During a lap traversal (which produces no console output), the buffer doesn't change, making it look frozen. This is expected. Poll until the lap completes and new PASS/FAIL lines appear. Patience is required — each lap takes ~25 seconds.
 
-- treat this as a narrow "Phase 4.5" realism pass, not a full physics rewrite
-- prioritize truthful corner pathing and speed behavior before visual polish
+### 6. Plans were not persisted before implementation in Phase 5
 
-Suggested targets:
+The Phase 5 plan was only in Claude's plan-mode plan file, not in `plans/phase5.md`. This was caught post-hoc. **Plans must be saved to `plans/phaseN.md` before implementation begins.** See AGENTS.md for the updated requirement.
 
-- fixed corners should expose a real constant-radius arc path for guidance
-- verifier guidance should follow sampled arc waypoints through corners
-- target speed should reduce through curvature rather than remaining globally constant
-- speed recovery should happen after exit alignment, not immediately at corner entry
-- add tests proving corners are traversed on a curved path and more slowly than flat straights
+---
 
-Visual improvement to corner surface/road presentation is useful, but secondary to making corner runtime behavior truthful.
+## What Phase 6 needs to know
+
+Phase 6 implements the CI orchestrator state machine: `AttemptRunner.run` + the full `JobRunner.submit` loop.
+
+**Key stubs to implement:**
+
+- `src/orchestrator/AttemptRunner.run` — currently throws `error("not yet implemented")`
+- `src/orchestrator/JobRunner.submit` — currently throws `error("not yet implemented")`
+
+**Integration contract for AttemptRunner:**
+
+```lua
+-- AttemptRunner.run sequence:
+-- 1. Clone workingState; apply action if provided
+-- 2. SectorApplier.apply(workingState, entryFrame, exitFrame)
+-- 3. VerifierCar.reset(canonicalStart)
+-- 4. VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, onSectorChange)
+-- 5. result, hints = LapEvaluator.evaluate(lapFailure, workingState, metrics, targetSectorId)
+-- 6. return result, hints, updatedState
+```
+
+**LapEvaluator.evaluate signature (Phase 5 output):**
+```lua
+function LapEvaluator.evaluate(
+    lapFailure: FailureInfo?,
+    targetState: SectorState,
+    metrics: RunMetrics,
+    targetSectorId: number
+): (RunResult, { string })
+```
+
+**LevelMappings.NUMERIC_LEVERS** provides legal levers per mechanic for FailurePacket construction. Already wired into `buildFailurePacket` — pass the hints from `evaluate()`.
+
+**No-LLM vertical slice (Phase 6 start):** Hardcode one parsed request (e.g., RampJump on sector 4), one initial proposal (default params from LevelMappings.DEFAULTS), one repair policy (increment ramp_angle by 5). Prove physics/rollback/geometry before connecting Phase 7 LLMAdapter.
+
+**SectorRollback** exists in `src/track/SectorRollback.luau` — use it on job failure or exhaustion.
+
+**JobStateMachine** exists in `src/orchestrator/JobStateMachine.luau` (scaffolded) — read it before designing the Phase 6 state transitions.
