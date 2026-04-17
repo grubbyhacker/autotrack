@@ -174,6 +174,14 @@ This workflow is now a maintained project contract, not an optional convenience.
   - integration/live-lap suites choose `baseline` automatically
 - Keep the local runner sequential. Do not assume parallel `make phase...` invocations on the same Studio session are supported.
 - If a future change breaks the local plugin bridge, fix that before considering the phase complete.
+- Prefer this `make` path for Roblox/Studio-backed verification by default, especially for milestone-complete validation and final end-of-phase test runs.
+- It is still fine to use direct local shell commands for very small pure file/static checks that do not require Studio, such as:
+  - syntax checks
+  - sourcemap generation
+  - lint/format validation
+  - listing available suites or config
+- Do not route trivial non-Studio checks through the Studio bridge just for consistency.
+- For finalized milestone validation, the expected path is the maintained `make` workflow rather than Claude/MCP-triggered suite execution, unless the bridge is broken and the fallback is explicitly noted.
 
 The checked-in components for this path are:
 
