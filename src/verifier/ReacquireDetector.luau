@@ -3,17 +3,17 @@
 -- after becoming airborne or laterally displaced.
 -- prd_plan.md §6.3, §11.2, §11.4, Phase 3
 
-local Constants = require(script.Parent.Parent.common.Constants)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 local ReacquireDetector = {}
 
+local GROUNDED_THRESHOLD = Constants.CAR_HEIGHT * 0.5 + Constants.TRACK_THICKNESS + 1.5
+
 -- Returns true if the car is currently in contact with the track surface.
--- position: car root position
--- trackSurface: a function (Vector3) → number giving the surface height at XZ
-function ReacquireDetector.isGrounded(position: Vector3, trackSurface: (Vector3) -> number): boolean
-	-- TODO: Phase 3 — raycast downward from car position; compare hit distance
-	-- against a grounded threshold.
-	error("ReacquireDetector.isGrounded: not yet implemented")
+function ReacquireDetector.isGrounded(position: Vector3, raycastParams: RaycastParams): boolean
+	local result = workspace:Raycast(position, Vector3.new(0, -GROUNDED_THRESHOLD, 0), raycastParams)
+	return result ~= nil
 end
 
 -- Accumulates distance traveled since last becoming airborne.

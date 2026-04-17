@@ -8,8 +8,9 @@
 --   downstream_failure          — car failed in a sector other than the edited one
 --   system_failure              — timeout or unexpected runtime error
 
-local Types = require(script.Parent.Parent.common.Types)
-local Constants = require(script.Parent.Parent.common.Constants)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 type FailureInfo = Types.FailureInfo
 
@@ -21,16 +22,23 @@ local FailureDetector = {}
 -- currentSector: which sector the car is currently in (1-based straight index)
 function FailureDetector.check(
 	elapsed: number,
-	currentSector: number
+	currentSector: number,
+	carPosition: Vector3,
+	trackCenterlinePoint: Vector3,
+	isAirborne: boolean
 ): FailureInfo?
 	if elapsed >= Constants.LAP_TIMEOUT then
 		return { type = "system_failure", sector_id = currentSector }
 	end
 
-	-- TODO: Phase 3/5 — check for:
-	--   • car below world Y threshold (fell off)
-	--   • car stopped / reversed beyond recovery
-	--   • heading error exceeding recovery threshold
+	if carPosition.Y < -50 then
+		return { type = "local_execution_failure", sector_id = currentSector }
+	end
+
+	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.TRACK_WIDTH * 1.5 then
+		return { type = "local_execution_failure", sector_id = currentSector }
+	end
+
 	return nil
 end
 

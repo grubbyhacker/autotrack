@@ -18,6 +18,8 @@ testEvent.OnServerEvent:Connect(function(_player, cmd)
 			require(script.Parent.TestPhase1).run()
 		elseif cmd == "phase2" then
 			require(script.Parent.TestPhase2).run()
+		elseif cmd == "phase3" then
+			require(script.Parent.TestPhase3).run()
 		else
 			print("[TEST FAIL: unknown_suite] " .. tostring(cmd))
 		end

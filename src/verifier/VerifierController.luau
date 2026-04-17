@@ -6,6 +6,9 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local FailureDetector = require(script.Parent.FailureDetector)
+local MetricCollector = require(script.Parent.MetricCollector)
+local ReacquireDetector = require(script.Parent.ReacquireDetector)
 
 type RunResult = Types.RunResult
 
@@ -23,29 +26,10 @@ local function projectPointToSegment(point: Vector3, startPoint: Vector3, endPoi
 	return startPoint + segment * alpha, alpha
 end
 
-local function buildPlaceholderMetrics(lapTime: number): Types.RunMetrics
-	return {
-		entry_speed = 0,
-		exit_speed = 0,
-		airborne = false,
-		air_distance = 0,
-		lateral_error = 0,
-		vertical_displacement = 0,
-		reacquired = true,
-		lap_time = lapTime,
-		slowdown_ratio = 1,
-	}
-end
-
-local function buildFailure(sectorId: number, failureType: Types.FailureType, lapTime: number): RunResult
-	return {
-		success = false,
-		failure = {
-			type = failureType,
-			sector_id = sectorId,
-		},
-		metrics = buildPlaceholderMetrics(lapTime),
-	}
+local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, alignOrientation: AlignOrientation)
+	attachment:Destroy()
+	linearVelocity:Destroy()
+	alignOrientation:Destroy()
 end
 
 function VerifierController.runLap(
@@ -58,7 +42,8 @@ function VerifierController.runLap(
 
 	local waypointSectors: { number }? = nil
 	local currentSectorId: number? = nil
-	if sectors and onSectorChange then
+	local handleSectorChange = onSectorChange
+	if sectors then
 		waypointSectors = {}
 		for _, sector in ipairs(sectors) do
 			local count = sector.kind == "Corner" and 3 or 2
@@ -68,7 +53,20 @@ function VerifierController.runLap(
 		end
 		table.insert(waypointSectors :: { number }, (sectors :: { any })[1].id)
 		currentSectorId = (waypointSectors :: { number })[1]
-		onSectorChange(currentSectorId :: number, true)
+
+		handleSectorChange = function(id: number, entering: boolean)
+			local speed = car.AssemblyLinearVelocity.Magnitude
+			if entering then
+				MetricCollector.onSectorEntry(id, speed)
+			else
+				MetricCollector.onSectorExit(id, speed)
+			end
+			if onSectorChange then
+				onSectorChange(id, entering)
+			end
+		end
+
+		handleSectorChange(currentSectorId :: number, true)
 	end
 
 	local attachment = Instance.new("Attachment")
@@ -89,9 +87,16 @@ function VerifierController.runLap(
 	alignOrientation.Attachment0 = attachment
 	alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
 	alignOrientation.MaxTorque = 100000
-	alignOrientation.Responsiveness = 20
+	alignOrientation.Responsiveness = 5
 	alignOrientation.RigidityEnabled = false
 	alignOrientation.Parent = car
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = { car }
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	MetricCollector.reset(car.Position.Y)
+	local baselineLapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime") or 30
 
 	local startTime = os.clock()
 	local waypointIndex = 1
@@ -100,12 +105,6 @@ function VerifierController.runLap(
 	while not completed do
 		local now = os.clock()
 		local elapsed = now - startTime
-		if elapsed >= Constants.LAP_TIMEOUT then
-			attachment:Destroy()
-			linearVelocity:Destroy()
-			alignOrientation:Destroy()
-			return buildFailure(math.min(waypointIndex, #waypoints), "system_failure", elapsed)
-		end
 
 		local carPosition = car.Position
 		local targetPosition = waypoints[waypointIndex].Position
@@ -115,18 +114,18 @@ function VerifierController.runLap(
 		if distanceToTarget <= 10 then
 			waypointIndex += 1
 			if waypointIndex > #waypoints then
-				if waypointSectors and onSectorChange and currentSectorId then
-					onSectorChange(currentSectorId, false)
+				if waypointSectors and handleSectorChange and currentSectorId then
+					handleSectorChange(currentSectorId, false)
 				end
 				completed = true
 				break
 			end
-			if waypointSectors and onSectorChange then
+			if waypointSectors and handleSectorChange then
 				local newSectorId = (waypointSectors :: { number })[waypointIndex]
 				if newSectorId ~= currentSectorId then
-					onSectorChange(currentSectorId :: number, false)
+					handleSectorChange(currentSectorId :: number, false)
 					currentSectorId = newSectorId
-					onSectorChange(currentSectorId :: number, true)
+					handleSectorChange(currentSectorId :: number, true)
 				end
 			end
 			targetPosition = waypoints[waypointIndex].Position
@@ -137,36 +136,65 @@ function VerifierController.runLap(
 		local segmentStart = waypoints[math.max(waypointIndex - 1, 1)].Position
 		local segmentEnd = targetPosition
 		local projectedPoint = projectPointToSegment(carPosition, segmentStart, segmentEnd)
-		local lateralDistance = (carPosition - projectedPoint).Magnitude
-		if lateralDistance > Constants.TRACK_WIDTH then
-			attachment:Destroy()
-			linearVelocity:Destroy()
-			alignOrientation:Destroy()
-			return buildFailure(math.min(waypointIndex, #waypoints), "local_execution_failure", elapsed)
-		end
-
 		local moveDirection = distanceToTarget > 0 and toTarget.Unit or waypoints[waypointIndex].LookVector
+		local segmentDirection = (segmentEnd - segmentStart).Magnitude > 0
+			and (segmentEnd - segmentStart).Unit
+			or moveDirection
 		local lookAheadIndex = math.min(waypointIndex + Constants.WAYPOINT_LOOKAHEAD, #waypoints)
 		local lookTarget = waypoints[lookAheadIndex].Position
 		local lookDirection = (lookTarget - carPosition).Magnitude > 0
 			and (lookTarget - carPosition).Unit
 			or moveDirection
+		local isAirborne = not ReacquireDetector.isGrounded(carPosition, rayParams)
+		local speed = car.AssemblyLinearVelocity.Magnitude
+		local lateralOffset = projectedPoint - carPosition
+		local lateralError = lateralOffset.Magnitude
 
-		linearVelocity.VectorVelocity = moveDirection * Constants.CAR_TARGET_SPEED
-		alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, lookDirection)
+		MetricCollector.record(speed, carPosition, isAirborne, lateralError)
+
+		local vectorVelocity = moveDirection * Constants.CAR_TARGET_SPEED
+		if not isAirborne and lateralError > 1 then
+			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)
+			vectorVelocity += lateralNudge
+		end
+
+		linearVelocity.VectorVelocity = vectorVelocity
+
+		if isAirborne then
+			alignOrientation.MaxTorque = 0
+		else
+			alignOrientation.MaxTorque = 10000
+			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, segmentDirection)
+		end
+
+		local failure = FailureDetector.check(
+			elapsed,
+			currentSectorId or 1,
+			carPosition,
+			projectedPoint,
+			isAirborne
+		)
+		if failure then
+			local metrics = MetricCollector.finalise(currentSectorId or 1, elapsed, baselineLapTime)
+			cleanup(attachment, linearVelocity, alignOrientation)
+			return {
+				success = false,
+				failure = failure,
+				metrics = metrics,
+			}
+		end
 
 		RunService.Heartbeat:Wait()
 	end
 
 	local lapTime = os.clock() - startTime
-	attachment:Destroy()
-	linearVelocity:Destroy()
-	alignOrientation:Destroy()
+	local metrics = MetricCollector.finalise(currentSectorId or 1, lapTime, baselineLapTime)
+	cleanup(attachment, linearVelocity, alignOrientation)
 
 	return {
 		success = true,
 		failure = nil,
-		metrics = buildPlaceholderMetrics(lapTime),
+		metrics = metrics,
 	}
 end
 
