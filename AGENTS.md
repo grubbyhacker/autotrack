@@ -112,3 +112,62 @@ Keep these contracts explicit in code. Fail fast on invalid agent output or inva
 - Short explanations only in the UI (e.g., `"Entry speed too high; added ingress brake"`). No long reasoning traces.
 - Pads have three values: `None`, `Boost`, `Brake`. No numeric magnitudes. No stacking.
 - Session state is ephemeral — no cross-session persistence in v1.
+
+---
+
+## Testing philosophy
+
+**Tests ship with each phase — never after.**
+
+Every phase must include a `TestPhaseN.luau` module (in `src/orchestrator/`) with named assertions that cover the phase deliverable. The test suite must pass before the phase is considered complete.
+
+### Verification approach
+
+`execute_luau` runs **client-side** in the Studio MCP context. The test pipeline is:
+
+1. Claude triggers via `execute_luau`:
+   ```lua
+   game.ReplicatedStorage:WaitForChild("AutoTrack_TestCmd", 5):FireServer("phaseN")
+   ```
+2. `TestRunner.server.luau` (in `ServerScriptService.AutoTrackCore.Orchestrator`) receives the RemoteEvent and dispatches.
+3. Tests print structured lines: `[TEST PASS: name]` / `[TEST FAIL: name] reason`.
+4. Claude reads results with `get_console_output`.
+
+**No screen capture. No mouse. No UI reading.** All verification is through console output.
+
+For Phase 1, tests also auto-run at boot end (see `Main.server.luau`). Later phases may do the same.
+
+### Trace hooks
+
+The verifier emits structured trace lines parseable by tests:
+
+```
+[TRACE] lap_start
+[TRACE] sector_enter 2 speed=40.5
+[TRACE] sector_exit 2 speed=38.1
+[TRACE] lap_complete 25.01
+[TRACE] apply sector=2 mechanic=RampJump
+[TRACE] clear sector=2
+[TRACE] revert sector=2
+```
+
+Tests can assert on the presence/absence and ordering of these lines. New trace points should be added whenever a phase introduces a new verifiable event.
+
+### Test file locations
+
+Test modules live in `src/orchestrator/` (alongside `Main.server.luau`). This is a workaround for a Rojo sync issue with new top-level directories; revisit when that is resolved.
+
+- `TestUtils.luau` — shared `T.pass / T.fail / T.expect`
+- `TestPhase1.luau` — Phase 1 assertions
+- `TestPhaseN.luau` — one file per phase, added when the phase is built
+- `TestRunner.server.luau` — RemoteEvent dispatcher; add each new phase with `if cmd == "phaseN" then`
+
+### Stub / API-driven stimulation
+
+To test code paths that would normally be triggered by LLM output or user input, call the relevant module directly from the test. Do not simulate UI clicks or player input. For example, to test `SectorApplier.apply`, construct a `SectorState` table inline and call `apply()` — then inspect workspace to confirm geometry changed.
+
+---
+
+## Plans
+
+Implementation plans live in `plans/` at the project root (e.g., `plans/phase2.md`). Each plan covers the deliverable, files to change, test cases, and verification steps. Plans are committed alongside code so the project is restartable from any phase.

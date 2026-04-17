@@ -24,6 +24,7 @@ local TrackGenerator = {}
 
 local CORNER_SPAN = (Constants.CORNER_RADIUS * 2) + Constants.TRACK_WIDTH
 local TRACK_Y = Constants.TRACK_THICKNESS * 0.5
+local CAR_RIDE_Y = Constants.TRACK_THICKNESS + Constants.CAR_HEIGHT * 0.5
 local TOP_ROW_Z = 0
 local BOTTOM_ROW_Z = CORNER_SPAN
 
@@ -154,11 +155,16 @@ end
 
 function TrackGenerator.canonicalStart(): CFrame
 	local sectors = buildSectors(Constants.TRACK_ROWS, Constants.TRACK_COLS)
-	return sectors[1].entry
+	local entry = sectors[1].entry
+	return CFrame.new(entry.Position + Vector3.new(0, CAR_RIDE_Y - TRACK_Y, 0)) * (entry - entry.Position)
 end
 
 function TrackGenerator.getLapWaypoints(sectors: { SectorDescriptor }): { CFrame }
 	local waypoints = {}
+
+	local function ridePos(p: Vector3): Vector3
+		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
+	end
 
 	for _, rawSector in ipairs(sectors) do
 		local sector = rawSector :: SectorDescriptorInternal
@@ -169,17 +175,17 @@ function TrackGenerator.getLapWaypoints(sectors: { SectorDescriptor }): { CFrame
 			local arcDirection = (sector.entry.LookVector + sector.exit.LookVector)
 			local arcMidpoint = sector.center + arcDirection.Unit * Constants.CORNER_RADIUS
 
-			table.insert(waypoints, buildLapWaypoint(entryPosition, sector.entry.LookVector))
-			table.insert(waypoints, buildLapWaypoint(arcMidpoint, (exitPosition - entryPosition).Unit))
-			table.insert(waypoints, buildLapWaypoint(exitPosition, sector.exit.LookVector))
+			table.insert(waypoints, buildLapWaypoint(ridePos(entryPosition), sector.entry.LookVector))
+			table.insert(waypoints, buildLapWaypoint(ridePos(arcMidpoint), (exitPosition - entryPosition).Unit))
+			table.insert(waypoints, buildLapWaypoint(ridePos(exitPosition), sector.exit.LookVector))
 		else
 			local midpoint = sector.entry.Position:Lerp(sector.exit.Position, 0.5)
-			table.insert(waypoints, buildLapWaypoint(midpoint, sector.entry.LookVector))
-			table.insert(waypoints, buildLapWaypoint(sector.exit.Position, sector.exit.LookVector))
+			table.insert(waypoints, buildLapWaypoint(ridePos(midpoint), sector.entry.LookVector))
+			table.insert(waypoints, buildLapWaypoint(ridePos(sector.exit.Position), sector.exit.LookVector))
 		end
 	end
 
-	table.insert(waypoints, buildLapWaypoint(sectors[1].entry.Position, sectors[1].entry.LookVector))
+	table.insert(waypoints, buildLapWaypoint(ridePos(sectors[1].entry.Position), sectors[1].entry.LookVector))
 	return waypoints
 end
 

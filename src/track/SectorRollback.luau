@@ -2,7 +2,8 @@
 -- Restores a sector to its last committed state after a failed job.
 -- prd_plan.md §7.6, Phase 2
 
-local Types = require(script.Parent.Parent.common.Types)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local SectorRegistry = require(script.Parent.SectorRegistry)
 local SectorApplier = require(script.Parent.SectorApplier)
 

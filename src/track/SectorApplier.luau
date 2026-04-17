@@ -2,30 +2,51 @@
 -- Materialises a SectorState into live geometry via MCP.
 -- All geometry changes to the Workspace go through here.
 -- prd_plan.md §17 Phase 2, §16.2
---
--- NOTE: This module calls the appropriate mechanic builder (RampJumpBuilder etc.)
--- and issues MCP commands to update physical parts in the Workspace.
--- It does NOT create Luau scripts in Studio — those live in /src.
 
-local Types = require(script.Parent.Parent.common.Types)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 
 type SectorState = Types.SectorState
 
 local SectorApplier = {}
 
+-- Clear all mechanic geometry for a sector, leaving only the flat baseline part.
+function SectorApplier.clear(sector_id: number)
+	local folderName = string.format("Sector_%02d", sector_id)
+	local track = workspace:FindFirstChild("Track")
+	local folder = track and track:FindFirstChild(folderName)
+	assert(folder, "SectorApplier.clear: folder not found: " .. folderName)
+	local baseline = string.format("Sector_%02d_Straight", sector_id)
+	for _, child in ipairs(folder:GetChildren()) do
+		if child.Name ~= baseline then
+			child:Destroy()
+		end
+	end
+	print("[TRACE] clear sector=" .. sector_id)
+end
+
 -- Apply a SectorState to the live Workspace.
 -- Tears down existing geometry for that sector then rebuilds from state.
 -- Called both for the initial working proposal and for each repair step.
 function SectorApplier.apply(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
-	-- TODO: Phase 2/4 — dispatch to the appropriate mechanic builder,
-	-- then apply pads via PadBuilder.
-	error("SectorApplier.apply: not yet implemented")
-end
-
--- Clear all geometry for a sector, leaving only the flat baseline surface.
-function SectorApplier.clear(sector_id: number)
-	-- TODO: Phase 2
-	error("SectorApplier.clear: not yet implemented")
+	SectorApplier.clear(state.sector_id)
+	if state.mechanic == nil then
+		print(string.format("[TRACE] apply sector=%d mechanic=flat", state.sector_id))
+		return
+	end
+	-- Lazy-require builders — they error until Phase 4.
+	local Mechanics = script.Parent.Parent.Mechanics
+	if state.mechanic == "RampJump" then
+		require(Mechanics.RampJumpBuilder).build(state, entryFrame, exitFrame)
+	elseif state.mechanic == "Chicane" then
+		require(Mechanics.ChicaneBuilder).build(state, entryFrame, exitFrame)
+	elseif state.mechanic == "CrestDip" then
+		require(Mechanics.CrestDipBuilder).build(state, entryFrame, exitFrame)
+	else
+		error("unknown mechanic: " .. state.mechanic)
+	end
+	require(Mechanics.PadBuilder).applyPads(state.pads, entryFrame, exitFrame)
+	print(string.format("[TRACE] apply sector=%d mechanic=%s", state.sector_id, state.mechanic))
 end
 
 return SectorApplier

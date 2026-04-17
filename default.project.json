@@ -20,6 +20,14 @@
         "Agent": { "$path": "src/agent" },
         "Orchestrator": { "$path": "src/orchestrator" }
       }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "TrackCamera": {
+          "$path": "src/client/TrackCamera.client.luau"
+        }
+      }
     }
   }
 }

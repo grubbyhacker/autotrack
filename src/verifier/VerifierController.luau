@@ -48,8 +48,28 @@ local function buildFailure(sectorId: number, failureType: Types.FailureType, la
 	}
 end
 
-function VerifierController.runLap(car: BasePart, waypoints: { CFrame }): RunResult
+function VerifierController.runLap(
+	car: BasePart,
+	waypoints: { CFrame },
+	sectors: { any }?,
+	onSectorChange: ((id: number, entering: boolean) -> ())?
+): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
+
+	local waypointSectors: { number }? = nil
+	local currentSectorId: number? = nil
+	if sectors and onSectorChange then
+		waypointSectors = {}
+		for _, sector in ipairs(sectors) do
+			local count = sector.kind == "Corner" and 3 or 2
+			for _ = 1, count do
+				table.insert(waypointSectors :: { number }, sector.id)
+			end
+		end
+		table.insert(waypointSectors :: { number }, (sectors :: { any })[1].id)
+		currentSectorId = (waypointSectors :: { number })[1]
+		onSectorChange(currentSectorId :: number, true)
+	end
 
 	local attachment = Instance.new("Attachment")
 	attachment.Name = "VerifierAttachment"
@@ -95,8 +115,19 @@ function VerifierController.runLap(car: BasePart, waypoints: { CFrame }): RunRes
 		if distanceToTarget <= 10 then
 			waypointIndex += 1
 			if waypointIndex > #waypoints then
+				if waypointSectors and onSectorChange and currentSectorId then
+					onSectorChange(currentSectorId, false)
+				end
 				completed = true
 				break
+			end
+			if waypointSectors and onSectorChange then
+				local newSectorId = (waypointSectors :: { number })[waypointIndex]
+				if newSectorId ~= currentSectorId then
+					onSectorChange(currentSectorId :: number, false)
+					currentSectorId = newSectorId
+					onSectorChange(currentSectorId :: number, true)
+				end
 			end
 			targetPosition = waypoints[waypointIndex].Position
 			toTarget = targetPosition - carPosition
