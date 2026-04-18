@@ -9,6 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Pads = Types.Pads
 
@@ -52,10 +53,14 @@ function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFr
 		pad.TopSurface = Enum.SurfaceType.Smooth
 		pad.BottomSurface = Enum.SurfaceType.Smooth
 		pad.Material = Enum.Material.Neon
-		pad.BrickColor = if padValue == "Boost"
+		local normalized = PadValueUtils.normalize(padValue)
+		local kind = PadValueUtils.kind(normalized)
+		pad.BrickColor = if kind == "Boost"
 			then BrickColor.new("Bright green")
 			else BrickColor.new("Bright red")
-		pad:SetAttribute("PadType", padValue)
+		pad:SetAttribute("PadType", normalized)
+		pad:SetAttribute("PadKind", kind)
+		pad:SetAttribute("PadDelta", PadValueUtils.amount(normalized))
 		pad.Parent = folder
 	end
 

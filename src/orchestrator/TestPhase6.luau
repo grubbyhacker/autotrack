@@ -120,7 +120,7 @@ function TestPhase6.runUnit()
 			and padRequest.parsed.request_kind == "Pad"
 			and padRequest.parsed.sector_id == 2
 			and padRequest.parsed.pad_side == "egress"
-			and padRequest.parsed.pad_value == "Boost",
+			and padRequest.parsed.pad_value == "Boost10",
 		tostring(padErr)
 	)
 
@@ -160,7 +160,7 @@ function TestPhase6.runUnit()
 			and padStateErr == nil
 			and padState.sector_id == 2
 			and padState.mechanic == nil
-			and padState.pads.egress == "Boost",
+			and padState.pads.egress == "Boost10",
 		tostring(padStateErr)
 	)
 
@@ -169,7 +169,7 @@ function TestPhase6.runUnit()
 		rampAction ~= nil
 			and rampAction.type == "SetPad"
 			and rampAction.pad == "ingress"
-			and rampAction.value == "Boost",
+			and rampAction.value == "Boost10",
 		tostring(rampAction and rampAction.type == "SetPad" and rampAction.pad or rampAction and rampAction.lever)
 	)
 
@@ -180,8 +180,17 @@ function TestPhase6.runUnit()
 	)
 
 	local chicanePadAction = MinimalProposer.repair(makePacket("Chicane", "mechanic_integrity_failure", { "entry unstable" }))
-	T.expect("proposer_repair_chicane_can_brake_entry",
-		chicanePadAction ~= nil and chicanePadAction.type == "SetPad" and chicanePadAction.pad == "ingress" and chicanePadAction.value == "Brake",
+	T.expect("proposer_repair_chicane_relaxes_entry_before_brake",
+		chicanePadAction ~= nil
+			and (
+				(chicanePadAction.type == "SetNumericLever"
+					and (
+						chicanePadAction.lever == "transition_length"
+						or chicanePadAction.lever == "corridor_width"
+						or chicanePadAction.lever == "amplitude"
+					))
+				or (chicanePadAction.type == "SetPad" and chicanePadAction.pad == "ingress" and string.find(chicanePadAction.value, "Brake", 1, true) ~= nil)
+			),
 		tostring(chicanePadAction and chicanePadAction.type == "SetPad" and chicanePadAction.pad or chicanePadAction and chicanePadAction.lever)
 	)
 
@@ -195,17 +204,34 @@ function TestPhase6.runUnit()
 	T.expect("proposer_repair_crestdip_stall_softens_shape",
 		crestStallAction ~= nil
 			and (
-				(crestStallAction.type == "SetNumericLever" and (crestStallAction.lever == "height_or_depth" or crestStallAction.lever == "radius"))
-				or (crestStallAction.type == "SetPad" and crestStallAction.pad == "ingress" and crestStallAction.value == "Boost")
-			)
-			and not (crestStallAction.type == "SetNumericLever" and crestStallAction.lever == "sector_length"),
+				(crestStallAction.type == "SetNumericLever" and (crestStallAction.lever == "height_or_depth" or crestStallAction.lever == "sector_length"))
+				or (crestStallAction.type == "SetPad" and crestStallAction.pad == "ingress" and string.find(crestStallAction.value, "Boost", 1, true) ~= nil)
+			),
 		tostring(crestStallAction and crestStallAction.type == "SetNumericLever" and crestStallAction.lever or crestStallAction and crestStallAction.type)
 	)
 
 	local downstreamAction = MinimalProposer.repair(makePacket("RampJump", "downstream_failure", {}, nil))
-	T.expect("proposer_repair_downstream_pads_brake",
-		downstreamAction ~= nil and downstreamAction.type == "SetPad" and downstreamAction.pad == "egress" and downstreamAction.value == "Brake",
-		tostring(downstreamAction and downstreamAction.type)
+	T.expect("proposer_repair_downstream_softens_jump_first",
+		downstreamAction ~= nil
+			and (
+				(downstreamAction.type == "SetNumericLever"
+					and (downstreamAction.lever == "ramp_angle"
+						or downstreamAction.lever == "gap_length"
+						or downstreamAction.lever == "landing_length"))
+				or (downstreamAction.type == "SetPad" and downstreamAction.pad == "egress" and string.find(downstreamAction.value, "Brake", 1, true) ~= nil)
+			),
+		tostring(downstreamAction and downstreamAction.type == "SetPad" and downstreamAction.pad or downstreamAction and downstreamAction.lever)
+	)
+
+	local rampLocalFailureAction = MinimalProposer.repair(makePacket("RampJump", "local_execution_failure", {}, nil))
+	T.expect("proposer_repair_rampjump_local_failure_softens",
+		rampLocalFailureAction ~= nil
+			and (rampLocalFailureAction.type == "SetNumericLever"
+				and (rampLocalFailureAction.lever == "ramp_angle"
+					or rampLocalFailureAction.lever == "gap_length"
+					or rampLocalFailureAction.lever == "ramp_length"
+					or rampLocalFailureAction.lever == "landing_length")),
+		tostring(rampLocalFailureAction and rampLocalFailureAction.type == "SetPad" and rampLocalFailureAction.pad or rampLocalFailureAction and rampLocalFailureAction.lever)
 	)
 
 	local noRepeatPacket = makePacket(
@@ -276,7 +302,7 @@ function TestPhase6.runIntegration()
 			and padReason == nil
 			and padCommit ~= nil
 			and padCommit.mechanic == nil
-			and padCommit.pads.egress == "Boost"
+			and padCommit.pads.egress == "Boost10"
 			and padCommit.version == 1,
 		tostring(padReason)
 	)

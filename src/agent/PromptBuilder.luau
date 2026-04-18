@@ -8,6 +8,7 @@ local HttpService = game:GetService("HttpService")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Request = Types.Request
 type FailurePacket = Types.FailurePacket
@@ -24,7 +25,8 @@ function PromptBuilder.systemPrompt(): string
 		"You are the AutoTrack sector-design agent.",
 		"Return JSON only with no prose outside the JSON object.",
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
-		"Pad values: None, Boost, Brake.",
+		"Pad values: " .. table.concat(PadValueUtils.allowedValues(), ", ") .. ".",
+		"You may remove a pad by setting it to None, or adjust strength by changing between the allowed pad values.",
 		"Initial proposal must return a full SectorState for the requested sector and mechanic.",
 		"Repair step must return exactly one AgentAction and a short explanation.",
 	}, "\n")
@@ -43,7 +45,7 @@ function PromptBuilder.initialProposal(request: Request): string
 			"Target pad value: " .. tostring(request.parsed.pad_value),
 			"Return a full SectorState for the sector with the requested pad change applied.",
 			"Return JSON matching:",
-			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"None|Boost|Brake","egress":"None|Boost|Brake"},"version":number}]],
+			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25","egress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25"},"version":number}]],
 		}, "\n")
 	end
 
@@ -59,7 +61,7 @@ function PromptBuilder.initialProposal(request: Request): string
 		"Legal numeric levers: " .. encode(levers),
 		"Default params: " .. encode(defaults),
 		"Return JSON matching:",
-		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"None|Boost|Brake","egress":"None|Boost|Brake"},"version":number}]],
+		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25","egress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25"},"version":number}]],
 	}, "\n")
 end
 

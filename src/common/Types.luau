@@ -6,7 +6,7 @@ export type SectorKind = "Straight" | "Corner"
 export type SectorMeta = { id: number, kind: SectorKind, entry: CFrame, exit: CFrame, partGroup: Folder? }
 
 export type Mechanic = "RampJump" | "Chicane" | "CrestDip"
-export type PadValue = "None" | "Boost" | "Brake"
+export type PadValue = "None" | "Boost5" | "Boost10" | "Boost25" | "Brake5" | "Brake10" | "Brake25"
 export type PadSide = "ingress" | "egress"
 
 export type ParsedRequest = {
@@ -75,12 +75,16 @@ export type RunMetrics = {
 	target_left_offset: number?,
 	target_right_offset: number?,
 	target_lateral_band_changes: number?,
+	target_entered: boolean?,
+	target_exited: boolean?,
+	target_progress: number?,
 	lap_time: number,
 	slowdown_ratio: number,
 	-- Phase 11 additions (optional, zero-default if MetricCollector unchanged)
 	hang_time: number?,
 	peak_lateral_g: number?,
 	target_min_speed: number?,
+	target_apex_min_speed: number?,
 }
 
 -- Phase 11 fitness signal. See plans/phase11.md §3.1, §10 and
@@ -104,6 +108,7 @@ export type FailureType =
 export type FailureInfo = {
 	type: FailureType,
 	sector_id: number,
+	detail: string?,
 }
 
 export type RunResult = {

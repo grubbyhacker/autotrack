@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type AgentAction = Types.AgentAction
 type SectorState = Types.SectorState
@@ -41,9 +42,8 @@ function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?
 		if action.pad ~= "ingress" and action.pad ~= "egress" then
 			return false, "pad must be 'ingress' or 'egress'"
 		end
-		local valid = { None = true, Boost = true, Brake = true }
-		if not valid[action.value] then
-			return false, "pad value must be None, Boost, or Brake"
+		if type(action.value) ~= "string" or not PadValueUtils.isValid(action.value) then
+			return false, "pad value must be None, Boost5/10/25, or Brake5/10/25"
 		end
 	else
 		return false, "unknown action type: " .. tostring((action :: any).type)
@@ -66,11 +66,11 @@ function ActionValidator.validateSectorState(state: SectorState): (boolean, stri
 	if type(state.pads) ~= "table" then
 		return false, "pads must be a table"
 	end
-	if state.pads.ingress ~= "None" and state.pads.ingress ~= "Boost" and state.pads.ingress ~= "Brake" then
-		return false, "pads.ingress must be None, Boost, or Brake"
+	if type(state.pads.ingress) ~= "string" or not PadValueUtils.isValid(state.pads.ingress) then
+		return false, "pads.ingress must be None, Boost5/10/25, or Brake5/10/25"
 	end
-	if state.pads.egress ~= "None" and state.pads.egress ~= "Boost" and state.pads.egress ~= "Brake" then
-		return false, "pads.egress must be None, Boost, or Brake"
+	if type(state.pads.egress) ~= "string" or not PadValueUtils.isValid(state.pads.egress) then
+		return false, "pads.egress must be None, Boost5/10/25, or Brake5/10/25"
 	end
 	if type(state.version) ~= "number" then
 		return false, "version must be a number"

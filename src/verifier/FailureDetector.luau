@@ -19,12 +19,16 @@ local _stallStartTime: number? = nil
 local _noProgressStartTime: number? = nil
 local _noProgressStartPosition: Vector3? = nil
 local _overturnStartTime: number? = nil
+local _invalidAttitudeStartTime: number? = nil
+local _backwardStartTime: number? = nil
 
 function FailureDetector.reset()
 	_stallStartTime = nil
 	_noProgressStartTime = nil
 	_noProgressStartPosition = nil
 	_overturnStartTime = nil
+	_invalidAttitudeStartTime = nil
+	_backwardStartTime = nil
 end
 
 -- Called each frame during a run.
@@ -39,28 +43,55 @@ function FailureDetector.check(
 	isAirborne: boolean,
 	speed: number,
 	angularSpeed: number,
-	upDot: number
+	upDot: number,
+	forwardDot: number?
 ): FailureInfo?
 	if elapsed >= Constants.LAP_TIMEOUT then
-		return { type = "system_failure", sector_id = currentSector }
+		return { type = "system_failure", sector_id = currentSector, detail = "lap_timeout" }
 	end
 
 	if carPosition.Y < -50 then
-		return { type = "local_execution_failure", sector_id = currentSector }
+		return { type = "local_execution_failure", sector_id = currentSector, detail = "fell_below_kill_plane" }
 	end
 
 	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.TRACK_WIDTH * 1.5 then
-		return { type = "local_execution_failure", sector_id = currentSector }
+		return { type = "local_execution_failure", sector_id = currentSector, detail = "off_track" }
 	end
 
-	if upDot <= Constants.OVERTURN_UP_DOT_THRESHOLD and speed <= Constants.STALL_SPEED_THRESHOLD then
+	if upDot <= Constants.OVERTURN_UP_DOT_THRESHOLD then
 		if _overturnStartTime == nil then
 			_overturnStartTime = elapsed
-		elseif elapsed - _overturnStartTime >= Constants.OVERTURN_TIME_THRESHOLD then
-			return { type = "local_execution_failure", sector_id = currentSector }
+		else
+			local threshold = if isAirborne
+				then Constants.AIRBORNE_OVERTURN_TIME_THRESHOLD
+				else Constants.OVERTURN_TIME_THRESHOLD
+			if elapsed - _overturnStartTime >= threshold then
+				return { type = "local_execution_failure", sector_id = currentSector, detail = "overturn" }
+			end
 		end
 	else
 		_overturnStartTime = nil
+	end
+
+	if not isAirborne and upDot <= Constants.INVALID_ATTITUDE_UP_DOT_THRESHOLD then
+		if _invalidAttitudeStartTime == nil then
+			_invalidAttitudeStartTime = elapsed
+		elseif elapsed - _invalidAttitudeStartTime >= Constants.INVALID_ATTITUDE_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "invalid_attitude" }
+		end
+	else
+		_invalidAttitudeStartTime = nil
+	end
+
+	local facingDot = forwardDot or 1
+	if not isAirborne and facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD then
+		if _backwardStartTime == nil then
+			_backwardStartTime = elapsed
+		elseif elapsed - _backwardStartTime >= Constants.BACKWARD_FACING_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "backward_facing" }
+		end
+	else
+		_backwardStartTime = nil
 	end
 
 	if speed <= Constants.STALL_SPEED_THRESHOLD and angularSpeed <= Constants.CRASH_ANGULAR_SPEED_THRESHOLD then
@@ -69,7 +100,7 @@ function FailureDetector.check(
 			_noProgressStartPosition = carPosition
 		elseif (carPosition - _noProgressStartPosition).Magnitude <= Constants.NO_PROGRESS_DISTANCE_THRESHOLD
 			and elapsed - _noProgressStartTime >= Constants.NO_PROGRESS_TIME_THRESHOLD then
-			return { type = "local_execution_failure", sector_id = currentSector }
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "no_progress" }
 		elseif (carPosition - _noProgressStartPosition).Magnitude > Constants.NO_PROGRESS_DISTANCE_THRESHOLD then
 			_noProgressStartTime = elapsed
 			_noProgressStartPosition = carPosition
@@ -83,7 +114,7 @@ function FailureDetector.check(
 		if _stallStartTime == nil then
 			_stallStartTime = elapsed
 		elseif elapsed - _stallStartTime >= Constants.STALL_TIME_THRESHOLD then
-			return { type = "local_execution_failure", sector_id = currentSector }
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "stall" }
 		end
 	else
 		_stallStartTime = nil

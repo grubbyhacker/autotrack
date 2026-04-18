@@ -638,6 +638,40 @@ local function waitForIdle(timeoutSeconds: number): boolean
 	return JobRunner.isBusy() == false
 end
 
+local function summariseAttempts(job): string
+	if job == nil or job.attempts == nil or #job.attempts == 0 then
+		return "no-attempts"
+	end
+
+	local parts = {}
+	for _, attempt in ipairs(job.attempts) do
+		local result = attempt.result or {}
+		local failure = result.failure
+		local hints = attempt.hints or {}
+		local action = attempt.action
+		local actionText = "initial"
+		if action ~= nil then
+			if action.type == "SetPad" then
+				actionText = string.format("%s=%s", action.pad, action.value)
+			else
+				actionText = string.format("%s=%s", action.lever, tostring(action.value))
+			end
+		end
+		table.insert(parts, string.format(
+			"%d:%s/%s/%s action=%s progress=%.2f hints=%s",
+			attempt.attempt_index,
+			tostring(result.success),
+			tostring(failure and failure.type or "none"),
+			tostring(failure and failure.detail or "-"),
+			actionText,
+			result.metrics and result.metrics.target_progress or 0,
+			if #hints > 0 then table.concat(hints, "&") else "-"
+		))
+	end
+
+	return table.concat(parts, " || ")
+end
+
 function TestPhase11.runIntegration()
 	local ReplicatedStorage2 = game:GetService("ReplicatedStorage")
 	local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
@@ -664,21 +698,26 @@ function TestPhase11.runIntegration()
 	local job = JobRunner.getLastJob()
 	T.expect("phase11_extreme_job_committed",
 		job ~= nil and job.final_status == "committed",
-		"expected committed; got " .. tostring(job and job.final_status))
+		"expected committed; got " .. tostring(job and job.final_status) .. " :: " .. summariseAttempts(job))
 
 	local state = SectorRegistry.getCommitted(3)
 	T.expect("phase11_extreme_commit_is_rampjump",
 		state ~= nil and state.mechanic == "RampJump",
-		"expected RampJump commit; got " .. tostring(state and state.mechanic))
+		"expected RampJump commit; got " .. tostring(state and state.mechanic) .. " :: " .. summariseAttempts(job))
 
 	local stateFolder = ReplicatedStorage2:WaitForChild("AutoTrackUIState")
 	T.expect("phase11_extreme_score_published",
 		stateFolder:GetAttribute("last_score_sector") == 3,
-		"expected last_score_sector=3; got " .. tostring(stateFolder:GetAttribute("last_score_sector")))
+		"expected last_score_sector=3; got " .. tostring(stateFolder:GetAttribute("last_score_sector")) .. " :: " .. summariseAttempts(job))
 	local total = stateFolder:GetAttribute("last_score_total") or -1
 	T.expect("phase11_extreme_score_nonzero",
 		type(total) == "number" and total >= 0,
 		"expected numeric score; got " .. tostring(total))
+
+	-- Chicane scoring is verified by unit tests (phase11_chicane_*); the
+	-- integration test omits a separate chicane step to avoid sector-coupling
+	-- issues where the sector 3 jump (committed above) becomes flaky on the
+	-- full lap that tests a downstream sector.
 end
 
 function TestPhase11.run()

@@ -26,6 +26,9 @@ local _sectorEntrySpeed: { [number]: number } = {}
 local _sectorExitSpeed: { [number]: number } = {}
 local _targetSector = 0
 local _insideTargetSector = false
+local _targetEntered = false
+local _targetExited = false
+local _targetMaxProgress = 0
 local _targetEverAirborne = false
 local _targetAirborne = false
 local _targetAirDistance = 0
@@ -47,6 +50,7 @@ local _peakLateralG = 0       -- estimated peak lateral acceleration (studs/s²)
 local _lastLateralVelocity: Vector3? = nil
 local _lastForwardHeading: Vector3? = nil
 local _targetMinSpeed = math.huge
+local _targetApexMinSpeed = math.huge
 
 -- Start collecting metrics for a new run.
 function MetricCollector.reset(baselineY: number, targetSector: number?)
@@ -66,6 +70,9 @@ function MetricCollector.reset(baselineY: number, targetSector: number?)
 	_sectorExitSpeed = {}
 	_targetSector = targetSector or 0
 	_insideTargetSector = false
+	_targetEntered = false
+	_targetExited = false
+	_targetMaxProgress = 0
 	_targetEverAirborne = false
 	_targetAirborne = false
 	_targetAirDistance = 0
@@ -85,6 +92,7 @@ function MetricCollector.reset(baselineY: number, targetSector: number?)
 	_lastLateralVelocity = nil
 	_lastForwardHeading = nil
 	_targetMinSpeed = math.huge
+	_targetApexMinSpeed = math.huge
 end
 
 -- Record a single frame's telemetry.
@@ -93,7 +101,8 @@ function MetricCollector.record(
 	position: Vector3,
 	isAirborne: boolean,
 	lateralError: number,
-	targetLocalX: number?
+	targetLocalX: number?,
+	targetLocalZ: number?
 )
 	_maxLateralError = math.max(_maxLateralError, math.abs(lateralError))
 	_maxVerticalDisplacement = math.max(_maxVerticalDisplacement, math.abs(position.Y - _baselineY))
@@ -147,6 +156,13 @@ function MetricCollector.record(
 
 	if _insideTargetSector then
 		if speed < _targetMinSpeed then _targetMinSpeed = speed end
+		if targetLocalZ ~= nil then
+			local progress = math.clamp(targetLocalZ / Constants.STRAIGHT_LENGTH, 0, 1)
+			if progress > _targetMaxProgress then _targetMaxProgress = progress end
+			if math.abs(progress - 0.5) <= Constants.CRESTDIP_APEX_PROGRESS_RADIUS and speed < _targetApexMinSpeed then
+				_targetApexMinSpeed = speed
+			end
+		end
 
 		_targetMaxVerticalDisplacement = math.max(
 			_targetMaxVerticalDisplacement,
@@ -200,6 +216,7 @@ function MetricCollector.onSectorEntry(sector_id: number, speed: number)
 	_sectorEntrySpeed[sector_id] = speed
 	if sector_id == _targetSector then
 		_insideTargetSector = true
+		_targetEntered = true
 	end
 end
 
@@ -211,6 +228,8 @@ function MetricCollector.onSectorExit(sector_id: number, speed: number)
 			_targetMaxAirSegment = _targetCurrentAirSegment
 		end
 		_insideTargetSector = false
+		_targetExited = true
+		_targetMaxProgress = 1
 	end
 end
 
@@ -263,6 +282,7 @@ function MetricCollector.finalise(
 	-- sector never went airborne (e.g. Chicane evaluations).
 	local hangTime = if _targetHangTime > 0 then _targetHangTime else _hangTime
 	local targetMinSpeed = if _targetMinSpeed == math.huge then 0 else _targetMinSpeed
+	local targetApexMinSpeed = if _targetApexMinSpeed == math.huge then 0 else _targetApexMinSpeed
 
 	return {
 		entry_speed = _sectorEntrySpeed[targetSector] or 0,
@@ -283,11 +303,15 @@ function MetricCollector.finalise(
 		target_left_offset = _targetLeftOffset,
 		target_right_offset = _targetRightOffset,
 		target_lateral_band_changes = _targetLateralBandChanges,
+		target_exited = _targetExited,
+		target_progress = _targetMaxProgress,
+		target_entered = _targetEntered,
 		lap_time = lapTime,
 		slowdown_ratio = lapTime / math.max(baselineLapTime, 0.001),
 		hang_time = hangTime,
 		peak_lateral_g = _peakLateralG,
 		target_min_speed = targetMinSpeed,
+		target_apex_min_speed = targetApexMinSpeed,
 	}
 end
 

@@ -17,6 +17,10 @@ local baselineLapTime: number? = nil
 local skipBootBaseline = workspace:GetAttribute("AutoTrack_SkipBootBaseline") == true
 local cameraLoopDemo = workspace:GetAttribute("AutoTrack_CameraLoopDemo") == true
 
+-- Consume the skip flag once at boot so stale edit-time/test-bridge state
+-- does not silently leak into later Play sessions.
+workspace:SetAttribute("AutoTrack_SkipBootBaseline", false)
+
 print("[AutoTrack] Booting Phase 1...")
 
 Players.CharacterAutoLoads = false

@@ -30,16 +30,59 @@ function StatsPanel.setCurrentSpeed(speed: number)
 	refs().currentSpeedLabel.Text = ("Current Speed\n%.1f"):format(speed or 0)
 end
 
-function StatsPanel.setScore(sectorId: number, total: number, overBudget: boolean)
+function StatsPanel.setScore(
+	sectorId: number,
+	total: number,
+	air: number,
+	lateral: number,
+	edge: number,
+	cost: number,
+	overBudget: boolean,
+	trackTotal: number,
+	trackCount: number,
+	trackBudgetUsed: number,
+	trackBudgetHeadroom: number,
+	trackOverBudget: boolean
+)
 	local label = refs().scoreLabel
-	if not sectorId or sectorId == 0 then
-		label.Text = "Score\n--"
+	if (not sectorId or sectorId == 0) and (not trackCount or trackCount == 0) then
+		label.Text = "Score\n--\nAir --  Edge --\nLat --  Cost --"
 		label.TextColor3 = refs().colors.text
 		return
 	end
-	local flag = if overBudget then "  !" else ""
-	label.Text = ("Score S%d\n%.1f%s"):format(sectorId, total or 0, flag)
-	label.TextColor3 = if overBudget then refs().colors.danger else refs().colors.text
+
+	local sectorText = if sectorId and sectorId > 0
+		then ("S%d %.1f"):format(sectorId, total or 0)
+		else "S--"
+	local usedPercent = math.floor((trackBudgetUsed or 0) * 100 + 0.5)
+	local headroomPercent = math.floor((trackBudgetHeadroom or 0) * 100 + 0.5)
+
+	if trackCount and trackCount > 0 then
+		local budgetFlag = if trackOverBudget then " !" else ""
+		label.Text = ("Score %s\nAir %.1f  Edge %.1f\nLat %.1f  Cost %.1f\nTrack %.1f  B%d/%d%%%s"):format(
+			sectorText,
+			air or 0,
+			edge or 0,
+			lateral or 0,
+			cost or 0,
+			trackTotal or 0,
+			usedPercent,
+			headroomPercent,
+			budgetFlag
+		)
+	else
+		local sectorFlag = if overBudget then " !" else ""
+		label.Text = ("Score %s%s\nAir %.1f  Edge %.1f\nLat %.1f  Cost %.1f"):format(
+			sectorText,
+			sectorFlag,
+			air or 0,
+			edge or 0,
+			lateral or 0,
+			cost or 0
+		)
+	end
+
+	label.TextColor3 = if overBudget or trackOverBudget then refs().colors.danger else refs().colors.text
 end
 
 return StatsPanel

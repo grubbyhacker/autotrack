@@ -140,8 +140,8 @@ function TestPhase4.runPads()
 	T.expect(
 		"pads_boost_and_brake_create_expected_named_parts",
 		ingressPad ~= nil and egressPad ~= nil
-			and ingressPad:GetAttribute("PadType") == "Boost"
-			and egressPad:GetAttribute("PadType") == "Brake",
+			and ingressPad:GetAttribute("PadType") == "Boost10"
+			and egressPad:GetAttribute("PadType") == "Brake10",
 		"expected ingress boost and egress brake pads"
 	)
 
@@ -167,8 +167,8 @@ function TestPhase4.runPads()
 	T.expect(
 		"pads_reapply_replaces_stale_parts",
 		replacedIngressPad ~= nil and replacedEgressPad ~= nil
-			and replacedIngressPad:GetAttribute("PadType") == "Brake"
-			and replacedEgressPad:GetAttribute("PadType") == "Boost",
+			and replacedIngressPad:GetAttribute("PadType") == "Brake10"
+			and replacedEgressPad:GetAttribute("PadType") == "Boost10",
 		"pad reapply did not replace stale parts"
 	)
 
@@ -246,6 +246,15 @@ function TestPhase4.runRampJump()
 		rampLap.metrics.reacquired == true,
 		"rampjump did not reacquire after landing"
 	)
+
+	applyState(makeState(nil, {}, "None", "None"))
+	local restoredBaseline = getPart(folder, string.format("Sector_%02d_Straight", TARGET_SECTOR_ID))
+	T.expect(
+		"rampjump_flat_reapply_restores_baseline",
+		restoredBaseline ~= nil and #folder:GetChildren() == 1,
+		string.format("expected restored baseline after flat reapply; childCount=%d", #folder:GetChildren())
+	)
+
 	local ok, err = pcall(function()
 		SectorApplier.apply(makeState("RampJump", {
 			ramp_angle = 10,
@@ -352,6 +361,12 @@ function TestPhase4.runCrestDip()
 		"crestdip_illegal_length_errors",
 		not crestOk and string.find(tostring(crestErr), "sector_length exceeds STRAIGHT_LENGTH", 1, true) ~= nil,
 		"expected invalid crestdip length to error"
+	)
+	local baselineAfterError = getPart(folder, string.format("Sector_%02d_Straight", TARGET_SECTOR_ID))
+	T.expect(
+		"crestdip_failed_apply_preserves_baseline",
+		baselineAfterError ~= nil and #folder:GetChildren() == 1,
+		string.format("expected preserved baseline after failed apply; childCount=%d", #folder:GetChildren())
 	)
 
 	resetToFlat()

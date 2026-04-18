@@ -23,6 +23,12 @@ local INTEGRITY_EVALUATORS = {
 	CrestDip = CrestDipIntegrity.evaluate,
 }
 
+local RUNTIME_EVALUATORS = {
+	RampJump = RampJumpIntegrity.evaluateRuntime,
+	Chicane = ChicaneIntegrity.evaluateRuntime,
+	CrestDip = CrestDipIntegrity.evaluateRuntime,
+}
+
 local function zeroMetrics(): RunMetrics
 	return {
 		entry_speed = 0,
@@ -41,6 +47,9 @@ local function zeroMetrics(): RunMetrics
 		target_left_offset = 0,
 		target_right_offset = 0,
 		target_lateral_band_changes = 0,
+		target_entered = false,
+		target_exited = false,
+		target_progress = 0,
 		lap_time = 0,
 		slowdown_ratio = 1,
 	}
@@ -91,7 +100,6 @@ function LapEvaluator.preflight(
 			}, hints
 		end
 	end
-
 	return nil, {}
 end
 
@@ -112,8 +120,26 @@ function LapEvaluator.evaluate(
 	-- Reclassify local_execution_failure in a non-target sector as downstream_failure.
 	if lapFailure then
 		local failure = lapFailure
-		if failure.type == "local_execution_failure" and failure.sector_id ~= targetSectorId then
-			failure = { type = "downstream_failure", sector_id = failure.sector_id }
+		if failure.type == "local_execution_failure"
+			and failure.sector_id ~= targetSectorId
+			and metrics.target_entered == true then
+			local runtimeEvaluator = targetState.mechanic and RUNTIME_EVALUATORS[targetState.mechanic]
+			if runtimeEvaluator then
+				local runtimeOk, runtimeHints = runtimeEvaluator(metrics)
+				if not runtimeOk then
+					return {
+						success = false,
+						failure = {
+							type = "mechanic_integrity_failure",
+							sector_id = targetSectorId,
+						},
+						metrics = metrics,
+					}, runtimeHints
+				end
+			end
+			if metrics.target_exited == true then
+				failure = { type = "downstream_failure", sector_id = failure.sector_id }
+			end
 		end
 		return { success = false, failure = failure, metrics = metrics }, earlyHints or {}
 	end
@@ -162,13 +188,32 @@ function LapEvaluator.buildFailurePacket(
 	hints: { string }
 ): Types.FailurePacket
 	local legalLevers = LevelMappings.NUMERIC_LEVERS[state.mechanic] or {}
+	local diagnosticHints = {}
+	for _, hint in ipairs(hints) do
+		table.insert(diagnosticHints, hint)
+	end
+
+	local detail = result.failure and result.failure.detail
+	if type(detail) == "string" and detail ~= "" then
+		local seen = false
+		for _, hint in ipairs(diagnosticHints) do
+			if hint == detail then
+				seen = true
+				break
+			end
+		end
+		if not seen then
+			table.insert(diagnosticHints, detail)
+		end
+	end
+
 	return {
 		request       = request,
 		sector_state  = state,
 		attempt_index = attemptIndex,
 		last_action   = lastAction,
 		run_result    = result,
-		diagnostics   = { failure_sector = failureSector, hints = hints },
+		diagnostics   = { failure_sector = failureSector, hints = diagnosticHints },
 		legal_actions = { numeric_levers = legalLevers, pads = { "ingress", "egress" } },
 	}
 end

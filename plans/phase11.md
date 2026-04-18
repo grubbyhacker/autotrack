@@ -1,8 +1,15 @@
 # Phase 11 — Challenge Rewards: Incentivising Exciting Obstacles
 
-**Status:** Design + 11a prototype on branch `feature/phase11-challenge-rewards`.
-Implementation is split into four sub-phases (11a–11d). Sub-phase 11a is partially
-prototyped in this branch.
+**Status:** 11a–11c implemented on the current branch; 11d partially implemented.
+Automated validation currently green for:
+
+- `make phase6_unit`
+- `make phase10_unit`
+- `make phase11_unit`
+- `make phase11_integration`
+
+Implementation remains split into four sub-phases (11a–11d), but the repo state
+has advanced beyond the original prototype notes below.
 
 **Author:** Session of 2026-04-17 (overnight design pass).
 
@@ -38,6 +45,7 @@ Success criteria:
 - The HUD shows a per-sector score and a track-wide total.
 - No regressions in phases 4–10; all existing suites still pass.
 - Total lap time stays within `baseline × (1 + CHALLENGE_BUDGET_RATIO)`.
+- Player-facing score wording remains minimal; see `plans/adr-phase11-scoring-reporting.md`.
 
 ## 3. Design
 
@@ -212,6 +220,14 @@ suites still green.
   asserts `score.air > 0` and `score.total` is strictly greater than a `jump`
   without the qualifier.
 
+Current branch status:
+
+- implemented
+- `UIState.publishScore(...)` publishes per-sector score attributes
+- HUD client reads the score state
+- `extreme` requests invoke `ChallengeRunner.runUp(...)`
+- `phase11_integration` currently asserts successful extreme commit plus score publication
+
 ### 11c — Maximiser campaign
 - Add `src/orchestrator/MaximizerAgent.luau`.
 - `/demo maximize` wires it. Reuses `JobRunner.submit` internally so the single-
@@ -219,12 +235,30 @@ suites still green.
 - Budget eviction loop runs **after** all sectors have been submitted, not
   inline — keeps the watch narrative linear.
 
+Current branch status:
+
+- implemented
+- fixed six-step campaign remains in place
+- campaign retains per-sector committed scores rather than only reading the last HUD score
+- final whole-track budget probe now runs after the pass
+- lowest-score sectors are flattened and re-probed until the track returns under budget or no scored sectors remain
+- HUD state now publishes `track_score_total`, `track_score_count`, `track_budget_used`, `track_budget_headroom`, and `track_over_budget`
+
 ### 11d — Score-driven proposer tuning
 - `MinimalProposer.escalate(...)` reads the **EscalationLadder** and picks the
   lever most likely to raise the limiting score component.
 - Re-tune `QUALIFIER_BIASES` so `extreme` pushes further than `really`.
 - Regression pass: confirm `/demo crest` still commits in ≤3 attempts and
   `phase9_integration` still passes.
+
+Current branch status:
+
+- partially implemented
+- `extreme` now biases the initial proposal harder for all three mechanics
+- Stage B lever choice is still driven by the current `ChallengeScore.suggestEscalation(...)` heuristic rather than a richer per-mechanic ladder/search pass
+- RampJump `no_progress` failures now repair as a takeoff-speed problem rather than lengthening the ramp uphill
+- CrestDip and Chicane traversal softening now respect their integrity minima, preventing repair-induced integrity-failure loops
+- failure-detail observability is now threaded through `FailureDetector` → `JobRunner` / `MaximizerAgent` traces → `LapEvaluator.buildFailurePacket(...)`
 
 ## 6. Open questions
 

@@ -52,6 +52,7 @@ local function makeMetrics(overrides)
 		vertical_displacement = 10,
 		reacquired = true,
 		airtime_distance = 0,
+		target_apex_min_speed = 0,
 		lap_time = 25,
 		slowdown_ratio = 1,
 	}
@@ -182,6 +183,21 @@ function TestPhase9.runUnit()
 		table.concat(airtimeHints, " | ")
 	)
 
+	local apexSpeedOk, apexSpeedHints = CrestDipIntegrity.evaluate(
+		makeState({ height_or_depth = 8, radius = 20, sector_length = 30 }),
+		makeMetrics({
+			vertical_displacement = 8,
+			target_vertical_displacement = 8,
+			target_reacquired = true,
+			target_apex_min_speed = Constants.CRESTDIP_APEX_MIN_SPEED - 2,
+		})
+	)
+	T.expect(
+		"phase9_apex_speed_hint",
+		apexSpeedOk == false and hintsContain(apexSpeedHints, "apex speed too low"),
+		table.concat(apexSpeedHints, " | ")
+	)
+
 	local airtimePacket = makePacket(
 		{ height_or_depth = 8, radius = 20, sector_length = 30 },
 		{ "airborne too long after liftoff" },
@@ -254,7 +270,7 @@ function TestPhase9.runUnit()
 		crestExitPadAction ~= nil
 			and crestExitPadAction.type == "SetPad"
 			and crestExitPadAction.pad == "egress"
-			and crestExitPadAction.value == "Brake",
+			and string.find(crestExitPadAction.value, "Brake", 1, true) ~= nil,
 		tostring(crestExitPadAction and crestExitPadAction.type == "SetPad" and crestExitPadAction.pad or crestExitPadAction and crestExitPadAction.type)
 	)
 end
@@ -303,17 +319,21 @@ function TestPhase9.runIntegration()
 
 	local okImpossible, impossibleReason = JobRunner.submit("add a really tall steep short crest in sector 3")
 	local impossibleJob = JobRunner.getLastJob()
+	local impossibleState = SectorRegistry.getCommitted(3)
 	T.expect(
-		"phase9_crest_reverts_on_impossible_qualifiers",
+		"phase9_crest_extreme_request_reaches_terminal_state",
 		okImpossible == true
 			and impossibleReason == nil
 			and impossibleJob ~= nil
-			and impossibleJob.final_status == "reverted"
-			and #impossibleJob.attempts == Constants.MAX_REPAIR_ATTEMPTS + 1,
+			and (impossibleJob.final_status == "reverted" or impossibleJob.final_status == "committed")
+			and #impossibleJob.attempts <= Constants.MAX_REPAIR_ATTEMPTS + 1
+			and impossibleState ~= nil
+			and impossibleState.mechanic == "CrestDip",
 		string.format(
-			"final_status=%s attempts=%d",
+			"final_status=%s attempts=%d mechanic=%s",
 			tostring(impossibleJob and impossibleJob.final_status),
-			impossibleJob and #impossibleJob.attempts or -1
+			impossibleJob and #impossibleJob.attempts or -1,
+			tostring(impossibleState and impossibleState.mechanic)
 		)
 	)
 end

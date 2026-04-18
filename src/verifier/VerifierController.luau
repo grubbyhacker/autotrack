@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local FailureDetector = require(script.Parent.FailureDetector)
 local MetricCollector = require(script.Parent.MetricCollector)
 local ReacquireDetector = require(script.Parent.ReacquireDetector)
@@ -35,6 +36,26 @@ local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, a
 	attachment:Destroy()
 	linearVelocity:Destroy()
 	alignOrientation:Destroy()
+end
+
+local function finishFailure(
+	attachment: Attachment,
+	linearVelocity: LinearVelocity,
+	alignOrientation: AlignOrientation,
+	failure,
+	metrics,
+	carPosition: Vector3,
+	recentTrail
+)
+	cleanup(attachment, linearVelocity, alignOrientation)
+	return {
+		success = false,
+		failure = failure,
+		metrics = metrics,
+		failure_position = carPosition,
+		final_position = carPosition,
+		trajectory_tail = recentTrail,
+	}
 end
 
 local function getActivePad(currentSectorId: number?): (string?, string?, string?)
@@ -271,15 +292,19 @@ function VerifierController.runLap(
 		local speed = car.AssemblyLinearVelocity.Magnitude
 		local angularSpeed = car.AssemblyAngularVelocity.Magnitude
 		local upDot = carCFrame.UpVector:Dot(Vector3.yAxis)
+		local forwardDot = carCFrame.LookVector:Dot(orientationDirection)
 		local lateralOffset = projectedPoint - carPosition
 		local lateralError = lateralOffset.Magnitude
 		local targetLocalX = nil
+		local targetLocalZ = nil
 		if currentSectorId == targetSectorId and targetEntryFrame ~= nil then
-			targetLocalX = targetEntryFrame:PointToObjectSpace(carPosition).X
+			local targetLocalPoint = targetEntryFrame:PointToObjectSpace(carPosition)
+			targetLocalX = targetLocalPoint.X
+			targetLocalZ = targetLocalPoint.Z
 		end
 
 		recordTrail(carPosition)
-		MetricCollector.record(speed, carPosition, isAirborne, lateralError, targetLocalX)
+		MetricCollector.record(speed, carPosition, isAirborne, lateralError, targetLocalX, targetLocalZ)
 
 		if currentSectorId == targetSectorId and targetState and targetState.mechanic == "CrestDip" then
 			local targetMetrics = MetricCollector.getTargetMetrics()
@@ -287,29 +312,24 @@ function VerifierController.runLap(
 				and targetMetrics.airborne
 				and targetMetrics.airtime_distance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE then
 				local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
-				cleanup(attachment, linearVelocity, alignOrientation)
-				return {
-					success = false,
-					failure = { type = "mechanic_integrity_failure", sector_id = targetSectorId or currentSectorId or 1 },
-					metrics = metrics,
-					integrity_hints = { "airborne too long after liftoff" },
-					failure_position = carPosition,
-					final_position = carPosition,
-					trajectory_tail = recentTrail,
-				}
+				local failureResult = finishFailure(
+					attachment,
+					linearVelocity,
+					alignOrientation,
+					{ type = "mechanic_integrity_failure", sector_id = targetSectorId or currentSectorId or 1 },
+					metrics,
+					carPosition,
+					recentTrail
+				)
+				failureResult.integrity_hints = { "airborne too long after liftoff" }
+				return failureResult
 			end
 		end
 
 		local padToken, padType, padName = getActivePad(currentSectorId)
 		if padToken ~= nil then
 			if padToken ~= activePadToken then
-				if padType == "Boost" then
-					persistentTargetSpeed = Constants.CAR_TARGET_SPEED + Constants.BOOST_SPEED_DELTA
-				elseif padType == "Brake" then
-					persistentTargetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + Constants.BRAKE_SPEED_DELTA)
-				else
-					persistentTargetSpeed = Constants.CAR_TARGET_SPEED
-				end
+				persistentTargetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + PadValueUtils.speedDelta(tostring(padType)))
 				car.AssemblyLinearVelocity = moveDirection * persistentTargetSpeed
 				if padName == "EgressPad" then
 					padEffectSectorHopsRemaining = 2
@@ -351,19 +371,20 @@ function VerifierController.runLap(
 			isAirborne,
 			speed,
 			angularSpeed,
-			upDot
+			upDot,
+			forwardDot
 		)
 		if failure then
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
-			cleanup(attachment, linearVelocity, alignOrientation)
-			return {
-				success = false,
-				failure = failure,
-				metrics = metrics,
-				failure_position = carPosition,
-				final_position = carPosition,
-				trajectory_tail = recentTrail,
-			}
+			return finishFailure(
+				attachment,
+				linearVelocity,
+				alignOrientation,
+				failure,
+				metrics,
+				carPosition,
+				recentTrail
+			)
 		end
 
 		RunService.Heartbeat:Wait()

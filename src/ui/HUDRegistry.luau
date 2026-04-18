@@ -256,10 +256,10 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local scoreLabel = createLabel(rightRail, {
 		Position = UDim2.new(0, 20, 0, 222),
-		Size = UDim2.new(1, -40, 0, 46),
+		Size = UDim2.new(1, -40, 0, 88),
 		Text = "Score\n--",
 		TextColor3 = TEXT,
-		TextSize = 18,
+		TextSize = 16,
 		Font = Enum.Font.GothamMedium,
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})

@@ -8,6 +8,7 @@ local ChicaneIntegrity = require(script.Parent.Parent.Integrity.ChicaneIntegrity
 local MinimalProposer = require(script.Parent.MinimalProposer)
 local JobRunner = require(script.Parent.JobRunner)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
+local FailureDetector = require(script.Parent.Parent.Verifier.FailureDetector)
 
 local TestPhase10 = {}
 
@@ -37,6 +38,15 @@ local function makeState(mechanic, params)
 	}
 end
 
+local function makeStateWithPads(mechanic, params, pads)
+	local state = makeState(mechanic, params)
+	if pads then
+		state.pads.ingress = pads.ingress or state.pads.ingress
+		state.pads.egress = pads.egress or state.pads.egress
+	end
+	return state
+end
+
 local function makeMetrics(overrides)
 	local metrics = {
 		entry_speed = 40,
@@ -56,7 +66,7 @@ local function makeMetrics(overrides)
 	return metrics
 end
 
-local function makePacket(mechanic, params, hints, failureType, lastAction, metricsOverrides)
+local function makePacket(mechanic, params, hints, failureType, lastAction, metricsOverrides, failureDetail)
 	return {
 		request = makeRequest("phase10", mechanic),
 		sector_state = makeState(mechanic, params),
@@ -64,7 +74,7 @@ local function makePacket(mechanic, params, hints, failureType, lastAction, metr
 		last_action = lastAction,
 		run_result = {
 			success = false,
-			failure = { type = failureType or "mechanic_integrity_failure", sector_id = 3 },
+			failure = { type = failureType or "mechanic_integrity_failure", sector_id = 3, detail = failureDetail },
 			metrics = makeMetrics(metricsOverrides),
 		},
 		diagnostics = { failure_sector = 3, hints = hints or {} },
@@ -274,18 +284,171 @@ function TestPhase10.runUnit()
 		tostring(jumpLandingAction and jumpLandingAction.type == "SetPad" and jumpLandingAction.pad or jumpLandingAction and jumpLandingAction.lever)
 	)
 
+	local jumpMidProgressAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{},
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.6 }
+	))
+	T.expect(
+		"phase10_proposer_jump_mid_progress_picks_boost_first",
+		jumpMidProgressAction ~= nil
+			and jumpMidProgressAction.type == "SetPad"
+			and jumpMidProgressAction.pad == "ingress"
+			and string.find(jumpMidProgressAction.value, "Boost", 1, true) ~= nil,
+		tostring(jumpMidProgressAction and jumpMidProgressAction.type == "SetPad" and jumpMidProgressAction.pad or jumpMidProgressAction and jumpMidProgressAction.lever)
+	)
+
+	local jumpEarlyProgressAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{},
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.1 }
+	))
+	T.expect(
+		"phase10_proposer_jump_early_progress_prefers_geometry",
+		jumpEarlyProgressAction ~= nil
+			and jumpEarlyProgressAction.type == "SetNumericLever"
+			and (jumpEarlyProgressAction.lever == "ramp_length" or jumpEarlyProgressAction.lever == "ramp_angle"),
+		tostring(jumpEarlyProgressAction and jumpEarlyProgressAction.type == "SetNumericLever" and jumpEarlyProgressAction.lever or jumpEarlyProgressAction and jumpEarlyProgressAction.type)
+	)
+
+	local jumpNoProgressAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{ "no_progress" },
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.08 },
+		"no_progress"
+	))
+	T.expect(
+		"phase10_proposer_jump_no_progress_picks_boost_first",
+		jumpNoProgressAction ~= nil
+			and jumpNoProgressAction.type == "SetPad"
+			and jumpNoProgressAction.pad == "ingress"
+			and string.find(jumpNoProgressAction.value, "Boost", 1, true) ~= nil,
+		tostring(jumpNoProgressAction and jumpNoProgressAction.type == "SetPad" and jumpNoProgressAction.pad or jumpNoProgressAction and jumpNoProgressAction.lever)
+	)
+
+	local jumpNoProgressFollowupAction = MinimalProposer.repair({
+		request = makeRequest("phase10", "RampJump"),
+		sector_state = makeStateWithPads(
+			"RampJump",
+			{ ramp_angle = 28, ramp_length = 16, gap_length = 12, landing_length = 14 },
+			{ ingress = "Boost25", egress = "None" }
+		),
+		attempt_index = 0,
+		last_action = { type = "SetPad", pad = "ingress", value = "Boost25" },
+		run_result = {
+			success = false,
+			failure = { type = "local_execution_failure", sector_id = 3, detail = "no_progress" },
+			metrics = makeMetrics({ target_progress = 0.08 }),
+		},
+		diagnostics = { failure_sector = 3, hints = { "no_progress" } },
+		legal_actions = {
+			numeric_levers = LevelMappings.NUMERIC_LEVERS.RampJump,
+			pads = { "ingress", "egress" },
+		},
+	})
+	T.expect(
+		"phase10_proposer_jump_no_progress_does_not_lengthen_ramp",
+		jumpNoProgressFollowupAction ~= nil
+			and jumpNoProgressFollowupAction.type == "SetNumericLever"
+			and (
+				(jumpNoProgressFollowupAction.lever == "ramp_length" and jumpNoProgressFollowupAction.value < 16)
+				or (jumpNoProgressFollowupAction.lever == "gap_length" and jumpNoProgressFollowupAction.value < 12)
+				or (jumpNoProgressFollowupAction.lever == "ramp_angle" and jumpNoProgressFollowupAction.value > 28)
+			),
+		tostring(jumpNoProgressFollowupAction and jumpNoProgressFollowupAction.type == "SetNumericLever" and (jumpNoProgressFollowupAction.lever .. "=" .. tostring(jumpNoProgressFollowupAction.value)) or jumpNoProgressFollowupAction and jumpNoProgressFollowupAction.type)
+	)
+
 	local chicaneInstabilityAction = MinimalProposer.repair(makePacket(
 		"Chicane",
 		{ amplitude = 8, transition_length = 15, corridor_width = 14 },
 		{ "entry unstable" }
 	))
 	T.expect(
-		"phase10_proposer_chicane_instability_picks_brake_before_geometry",
+		"phase10_proposer_chicane_instability_relaxes_geometry_on_early_progress",
 		chicaneInstabilityAction ~= nil
-			and chicaneInstabilityAction.type == "SetPad"
-			and chicaneInstabilityAction.pad == "ingress"
-			and string.find(chicaneInstabilityAction.value, "Brake", 1, true) ~= nil,
+			and chicaneInstabilityAction.type == "SetNumericLever"
+			and (
+				chicaneInstabilityAction.lever == "transition_length"
+				or chicaneInstabilityAction.lever == "corridor_width"
+				or chicaneInstabilityAction.lever == "amplitude"
+			),
 		tostring(chicaneInstabilityAction and chicaneInstabilityAction.type == "SetPad" and chicaneInstabilityAction.pad or chicaneInstabilityAction and chicaneInstabilityAction.lever)
+	)
+
+	local chicaneNoProgressAction = MinimalProposer.repair(makePacket(
+		"Chicane",
+		{ amplitude = 6, transition_length = 15, corridor_width = 10 },
+		{ "no_progress" },
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.5 },
+		"no_progress"
+	))
+	T.expect(
+		"phase10_proposer_chicane_no_progress_brakes_or_opens_line",
+		chicaneNoProgressAction ~= nil
+			and (
+				(chicaneNoProgressAction.type == "SetPad" and chicaneNoProgressAction.pad == "ingress" and string.find(chicaneNoProgressAction.value, "Brake", 1, true) ~= nil)
+				or (chicaneNoProgressAction.type == "SetNumericLever" and (
+					chicaneNoProgressAction.lever == "corridor_width"
+					or chicaneNoProgressAction.lever == "transition_length"
+				))
+			),
+		tostring(chicaneNoProgressAction and chicaneNoProgressAction.type == "SetPad" and chicaneNoProgressAction.pad or chicaneNoProgressAction and chicaneNoProgressAction.lever)
+	)
+
+	local chicaneFloorAction = MinimalProposer.repair({
+		request = makeRequest("phase10", "Chicane"),
+		sector_state = makeState("Chicane", { amplitude = Constants.CHICANE_MIN_LATERAL_DISPLACEMENT, transition_length = 15, corridor_width = 10 }),
+		attempt_index = 0,
+		last_action = { type = "SetPad", pad = "ingress", value = "Brake10" },
+		run_result = {
+			success = false,
+			failure = { type = "local_execution_failure", sector_id = 3, detail = "no_progress" },
+			metrics = makeMetrics({ target_progress = 0.5 }),
+		},
+		diagnostics = { failure_sector = 3, hints = { "no_progress" } },
+		legal_actions = {
+			numeric_levers = LevelMappings.NUMERIC_LEVERS.Chicane,
+			pads = { "ingress", "egress" },
+		},
+	})
+	T.expect(
+		"phase10_proposer_chicane_no_progress_respects_amplitude_floor",
+		chicaneFloorAction ~= nil
+			and not (
+				chicaneFloorAction.type == "SetNumericLever"
+				and chicaneFloorAction.lever == "amplitude"
+				and chicaneFloorAction.value < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
+			),
+		tostring(chicaneFloorAction and chicaneFloorAction.type == "SetNumericLever" and (chicaneFloorAction.lever .. "=" .. tostring(chicaneFloorAction.value)) or chicaneFloorAction and chicaneFloorAction.type)
+	)
+
+	FailureDetector.reset()
+	local offTrackFailure = FailureDetector.check(
+		0.1,
+		3,
+		Vector3.new(Constants.TRACK_WIDTH * 2, 0, 0),
+		Vector3.zero,
+		false,
+		20,
+		0,
+		1,
+		1
+	)
+	T.expect(
+		"phase10_failure_detector_reports_detail",
+		offTrackFailure ~= nil and offTrackFailure.detail == "off_track",
+		tostring(offTrackFailure and offTrackFailure.detail)
 	)
 
 	-- Mid-sector stall (progress=0.5): boost is the right first lever.
@@ -304,6 +467,24 @@ function TestPhase10.runUnit()
 			and crestStallBoostAction.pad == "ingress"
 			and crestStallBoostAction.value == "Boost10",
 		tostring(crestStallBoostAction and crestStallBoostAction.type == "SetPad" and crestStallBoostAction.pad or crestStallBoostAction and crestStallBoostAction.lever)
+	)
+
+	local crestNoProgressAction = MinimalProposer.repair(makePacket(
+		"CrestDip",
+		{ height_or_depth = 10, radius = 20, sector_length = 24 },
+		{ "no_progress" },
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.2 },
+		"no_progress"
+	))
+	T.expect(
+		"phase10_proposer_crestdip_no_progress_picks_boost_first",
+		crestNoProgressAction ~= nil
+			and crestNoProgressAction.type == "SetPad"
+			and crestNoProgressAction.pad == "ingress"
+			and string.find(crestNoProgressAction.value, "Boost", 1, true) ~= nil,
+		tostring(crestNoProgressAction and crestNoProgressAction.type == "SetPad" and crestNoProgressAction.pad or crestNoProgressAction and crestNoProgressAction.lever)
 	)
 
 	-- Early-sector crash (progress=0.1): geometry is the blocking constraint;
@@ -352,6 +533,33 @@ function TestPhase10.runUnit()
 				or (crestStallFollowupAction.lever == "height_or_depth" and crestStallFollowupAction.value <= 7)
 			),
 		tostring(crestStallFollowupAction and crestStallFollowupAction.type == "SetNumericLever" and crestStallFollowupAction.lever .. "=" .. tostring(crestStallFollowupAction.value) or crestStallFollowupAction and crestStallFollowupAction.type)
+	)
+
+	local crestFloorAction = MinimalProposer.repair({
+		request = makeRequest("phase10", "CrestDip"),
+		sector_state = makeState("CrestDip", { height_or_depth = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT, radius = 20, sector_length = 24 }),
+		attempt_index = 3,
+		last_action = { type = "SetPad", pad = "ingress", value = "Boost10" },
+		run_result = {
+			success = false,
+			failure = { type = "local_execution_failure", sector_id = 3, detail = "no_progress" },
+			metrics = makeMetrics({ target_progress = 0.2 }),
+		},
+		diagnostics = { failure_sector = 3, hints = { "no_progress" } },
+		legal_actions = {
+			numeric_levers = LevelMappings.NUMERIC_LEVERS.CrestDip,
+			pads = { "ingress", "egress" },
+		},
+	})
+	T.expect(
+		"phase10_proposer_crestdip_no_progress_respects_height_floor",
+		crestFloorAction ~= nil
+			and not (
+				crestFloorAction.type == "SetNumericLever"
+				and crestFloorAction.lever == "height_or_depth"
+				and crestFloorAction.value < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+			),
+		tostring(crestFloorAction and crestFloorAction.type == "SetNumericLever" and (crestFloorAction.lever .. "=" .. tostring(crestFloorAction.value)) or crestFloorAction and crestFloorAction.type)
 	)
 
 	local jumpDownstreamAction = MinimalProposer.repair(makePacket(

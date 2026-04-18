@@ -50,7 +50,16 @@ local function render()
 	StatsPanel.setScore(
 		stateFolder:GetAttribute("last_score_sector") or 0,
 		stateFolder:GetAttribute("last_score_total") or 0,
-		stateFolder:GetAttribute("last_score_over_budget") == true
+		stateFolder:GetAttribute("last_score_air") or 0,
+		stateFolder:GetAttribute("last_score_lateral") or 0,
+		stateFolder:GetAttribute("last_score_near_miss") or 0,
+		stateFolder:GetAttribute("last_score_time_cost") or 0,
+		stateFolder:GetAttribute("last_score_over_budget") == true,
+		stateFolder:GetAttribute("track_score_total") or 0,
+		stateFolder:GetAttribute("track_score_count") or 0,
+		stateFolder:GetAttribute("track_budget_used") or 0,
+		stateFolder:GetAttribute("track_budget_headroom") or 1,
+		stateFolder:GetAttribute("track_over_budget") == true
 	)
 end
 
@@ -77,7 +86,16 @@ local observedAttributes = {
 	"log_4",
 	"last_score_sector",
 	"last_score_total",
+	"last_score_air",
+	"last_score_lateral",
+	"last_score_near_miss",
+	"last_score_time_cost",
 	"last_score_over_budget",
+	"track_score_total",
+	"track_score_count",
+	"track_budget_used",
+	"track_budget_headroom",
+	"track_over_budget",
 }
 
 for _, attributeName in ipairs(observedAttributes) do

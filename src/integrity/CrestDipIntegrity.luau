@@ -43,9 +43,14 @@ function CrestDipIntegrity.evaluateRuntime(
 	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
 	local airtimeDistance = metrics.target_airtime_distance or metrics.airtime_distance or 0
 	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
+	local apexMinSpeed = metrics.target_apex_min_speed or 0
 
 	if verticalDisplacement < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
 		table.insert(hints, "runtime vertical displacement too small")
+	end
+
+	if apexMinSpeed > 0 and apexMinSpeed < Constants.CRESTDIP_APEX_MIN_SPEED then
+		table.insert(hints, "crest apex speed too low")
 	end
 
 	-- Airtime cap — only enforced if the car actually left the surface.

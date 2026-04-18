@@ -145,6 +145,34 @@ local function crestSofteningDeltas(attemptIndex: number): (number, number)
 	return lengthDelta, heightDelta
 end
 
+local function targetProgress(packet: FailurePacket): number
+	return packet.run_result.metrics.target_progress or 0
+end
+
+local function rampAngleFloor(): number
+	return 5
+end
+
+local function rampLengthFloor(): number
+	return 4
+end
+
+local function gapLengthFloor(): number
+	return math.max(2, Constants.RAMPJUMP_MIN_GAP)
+end
+
+local function landingLengthFloor(): number
+	return 4
+end
+
+local function chicaneAmplitudeFloor(): number
+	return Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
+end
+
+local function crestHeightFloor(): number
+	return Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+end
+
 function MinimalProposer.initial(request: Request): (SectorState?, string?)
 	local committed = SectorRegistry.getCommitted(request.parsed.sector_id)
 	if not committed then
@@ -219,14 +247,48 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 		table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
 		explanation = "downstream instability detected; added egress brake"
 	elseif state.mechanic == "RampJump" then
+		local progress = targetProgress(packet)
+		local failureDetail = string.lower(tostring(failure.detail or ""))
+		local stalledOnTakeoff = string.find(hintsText, "no_progress", 1, true) ~= nil
+			or string.find(hintsText, "stall", 1, true) ~= nil
+			or failureDetail == "no_progress"
+			or failureDetail == "stall"
+		local unstableOnTakeoff = failureDetail == "invalid_attitude"
+			or failureDetail == "overturn"
+			or failureDetail == "backward_facing"
 		if failure.type == "local_execution_failure" then
-			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) - 5) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(2, (params.gap_length or 0) - 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(1, (params.ramp_length or 0) + 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(2, (params.landing_length or 0) + 2) })
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			explanation = "jump traversal was unstable; softened the jump"
+			if stalledOnTakeoff then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 4) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "jump bogged down on takeoff; boosted entry and shortened the launch"
+			elseif unstableOnTakeoff and progress < 0.30 then
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
+				explanation = "jump takeoff attitude was unstable; softened the ramp while preserving launch speed"
+			elseif progress >= 0.30 then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "jump reached the launch but lacked clean takeoff; boosted entry and steepened ramp"
+			else
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "jump geometry blocked launch; extended and steepened the takeoff"
+			end
 		elseif string.find(hintsText, "never became airborne", 1, true) then
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) + 5) })
@@ -241,22 +303,33 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			explanation = "jump fell short; shortened the gap"
 		elseif string.find(hintsText, "reacquire", 1, true)
 			or string.find(hintsText, "reacquisition", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) - 5) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(2, (params.gap_length or 0) - 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(2, (params.landing_length or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
 			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
 			explanation = "landing was unstable; softened the exit"
 		else
-			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) - 5) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(2, (params.gap_length or 0) - 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(2, (params.landing_length or 0) + 2) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			explanation = "jump was unstable; softened the landing"
+			if progress >= 0.30 then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) + 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(1, (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(2, (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(2, (params.landing_length or 0) + 2) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				explanation = "jump was marginal at takeoff; pushed launch speed before softening the landing"
+			else
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(1, (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(1, (params.ramp_angle or 0) + 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(2, (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(2, (params.landing_length or 0) + 2) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				explanation = "jump was unstable before takeoff; adjusted launch geometry"
+			end
 		end
 	elseif state.mechanic == "Chicane" then
 		if string.find(hintsText, "lateral displacement", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(1, (params.amplitude or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2) })
 			table.insert(candidates, {
 				type = "SetNumericLever",
 				lever = "corridor_width",
@@ -264,7 +337,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			})
 			explanation = "chicane is too shallow; increased amplitude"
 		elseif string.find(hintsText, "curvature", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(1, (params.amplitude or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2) })
 			table.insert(candidates, {
 				type = "SetNumericLever",
 				lever = "transition_length",
@@ -279,7 +352,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 			explanation = "chicane needs more turn severity; sharpened the S"
 		elseif string.find(hintsText, "alternation", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(1, (params.amplitude or 0) + 1) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 1) })
 			table.insert(candidates, {
 				type = "SetNumericLever",
 				lever = "transition_length",
@@ -292,37 +365,75 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			})
 			explanation = "chicane did not switch sides strongly enough; tightened the S"
 		else
-			-- Pads first: slowing the car before the chicane is less destructive
-			-- than immediately softening the geometry of an extreme proposal.
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "transition_length",
-				value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "corridor_width",
-				value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
-			})
-			table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(1, (params.amplitude or 0) - 2) })
-			explanation = "entry was unstable; adding brake pad before relaxing shape"
+			local progress = (packet.run_result.metrics.target_progress or 0)
+			local stalledInChicane = string.find(hintsText, "no_progress", 1, true) ~= nil
+				or string.find(hintsText, "stall", 1, true) ~= nil
+			if progress < 0.30 then
+				-- Early entry failure: open the line before we sacrifice speed.
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "transition_length",
+					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "corridor_width",
+					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
+				})
+				table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2) })
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				explanation = "chicane too sharp for entry; relaxed geometry first"
+			elseif stalledInChicane then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "corridor_width",
+					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "transition_length",
+					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
+				})
+				table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				explanation = "chicane overloaded the car; slowed entry and opened the line"
+			else
+				-- Car made real progress into the chicane but failed mid-traverse:
+				-- entry speed is the issue. Brake pads come before geometry.
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "transition_length",
+					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "corridor_width",
+					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
+				})
+				table.insert(candidates, { type = "SetNumericLever", lever = "amplitude", value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2) })
+				explanation = "entry was unstable; adding brake pad before relaxing shape"
+			end
 		end
 	elseif state.mechanic == "CrestDip" then
 		local sectorLengthCap = Constants.STRAIGHT_LENGTH - 10
 		local softenLengthDelta, softenHeightDelta = crestSofteningDeltas(packet.attempt_index or 0)
+		local stalledOnCrest = string.find(hintsText, "no_progress", 1, true) ~= nil
+			or string.find(hintsText, "stall", 1, true) ~= nil
 		if string.find(hintsText, "airborne too long", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) - 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 10) })
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
 			explanation = "car flew too far; softened the crest"
 		elseif string.find(hintsText, "curvature", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.max(12, (params.sector_length or 0) - 10) })
 			explanation = "crest too gentle; sharpened the curve"
 		elseif string.find(hintsText, "vertical displacement", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
 			explanation = "crest or dip is too subtle; raised the peak"
 		elseif string.find(hintsText, "reacquire", 1, true)
@@ -330,15 +441,25 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 8) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) - 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2) })
 			explanation = "reacquisition unstable; softened the landing"
 		elseif failure.type == "local_execution_failure" then
-			-- If the car failed early in the sector (< 30% progress) the crest
-			-- geometry is the blocking constraint — boost cannot overcome a near-
-			-- vertical face. Skip straight to shape softening so the repair budget
-			-- is not wasted on pads that cannot fix the problem.
 			local progress = (packet.run_result.metrics.target_progress or 0)
-			if progress < 0.30 then
+			if stalledOnCrest then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "height_or_depth",
+					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "sector_length",
+					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+				})
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "crest climb bled off too much speed; boosted entry and lowered the peak"
+			elseif progress < 0.30 then
 				table.insert(candidates, {
 					type = "SetNumericLever",
 					lever = "sector_length",
@@ -347,7 +468,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				table.insert(candidates, {
 					type = "SetNumericLever",
 					lever = "height_or_depth",
-					value = math.max(2, (params.height_or_depth or 0) - softenHeightDelta),
+					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
 				})
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
@@ -362,13 +483,13 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				table.insert(candidates, {
 					type = "SetNumericLever",
 					lever = "height_or_depth",
-					value = math.max(2, (params.height_or_depth or 0) - softenHeightDelta),
+					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
 				})
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
 				explanation = "the crest stalled the car; boosted entry and softened the feature"
 			end
 		else
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 4) })
 		end
 	else

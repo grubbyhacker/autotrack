@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Request = Types.Request
 
@@ -119,10 +120,16 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		local pattern = "%f[%a]" .. token .. "%f[%A]"
 		if string.find(lowered, pattern) then
 			sawPadToken = true
-			if padValue ~= nil and padValue ~= mappedValue then
+			local resolvedValue = mappedValue
+			if mappedValue ~= "None" then
+				local amountMatch = string.match(lowered, pattern .. "%s*([%+%-]?%d+)")
+				local amount = tonumber(amountMatch or "")
+				resolvedValue = PadValueUtils.fromKindAmount(mappedValue, amount)
+			end
+			if padValue ~= nil and padValue ~= resolvedValue then
 				return nil, "ambiguous pad value"
 			end
-			padValue = mappedValue
+			padValue = resolvedValue
 		end
 	end
 

@@ -89,11 +89,14 @@ local busy = false
 
 local function executeCommand(command)
 	busy = true
+	local priorSkipBootBaseline = workspace:GetAttribute("AutoTrack_SkipBootBaseline")
 
 	local ok, result = pcall(function()
 		workspace:SetAttribute("AutoTrack_SkipBootBaseline", command.boot_mode == "skip_baseline")
 		return StudioTestService:ExecutePlayModeAsync(command)
 	end)
+
+	workspace:SetAttribute("AutoTrack_SkipBootBaseline", priorSkipBootBaseline)
 
 	local payload = normaliseResult(command, ok, result)
 	local postOk, postErr = pcall(function()

@@ -90,7 +90,8 @@ function TestPhase3.run()
 			true,
 			0,
 			0,
-			-1
+			-1,
+			1
 		)
 		if overturnedFailure then
 			break
@@ -100,6 +101,102 @@ function TestPhase3.run()
 		"failure_overturned_car_detected",
 		overturnedFailure ~= nil and overturnedFailure.type == "local_execution_failure",
 		tostring(overturnedFailure and overturnedFailure.type)
+	)
+
+	FailureDetector.reset()
+	local slidingOverturnedFailure = nil
+	for _, elapsed in ipairs({ 0, 0.4, 0.8, 1.0 }) do
+		slidingOverturnedFailure = FailureDetector.check(
+			elapsed,
+			3,
+			Vector3.new(elapsed * 12, 3, 0),
+			Vector3.new(elapsed * 12, 3, 0),
+			false,
+			Constants.CAR_TARGET_SPEED,
+			0.2,
+			-1,
+			1
+		)
+		if slidingOverturnedFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_sliding_overturned_car_detected",
+		slidingOverturnedFailure ~= nil and slidingOverturnedFailure.type == "local_execution_failure",
+		tostring(slidingOverturnedFailure and slidingOverturnedFailure.type)
+	)
+
+	FailureDetector.reset()
+	local airborneSomersaultFailure = nil
+	for _, elapsed in ipairs({ 0, 0.15, 0.35, 0.5 }) do
+		airborneSomersaultFailure = FailureDetector.check(
+			elapsed,
+			3,
+			Vector3.new(elapsed * 20, 12, 0),
+			Vector3.new(elapsed * 20, 12, 0),
+			true,
+			Constants.CAR_TARGET_SPEED,
+			3.5,
+			-1,
+			0.2
+		)
+		if airborneSomersaultFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_airborne_somersault_detected",
+		airborneSomersaultFailure ~= nil and airborneSomersaultFailure.type == "local_execution_failure",
+		tostring(airborneSomersaultFailure and airborneSomersaultFailure.type)
+	)
+
+	FailureDetector.reset()
+	local sideRolledFailure = nil
+	for _, elapsed in ipairs({ 0, 0.2, 0.4, 0.6 }) do
+		sideRolledFailure = FailureDetector.check(
+			elapsed,
+			2,
+			Vector3.new(elapsed * 10, 3, 0),
+			Vector3.new(elapsed * 10, 3, 0),
+			false,
+			Constants.CAR_TARGET_SPEED,
+			0.2,
+			0.0,
+			1
+		)
+		if sideRolledFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_side_rolled_car_detected",
+		sideRolledFailure ~= nil and sideRolledFailure.type == "local_execution_failure",
+		tostring(sideRolledFailure and sideRolledFailure.type)
+	)
+
+	FailureDetector.reset()
+	local backwardFacingFailure = nil
+	for _, elapsed in ipairs({ 0, 0.2, 0.4, 0.6, 0.8 }) do
+		backwardFacingFailure = FailureDetector.check(
+			elapsed,
+			2,
+			Vector3.new(elapsed * 10, 3, 0),
+			Vector3.new(elapsed * 10, 3, 0),
+			false,
+			Constants.CAR_TARGET_SPEED,
+			0.2,
+			1,
+			-1
+		)
+		if backwardFacingFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_backward_facing_car_detected",
+		backwardFacingFailure ~= nil and backwardFacingFailure.type == "local_execution_failure",
+		tostring(backwardFacingFailure and backwardFacingFailure.type)
 	)
 
 	VerifierCar.reset(TrackGenerator.canonicalStart())

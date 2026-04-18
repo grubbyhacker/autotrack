@@ -35,8 +35,12 @@ local function makeMetrics(overrides)
 		target_left_offset = overrides.target_left_offset,
 		target_right_offset = overrides.target_right_offset,
 		target_lateral_band_changes = overrides.target_lateral_band_changes,
+		target_entered = if overrides.target_entered ~= nil then overrides.target_entered else true,
+		target_exited = if overrides.target_exited ~= nil then overrides.target_exited else true,
+		target_progress = if overrides.target_progress ~= nil then overrides.target_progress else 1,
 		lap_time               = overrides.lap_time or 25,
 		slowdown_ratio         = overrides.slowdown_ratio or 1,
+		target_apex_min_speed  = overrides.target_apex_min_speed,
 	}
 end
 
@@ -214,6 +218,14 @@ local function testCrestDip()
 	)
 	T.expect("crestdip_fail_no_reacquire", ok == false and #hints > 0,
 		"expected fail when reacquired=false")
+
+	-- fail: crest top crossed too slowly
+	ok, hints = CrestDipIntegrity.evaluate(
+		makeCrestDipState(),
+		makeMetrics({ vertical_displacement = 5, reacquired = true, target_apex_min_speed = Constants.CRESTDIP_APEX_MIN_SPEED - 1 })
+	)
+	T.expect("crestdip_fail_apex_speed", ok == false and #hints > 0,
+		"expected fail when crest apex speed is below minimum")
 end
 
 -- ── LapEvaluator.evaluate unit tests ─────────────────────────────────────────
@@ -235,6 +247,27 @@ local function testEvaluator()
 		and #hints == 0,
 		"expected local_execution_failure to take precedence, got: " .. tostring(result.failure and result.failure.type)
 	)
+
+	-- upstream traversal failure before reaching the target must stay traversal,
+	-- not get reclassified into a bogus target integrity failure.
+	result, hints = LapEvaluator.evaluate(
+		{ type = "local_execution_failure", sector_id = 1, detail = "no_progress" },
+		makeCrestDipState(),
+		makeMetrics({
+			target_entered = false,
+			target_exited = false,
+			target_progress = 0,
+			target_vertical_displacement = 0,
+			target_reacquired = true,
+		}),
+		2
+	)
+	T.expect("evaluator_upstream_failure_not_reclassified_before_target_entry",
+		result.success == false
+		and result.failure ~= nil
+		and result.failure.type == "local_execution_failure"
+		and result.failure.sector_id == 1,
+		"expected upstream local_execution_failure to survive before target entry")
 
 	-- mechanic_integrity_failure — hints returned
 	result, hints = LapEvaluator.evaluate(
@@ -267,7 +300,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		{ type = "local_execution_failure", sector_id = 5 },
 		makeRampJumpState(),
-		makeMetrics(),
+		makeMetrics({ target_airborne = true, target_air_distance = 10, target_reacquired = true }),
 		2
 	)
 	T.expect("evaluator_downstream_reclassify",
@@ -277,6 +310,46 @@ local function testEvaluator()
 		and result.failure.sector_id == 5,
 		"expected downstream_failure in sector 5, got: " .. tostring(result.failure and result.failure.type)
 	)
+
+	-- if target-sector runtime telemetry already proves the RampJump is bad,
+	-- preserve that as mechanic_integrity_failure instead of washing it into
+	-- downstream_failure.
+	result, hints = LapEvaluator.evaluate(
+		{ type = "local_execution_failure", sector_id = 5 },
+		makeRampJumpState(),
+		makeMetrics({ target_airborne = false, target_air_distance = 0, target_reacquired = true }),
+		2
+	)
+	T.expect("evaluator_target_runtime_overrides_downstream",
+		result.success == false
+		and result.failure ~= nil
+		and result.failure.type == "mechanic_integrity_failure"
+		and result.failure.sector_id == 2
+		and #hints > 0,
+		"expected target mechanic_integrity_failure, got: " .. tostring(result.failure and result.failure.type))
+
+	result, hints = LapEvaluator.evaluate(
+		{ type = "local_execution_failure", sector_id = 1 },
+		makeRampJumpState(),
+		makeMetrics({
+			airborne = true,
+			air_distance = 10,
+			reacquired = true,
+			target_entered = false,
+			target_exited = false,
+			target_progress = 0,
+			target_airborne = nil,
+			target_air_distance = nil,
+			target_reacquired = nil,
+		}),
+		2
+	)
+	T.expect("evaluator_pre_target_failure_stays_non_target",
+		result.success == false
+		and result.failure ~= nil
+		and result.failure.sector_id == 1
+		and result.failure.type == "local_execution_failure",
+		"expected non-target failure to remain non-target before target entry")
 end
 
 -- ── LapEvaluator.buildFailurePacket unit tests ───────────────────────────────

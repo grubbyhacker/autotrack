@@ -62,4 +62,9 @@ function RuntimeContext.getBaselineLapTime(): number
 	return _state.baselineLapTime
 end
 
+function RuntimeContext.setBaselineLapTime(seconds: number)
+	assert(seconds ~= nil, "RuntimeContext.setBaselineLapTime: seconds missing")
+	_state.baselineLapTime = seconds
+end
+
 return RuntimeContext

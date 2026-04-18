@@ -99,6 +99,19 @@ function UIState.init(baselineLapTime: number)
 		error_text = "",
 		failure_banner_text = "",
 		failure_banner_visible = false,
+		last_score_sector = 0,
+		last_score_total = 0,
+		last_score_air = 0,
+		last_score_lateral = 0,
+		last_score_near_miss = 0,
+		last_score_time_cost = 0,
+		last_score_budget_used = 0,
+		last_score_over_budget = false,
+		track_score_total = 0,
+		track_score_count = 0,
+		track_budget_used = 0,
+		track_budget_headroom = 1,
+		track_over_budget = false,
 	})
 	setLogs()
 	FailureMarker.hide()
@@ -263,6 +276,20 @@ function UIState.publishScore(sectorId: number, score)
 		last_score_budget_used = score.budget_used,
 		last_score_over_budget = score.over_budget,
 	})
+end
+
+function UIState.publishTrackScore(total: number, sectorCount: number, budgetUsed: number, budgetHeadroom: number, overBudget: boolean)
+	setAttributes({
+		track_score_total = total or 0,
+		track_score_count = sectorCount or 0,
+		track_budget_used = budgetUsed or 0,
+		track_budget_headroom = budgetHeadroom or 0,
+		track_over_budget = overBudget == true,
+	})
+end
+
+function UIState.resetTrackScore()
+	UIState.publishTrackScore(0, 0, 0, 1, false)
 end
 
 function UIState.setBaselineLapTime(seconds: number)

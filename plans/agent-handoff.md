@@ -19,7 +19,22 @@
 | 11a | Complete — ChallengeScore telemetry, scoring, and automated Phase 11 coverage |
 | 11b | Complete — Stage B challenge-up via `extreme` qualifier + per-sector HUD score publication |
 | 11c | Complete — `/demo maximize` campaign with retained sector scores, final budget probe, and eviction loop |
-| 11d | Partial — `extreme` opening proposals are now biased harder; escalation/search remains simple |
+| 11d | Partial — integration green again after RampJump `no_progress` repair fix; escalation/search still remains simple |
+
+## Scoring ADR
+
+Phase 11 scoring/reporting terminology is now written down in:
+
+- `plans/adr-phase11-scoring-reporting.md`
+
+Use that as the canonical human-readable explanation of:
+
+- `Air`
+- `Lateral`
+- `Edge` (player-facing name for internal `near_miss`)
+- `Cost`
+
+The HUD is intentionally minimal; the ADR carries the fuller wording.
 
 ---
 
@@ -967,9 +982,12 @@ failures.
 
 ### Status at checkpoint
 
-- `make phase10_integration`: PASS (both tests)
+- `make phase10_unit`: PASS
+- `make phase6_unit`: PASS
+- `make phase11_unit`: PASS
 - `make phase11_integration`: PASS (all 5 tests)
-- All changes are **uncommitted** (still in the working tree on `feature/phase11-challenge-rewards`)
+- All changes are still **uncommitted** on `feature/phase11-challenge-rewards`
+- The integration suite still only exercises the sector 3 extreme jump path. Chicane scoring remains unit-covered only, because the earlier downstream-sector integration step was removed to avoid sector-coupling between multiple full-lap obstacle jobs in one test run.
 
 ### Root cause: chicane was "pathologically easy" AND "unoptimizable"
 
@@ -1007,14 +1025,98 @@ Two separate bugs conspired:
 
 ### For the next agent
 
-The chicane optimization path is now sound. Recommended next steps toward a good `/demo maximize` e2e demo:
+#### Immediate: preserve the fixed integration behavior
 
-1. Commit all working-tree changes (a single commit is fine; they all belong together as "11d chicane + jump repair fixes")
-2. Run `/demo maximize` in Studio and verify:
-   - Chicane sectors score progressively higher through challenge-up (watch HUD log for `Escalate ... ACCEPT` lines)
-   - RampJump sectors show "never became airborne" repairing correctly (ramp_angle climbing, not falling)
-   - Campaign aggregate score is non-trivial
-3. If the e2e demo looks good, prepare a PR against main
+The sector 3 extreme jump was failing with repeated:
+```
+local_execution_failure / no_progress / target_progress=0.08
+```
+The important lesson is that this is a **speed-bleed** failure at takeoff, not a geometry-too-short failure. A previous repair ladder responded by lengthening the ramp repeatedly, which only compounded the problem by bleeding more momentum uphill.
+
+The current fix in `MinimalProposer.luau` is:
+
+- `no_progress` / takeoff stall on RampJump now repairs as:
+  - stronger ingress boost first
+  - then **shorter** ramp
+  - then smaller gap
+  - then steeper angle
+- it no longer lengthens the ramp for this failure mode
+
+This change restored `make phase11_integration` to green.
+
+#### Observability added for future physics work
+
+Physics failures now carry a `FailureInfo.detail` string from `FailureDetector`, currently including:
+
+- `off_track`
+- `overturn`
+- `invalid_attitude`
+- `backward_facing`
+- `no_progress`
+- `stall`
+- `fell_below_kill_plane`
+- `lap_timeout`
+
+`JobRunner` and `MaximizerAgent` traces now include `failure_detail=...`, and `LapEvaluator.buildFailurePacket(...)` threads that detail into repair diagnostics so the proposer can branch on it.
+
+#### Additional repair-policy lessons from the current session
+
+1. **Do not soften below the integrity floor.**
+
+Traversal-repair branches were allowed to reduce:
+
+- `CrestDip.height_or_depth` below `CRESTDIP_MIN_VERTICAL_DISPLACEMENT`
+- `Chicane.amplitude` below `CHICANE_MIN_LATERAL_DISPLACEMENT`
+
+That created exactly the bad loop the user reported:
+
+- first a traversal/local-execution failure
+- then repeated mechanic-integrity failures caused by the repair itself
+
+The current repair ladders clamp those levers to the mechanic integrity minima.
+
+2. **`no_progress` is a distinct failure class, not just generic local execution.**
+
+For both `RampJump` and `CrestDip`, `no_progress` means the car bled off too much speed before completing the obstacle. It should not be treated the same as a geometry-overload crash.
+
+Current behavior:
+
+- `RampJump.no_progress`:
+  - ingress boost first
+  - then shorter ramp / smaller gap
+  - never lengthen the ramp uphill
+- `CrestDip.no_progress`:
+  - ingress boost first
+  - then lower the peak
+  - then lengthen the feature if needed
+- `Chicane.no_progress`:
+  - brake/open-line repairs
+  - widen corridor / lengthen transitions
+  - never reduce amplitude below the chicane integrity floor
+
+3. **A single attempt must terminate through one failure path.**
+
+`VerifierController.runLap(...)` now routes terminal failures through one helper (`finishFailure(...)`). This does not change external behavior, but it makes the "first terminal failure wins" contract explicit and avoids future drift where multiple exit paths start returning slightly different failure payloads for one attempt.
+
+#### Deferred: upstream failure cascade (hotfix mechanism)
+
+The upstream cascade problem (extreme jump on sector 3 becomes flaky, breaking all downstream sector tests) still has no real fix. The current workaround is "don't test chicane on a downstream sector in the integration suite." The proper fix requires:
+1. Retry from beginning when a pre-target failure occurs (up to a limit, e.g., 2 retries)
+2. Detect that the pre-target failure is in a sector that was escalated (challenge-up) and revert that sector's challenge-up escalation
+3. Hotfix agent: run repair on the newly-reverted upstream sector before retrying the current job
+
+This is complex and was explicitly noted by the user as important but not started.
+
+#### Deferred: flip detection / stronger jump success criteria
+
+The challenge-up stage occasionally accepts a marginal ramp where the car barely clears the gap (or flips during landing). This gets committed, then becomes flaky on subsequent laps. Two fixes needed:
+1. **Flip detection in FailureDetector**: tighten `OVERTURN_UP_DOT_THRESHOLD` and `INVALID_ATTITUDE_UP_DOT_THRESHOLD`, or add a "car flipped during landing" check
+2. **Confidence margin**: in `ChallengeRunner.runUp`, reject an escalation if the car's landing was marginal (e.g., `target_progress` over the landing zone was very low, or `reacquire_distance` was near-max)
+
+Recommended next steps:
+1. Run a live `/demo maximize` session and capture whether any committed Stage B jump later destabilizes the campaign.
+2. If a marginal jump still poisons later laps, add a challenge-up confidence guard rather than relying only on pass/fail.
+3. Commit the current working tree once the live maximize check is acceptable.
 
 ### RampJump "integrity failure after successful-looking jump" clarification
 
