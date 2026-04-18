@@ -40,6 +40,21 @@ local QUALIFIER_WORDS = {
 	deep = true,
 }
 
+local PAD_VALUE_TOKENS = {
+	boost = "Boost",
+	brake = "Brake",
+	clear = "None",
+	remove = "None",
+	none = "None",
+}
+
+local PAD_SIDE_PATTERNS = {
+	{ pattern = "ingress", side = "ingress" },
+	{ pattern = "entry", side = "ingress" },
+	{ pattern = "egress", side = "egress" },
+	{ pattern = "exit", side = "egress" },
+}
+
 local function trim(text: string): string
 	return string.match(text, "^%s*(.-)%s*$") or ""
 end
@@ -94,6 +109,59 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		end
 	end
 
+	local padValue = nil
+	local sawPadToken = false
+	for token, mappedValue in pairs(PAD_VALUE_TOKENS) do
+		local pattern = "%f[%a]" .. token .. "%f[%A]"
+		if string.find(lowered, pattern) then
+			sawPadToken = true
+			if padValue ~= nil and padValue ~= mappedValue then
+				return nil, "ambiguous pad value"
+			end
+			padValue = mappedValue
+		end
+	end
+
+	local padSide = nil
+	local sawPadWord = string.find(lowered, "%f[%a]pad%f[%A]") ~= nil
+	for _, item in ipairs(PAD_SIDE_PATTERNS) do
+		local pattern = "%f[%a]" .. item.pattern .. "%f[%A]"
+		if string.find(lowered, pattern) then
+			if padSide ~= nil and padSide ~= item.side then
+				return nil, "ambiguous pad side"
+			end
+			padSide = item.side
+		end
+	end
+
+	local isPadRequest = sawPadWord or sawPadToken
+
+	if isPadRequest and #mechanicsFound > 0 then
+		return nil, "ambiguous request"
+	end
+
+	if isPadRequest then
+		if padValue == nil then
+			return nil, "pad value missing"
+		end
+		if padSide == nil then
+			return nil, "pad side missing"
+		end
+		return {
+			request_id = requestId,
+			raw_text = cleaned,
+			parsed = {
+				sector_id = sectorId,
+				mechanic = nil,
+				request_kind = "Pad",
+				pad_side = padSide,
+				pad_value = padValue,
+			},
+			qualifiers = {},
+			timestamp = os.time(),
+		}, nil
+	end
+
 	if #mechanicsFound == 0 then
 		return nil, "unsupported mechanic"
 	end
@@ -116,6 +184,9 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		parsed = {
 			sector_id = sectorId,
 			mechanic = mechanicsFound[1],
+			request_kind = "Mechanic",
+			pad_side = nil,
+			pad_value = nil,
 		},
 		qualifiers = qualifiers,
 		timestamp = os.time(),

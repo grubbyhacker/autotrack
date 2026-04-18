@@ -11,7 +11,10 @@ export type PadSide = "ingress" | "egress"
 
 export type ParsedRequest = {
 	sector_id: number,
-	mechanic: Mechanic,
+	mechanic: Mechanic?,
+	request_kind: "Mechanic" | "Pad",
+	pad_side: PadSide?,
+	pad_value: PadValue?,
 }
 
 export type Request = {
@@ -82,6 +85,9 @@ export type RunResult = {
 	success: boolean,
 	failure: FailureInfo?,
 	metrics: RunMetrics,
+	failure_position: Vector3?,
+	final_position: Vector3?,
+	trajectory_tail: { Vector3 }?,
 }
 
 export type Diagnostics = {

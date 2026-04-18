@@ -47,6 +47,11 @@ function RuntimeContext.getCar()
 	return _state.car
 end
 
+function RuntimeContext.setCar(car: BasePart)
+	assert(car ~= nil, "RuntimeContext.setCar: car missing")
+	_state.car = car
+end
+
 function RuntimeContext.getCanonicalStart(): CFrame
 	assert(RuntimeContext.isReady(), "RuntimeContext.getCanonicalStart: runtime context not ready")
 	return _state.canonicalStart

@@ -4,33 +4,12 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PhysicsService    = game:GetService("PhysicsService")
-local Players           = game:GetService("Players")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
--- Isolate the car from the player character so the character cannot ride the car.
+-- Register the verifier car collision group.
 -- Guard with pcall: re-requiring this module in the same session would error on duplicate group names.
 pcall(function()
 	PhysicsService:RegisterCollisionGroup("VerifierCar")
-	PhysicsService:RegisterCollisionGroup("PlayerCharacter")
-	PhysicsService:CollisionGroupSetCollidable("VerifierCar", "PlayerCharacter", false)
-end)
-
-local function applyCharacterGroup(character: Model)
-	for _, desc in ipairs(character:GetDescendants()) do
-		if desc:IsA("BasePart") then
-			desc.CollisionGroup = "PlayerCharacter"
-		end
-	end
-	character.DescendantAdded:Connect(function(desc)
-		if desc:IsA("BasePart") then
-			desc.CollisionGroup = "PlayerCharacter"
-		end
-	end)
-end
-
-Players.PlayerAdded:Connect(function(player)
-	if player.Character then applyCharacterGroup(player.Character) end
-	player.CharacterAdded:Connect(applyCharacterGroup)
 end)
 
 local VerifierCar = {}

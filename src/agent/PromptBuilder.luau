@@ -34,6 +34,19 @@ end
 -- request: parsed request
 -- defaults: default params for the mechanic (from LevelMappings.DEFAULTS)
 function PromptBuilder.initialProposal(request: Request): string
+	if request.parsed.request_kind == "Pad" then
+		return table.concat({
+			"Initial proposal request.",
+			"Target sector: " .. tostring(request.parsed.sector_id),
+			"Request kind: Pad",
+			"Target pad side: " .. tostring(request.parsed.pad_side),
+			"Target pad value: " .. tostring(request.parsed.pad_value),
+			"Return a full SectorState for the sector with the requested pad change applied.",
+			"Return JSON matching:",
+			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"None|Boost|Brake","egress":"None|Boost|Brake"},"version":number}]],
+		}, "\n")
+	end
+
 	local mechanic = request.parsed.mechanic
 	local defaults = LevelMappings.DEFAULTS[mechanic]
 	local levers = LevelMappings.NUMERIC_LEVERS[mechanic]

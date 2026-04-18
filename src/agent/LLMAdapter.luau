@@ -149,8 +149,18 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 	if state.sector_id ~= request.parsed.sector_id then
 		return nil, "invalid proposal: sector_id mismatch"
 	end
-	if state.mechanic ~= request.parsed.mechanic then
+	if request.parsed.request_kind == "Mechanic" and state.mechanic ~= request.parsed.mechanic then
 		return nil, "invalid proposal: mechanic mismatch"
+	end
+	if request.parsed.request_kind == "Pad" then
+		local side = request.parsed.pad_side
+		local value = request.parsed.pad_value
+		if side == nil or value == nil then
+			return nil, "invalid proposal: pad request missing target"
+		end
+		if state.pads[side] ~= value then
+			return nil, "invalid proposal: pad target mismatch"
+		end
 	end
 
 	return state, nil

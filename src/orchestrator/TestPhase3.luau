@@ -9,6 +9,7 @@ local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local ReacquireDetector = require(script.Parent.Parent.Verifier.ReacquireDetector)
+local FailureDetector = require(script.Parent.Parent.Verifier.FailureDetector)
 
 local TestPhase3 = {}
 
@@ -76,6 +77,29 @@ function TestPhase3.run()
 		"failure_off_track_detected",
 		ok and offTrackResult.success == false and offTrackResult.failure ~= nil,
 		"expected runLap failure for grounded off-track start"
+	)
+
+	FailureDetector.reset()
+	local overturnedFailure = nil
+	for _, elapsed in ipairs({ 0, 0.4, 0.8, 1.0 }) do
+		overturnedFailure = FailureDetector.check(
+			elapsed,
+			3,
+			Vector3.new(0, 3, 0),
+			Vector3.new(0, 3, 0),
+			true,
+			0,
+			0,
+			-1
+		)
+		if overturnedFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_overturned_car_detected",
+		overturnedFailure ~= nil and overturnedFailure.type == "local_execution_failure",
+		tostring(overturnedFailure and overturnedFailure.type)
 	)
 
 	VerifierCar.reset(TrackGenerator.canonicalStart())

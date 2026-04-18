@@ -13,7 +13,7 @@
 | 6 | Complete (CI orchestrator state machine + no-LLM vertical slice) |
 | 7 | Complete (LLM adapter boundary + swappable mock/stub backend) |
 | Local CLI | Complete (terminal-triggered Studio test bridge + make targets) |
-| 8 | Pending |
+| 8 | Complete (broadcast HUD + replicated UI state + live markers) |
 
 ---
 
@@ -257,6 +257,236 @@ The most useful Phase 7 integration test was not a fake prompt assertion. It was
 ## Local CLI lessons learned
 
 ### 1. Studio should return structured results, not just console text
+
+---
+
+## Phase 8 camera lessons learned
+
+### 1. The camera is part of the HUD product, not a side feature
+
+Because AutoTrack is a spectator experience, camera behavior is part of the core UI layer. Treat changes in `src/client/TrackCamera.client.luau` with the same care as HUD layout changes.
+
+### 2. The user explicitly wants a HUD + watch-mode experience
+
+Important user intent that should not be re-litigated:
+
+- no avatar-centric experience
+- no need for the observer to move around manually
+- chase camera by default
+- obstacle sectors should pan to an elevated outside-track side view
+- the car must remain visible and be the visual anchor during transitions
+
+### 3. Rojo / client sync failures created false camera-debug signals
+
+Several rounds of camera debugging were confounded by Studio still running an old `TrackCamera` LocalScript in `PlayerScripts`.
+
+What happened:
+
+- Rojo hit a sync problem on `src/client/TrackCamera.client.luau`
+- Studio kept the older chase-only client script
+- server-side replicated trigger data was correct, but the running client behavior did not reflect the edited file
+
+Implication:
+
+- if camera behavior seems impossible or unchanged, verify the live `PlayerScripts.TrackCamera.Source` before assuming the camera logic is wrong
+- do not assume a changed file is live just because server code is updated
+
+### 4. “Lerp to a target CFrame” was the wrong control strategy
+
+The biggest dead end was treating the camera as a sequence of target shots and using:
+
+```lua
+CurrentCamera.CFrame = CurrentCamera.CFrame:Lerp(targetCFrame, ...)
+```
+
+with binary mode switching between chase and side views.
+
+This caused:
+
+- abrupt-feeling pans
+- handoff discontinuities
+- cases where the transition still felt late even when the trigger started earlier
+
+The more successful direction was:
+
+- compute chase pose every frame
+- compute side pose every frame
+- maintain a persistent blend alpha
+- compose final camera from those poses
+
+### 5. Keeping the car in frame mattered more than “showing the obstacle early”
+
+User feedback consistently prioritized:
+
+- the car staying visible
+- the car remaining the focus during preroll
+
+This mattered more than maximizing early obstacle reveal. Several early versions over-favored obstacle center and made the user feel like they were “missing the action.”
+
+### 6. Pullback-first preroll was the right directional idea
+
+The successful pan-out direction came from:
+
+- starting preroll in the previous sector
+- pulling back before moving far laterally
+- using a continuous side-influence ramp rather than a sudden mode handoff
+
+If revisiting preroll, preserve that shape unless the user asks otherwise.
+
+### 7. The pan-out is currently good; do not casually destabilize it
+
+Latest user feedback:
+
+- pan out into obstacle side view: **good / “perfect now”**
+- return to chase: **acceptable / “good enough”**, but not mathematically perfect
+
+Future agents should be conservative. The user explicitly accepted the current state rather than asking for more refinement.
+
+### 8. Return-path experimentation hit several dead ends
+
+Approaches that caused regressions:
+
+- freezing a stale side-shot pose and blending back to chase
+- recomputing a strong live side shot too long after the obstacle
+- mixing incompatible exit anchoring schemes
+
+These often produced:
+
+- visible jump cuts in the following turn
+- “hang then snap” behavior
+- worse regressions than the imperfect baseline
+
+### 9. If future refinement is needed, do not keep layering handoff hacks
+
+If a future milestone wants a truly polished return transition, preferred next directions are:
+
+- a persistent camera rig with independently smoothed position and look target
+- an authored camera rail per mechanic class
+- an intentional visual transition such as a short fade
+
+Do **not** keep stacking more ad hoc exit-branch exceptions onto the current file without first simplifying the control model.
+
+### 10. Demo workflow now exists and should be reused
+
+The camera demo should be triggered through the normal HUD input with:
+
+- `/demo camera`
+
+This command now toggles the camera demo on and off. It runs repeated `RampJump` obstacles in sectors `3` and `7` specifically for camera evaluation.
+
+There is also a session-local test shortcut:
+
+- `/test <suite>`
+
+Important:
+
+- `/test` reuses the existing `TestDispatcher.runSuite(...)` logic
+- `/test` does **not** replace the maintained `make ...` workflow
+- `/test` does **not** manage boot mode, baseline readiness, or Studio restart/setup
+- use `/test` only as an in-session convenience when the current Play session is already appropriate for that suite
+
+### 11. Do not manage Rojo lifecycle for the user
+
+This session exposed a collaboration boundary that future agents should respect:
+
+- do not start, stop, restart, or otherwise manage the user’s Rojo server unless they explicitly ask
+- do not assume Rojo errors imply permission to take over server lifecycle
+
+The user has an established Rojo workflow and, after a restart, may need to take a manual client-side action to complete synchronization. Leave that process to them.
+
+### 12. Client-side sync can require a manual user step after Rojo restart
+
+Even after Rojo is healthy again, the latest LocalScript may not be live until the user completes their usual Studio/client sync step and restarts Play as needed.
+
+Practical implication:
+
+- if a client feature appears unchanged, verify whether the live `PlayerScripts` copy is stale before assuming the logic is wrong
+- ask the user to complete their normal Rojo/client resync routine rather than improvising a new one
+
+### 13. Slash-command surface was intentionally narrowed
+
+Earlier in the session, several ad hoc command aliases were added for the camera demo. These were later removed on purpose.
+
+Current intended command surface:
+
+- `/demo camera`
+- `/test <suite>`
+
+Do not reintroduce loose variants like:
+
+- `camera demo`
+- `demo camera`
+- `stop camera demo`
+- `/camera demo`
+
+unless the user explicitly asks for them again.
+
+### 14. `/test` is safe only because it reuses the existing dispatcher
+
+The `/test <suite>` shortcut is acceptable because it calls the existing server-side `TestDispatcher.runSuite(...)` path rather than inventing a second test mechanism.
+
+Guardrail for future work:
+
+- if a future shortcut bypasses the existing dispatcher/bridge contract, it should be treated as a workflow regression
+
+### 15. Good-enough camera state was explicitly accepted
+
+By the end of this session, the user accepted the camera behavior as “good enough.”
+
+That means:
+
+- document it
+- preserve the current satisfactory pan-out behavior
+- avoid reopening the camera transition problem unless the user explicitly asks for more polish in a later milestone
+
+---
+
+## Phase 8 lessons learned
+
+### 1. Replicated folder attributes are a good v1 HUD contract
+
+For this project shape, a single `ReplicatedStorage.AutoTrackUIState` folder with scalar attributes was simpler and more robust than inventing a custom client store protocol.
+
+This worked well because:
+
+- there is only one global job in v1
+- all observers should see the same state
+- tests can assert HUD behavior without reading the screen
+
+Future UI changes should prefer extending this attribute contract before adding bespoke remote chatter.
+
+### 2. Keep UI publication outside the execution core
+
+`JobRunner` remains the source of truth for job flow, but UI mirroring now goes through `src/orchestrator/UIState.luau`.
+
+That separation matters because it keeps:
+
+- request execution in `JobRunner`
+- client rendering in `src/client/HUD.client.luau` and `src/ui/*`
+- replicated observer state in one server-owned module
+
+Do not move client-facing state mutations into random mechanic/verifier modules.
+
+### 3. World markers should be runtime-created, not Studio-authored
+
+Failure and success markers are created and destroyed at runtime from code:
+
+- `src/ui/FailureMarker.luau`
+- `src/ui/SuccessMarker.luau`
+
+This matches the Rojo authority boundary and makes the markers testable from server-side suites.
+
+### 4. Integration tests can verify HUD behavior without screen scraping
+
+Phase 8 did not need image assertions.
+
+The reliable path was:
+
+- assert replicated `AutoTrackUIState` attributes
+- assert runtime marker objects in `workspace.AutoTrackUIWorld`
+- run the maintained Studio bridge via `make phase8_unit` / `make phase8_integration`
+
+Keep using this pattern for future HUD iterations unless visual fidelity itself becomes the requirement.
 
 The old MCP flow relied on console scraping. That was fine for agent-driven validation, but it is a poor contract for a local terminal runner.
 

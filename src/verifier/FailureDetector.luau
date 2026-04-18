@@ -16,9 +16,15 @@ type FailureInfo = Types.FailureInfo
 
 local FailureDetector = {}
 local _stallStartTime: number? = nil
+local _noProgressStartTime: number? = nil
+local _noProgressStartPosition: Vector3? = nil
+local _overturnStartTime: number? = nil
 
 function FailureDetector.reset()
 	_stallStartTime = nil
+	_noProgressStartTime = nil
+	_noProgressStartPosition = nil
+	_overturnStartTime = nil
 end
 
 -- Called each frame during a run.
@@ -31,7 +37,9 @@ function FailureDetector.check(
 	carPosition: Vector3,
 	trackCenterlinePoint: Vector3,
 	isAirborne: boolean,
-	speed: number
+	speed: number,
+	angularSpeed: number,
+	upDot: number
 ): FailureInfo?
 	if elapsed >= Constants.LAP_TIMEOUT then
 		return { type = "system_failure", sector_id = currentSector }
@@ -43,6 +51,32 @@ function FailureDetector.check(
 
 	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.TRACK_WIDTH * 1.5 then
 		return { type = "local_execution_failure", sector_id = currentSector }
+	end
+
+	if upDot <= Constants.OVERTURN_UP_DOT_THRESHOLD and speed <= Constants.STALL_SPEED_THRESHOLD then
+		if _overturnStartTime == nil then
+			_overturnStartTime = elapsed
+		elseif elapsed - _overturnStartTime >= Constants.OVERTURN_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector }
+		end
+	else
+		_overturnStartTime = nil
+	end
+
+	if speed <= Constants.STALL_SPEED_THRESHOLD and angularSpeed <= Constants.CRASH_ANGULAR_SPEED_THRESHOLD then
+		if _noProgressStartTime == nil or _noProgressStartPosition == nil then
+			_noProgressStartTime = elapsed
+			_noProgressStartPosition = carPosition
+		elseif (carPosition - _noProgressStartPosition).Magnitude <= Constants.NO_PROGRESS_DISTANCE_THRESHOLD
+			and elapsed - _noProgressStartTime >= Constants.NO_PROGRESS_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector }
+		elseif (carPosition - _noProgressStartPosition).Magnitude > Constants.NO_PROGRESS_DISTANCE_THRESHOLD then
+			_noProgressStartTime = elapsed
+			_noProgressStartPosition = carPosition
+		end
+	else
+		_noProgressStartTime = nil
+		_noProgressStartPosition = nil
 	end
 
 	if not isAirborne and speed <= Constants.STALL_SPEED_THRESHOLD then

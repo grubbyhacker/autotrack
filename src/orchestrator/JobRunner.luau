@@ -20,6 +20,9 @@ local JobStateMachine = require(script.Parent.JobStateMachine)
 local JobLock = require(script.Parent.JobLock)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
+local UIState = require(script.Parent.UIState)
+local CameraDemo = require(script.Parent.CameraDemo)
+local TestDispatcher = require(script.Parent.TestDispatcher)
 
 type CIJob = Types.CIJob
 
@@ -59,21 +62,114 @@ local function actionSummary(action)
 	return string.format("%s=%s", action.pad, action.value)
 end
 
+local function requestSummary(parsed): string
+	if parsed.request_kind == "Pad" then
+		return string.format("pad %s=%s", tostring(parsed.pad_side), tostring(parsed.pad_value))
+	end
+	return tostring(parsed.mechanic)
+end
+
+local function stateSummary(state): string
+	if state.mechanic ~= nil then
+		return tostring(state.mechanic)
+	end
+	if state.pads.ingress ~= "None" or state.pads.egress ~= "None" then
+		return string.format("pads ingress=%s egress=%s", state.pads.ingress, state.pads.egress)
+	end
+	return "flat"
+end
+
 local function finishRevert(job, targetSector, reason)
 	SectorRollback.revert(job.request.parsed.sector_id, targetSector.entry, targetSector.exit)
 	job.final_status = "reverted"
 	Tracer.log(reason or string.format("revert sector=%d attempts=%d", job.request.parsed.sector_id, #job.attempts))
 	Tracer.log(string.format("job_end id=%s status=reverted", job.job_id))
+	UIState.appendLog("Reverted target sector")
+	UIState.publishRevert()
 	_lastJob = job
+end
+
+local function pauseForUI()
+	task.wait(Constants.UI_PHASE_DELAY)
+end
+
+local function parseSlashCommand(normalized: string): (string?, string?)
+	local command, rest = string.match(normalized, "^/([%a_]+)%s*(.-)%s*$")
+	if not command then
+		return nil, nil
+	end
+	return command, rest
 end
 
 -- Submit a plain-text request.  Returns false + reason if rejected without running.
 function JobRunner.submit(rawText: string): (boolean, string?)
 	local sm = JobStateMachine.new()
 	local requestId = nextId("req")
+	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
+	local lowered = string.lower(trimmed)
+	local slashCommand, slashArg = parseSlashCommand(lowered)
+
+	if slashCommand == "demo" then
+		if slashArg ~= "camera" then
+			UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera")
+			return false, "unknown demo; supported: /demo camera"
+		end
+
+		if JobLock.isHeld() then
+			UIState.rejectRequest(rawText, "track is busy; try again shortly")
+			return false, "track is busy; try again shortly"
+		end
+
+		if CameraDemo.isActive() then
+			return CameraDemo.stop()
+		end
+		return CameraDemo.start()
+	end
+
+	if slashCommand == "test" then
+		if slashArg == "" then
+			UIState.rejectRequest(rawText, "test name missing; use /test <suite>")
+			return false, "test name missing; use /test <suite>"
+		end
+		if CameraDemo.isActive() then
+			UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /test")
+			return false, "camera demo is running; toggle it off before /test"
+		end
+		if JobLock.isHeld() then
+			UIState.rejectRequest(rawText, "track is busy; try again shortly")
+			return false, "track is busy; try again shortly"
+		end
+
+		UIState.setBusy(true)
+		UIState.setPhase("RunTest", "Running server-side test...")
+		UIState.appendLog("Running /test " .. slashArg)
+		local snapshot = TestDispatcher.runSuite(slashArg)
+		UIState.setBusy(false)
+		if snapshot.status == "passed" then
+			UIState.setPhase("RunTest", "Test passed")
+			UIState.appendLog(string.format("Suite %s passed (%d pass)", slashArg, snapshot.pass_count))
+			return true, nil
+		end
+		UIState.setPhase("RunTest", "Test failed")
+		UIState.setError("test failed: " .. slashArg)
+		UIState.appendLog(string.format(
+			"Suite %s %s (%d fail, %d error)",
+			slashArg,
+			tostring(snapshot.status),
+			snapshot.fail_count,
+			snapshot.error_count
+		))
+		return false, "test failed: " .. slashArg
+	end
+
+	if CameraDemo.isActive() then
+		UIState.rejectRequest(rawText, "camera demo is running; use /demo camera to toggle it off")
+		return false, "camera demo is running; use /demo camera to toggle it off"
+	end
 
 	if JobLock.isHeld() then
 		Tracer.log(string.format("job_reject reason=busy raw=%q", rawText))
+		UIState.rejectRequest(rawText, "track is busy; try again shortly")
 		return false, "track is busy; try again shortly"
 	end
 
@@ -83,6 +179,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		Tracer.log(string.format("job_reject reason=%s raw=%q", tostring(parseErr), rawText))
 		sm:transition("RejectRequest")
 		sm:transition("Idle")
+		UIState.rejectRequest(rawText, tostring(parseErr))
 		return false, parseErr
 	end
 
@@ -90,6 +187,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		Tracer.log(string.format("job_reject reason=busy raw=%q", rawText))
 		sm:transition("RejectRequest")
 		sm:transition("Idle")
+		UIState.rejectRequest(rawText, "track is busy; try again shortly")
 		return false, "track is busy; try again shortly"
 	end
 
@@ -106,14 +204,20 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			"job_start id=%s sector=%d mechanic=%s",
 			request.request_id,
 			targetSectorId,
-			request.parsed.mechanic
+			requestSummary(request.parsed)
 		))
+		UIState.beginJob(request)
+		UIState.setPhase("AcquireTrack", "Preparing job")
+		UIState.appendLog(string.format("Queued %s for sector %d", requestSummary(request.parsed), targetSectorId))
+		pauseForUI()
 
 		sm:transition("GenerateInitialProposal")
+		UIState.setPhase("GenerateInitialProposal", "Generating proposal...")
 		local initialState, proposalErr = LLMAdapter.propose(request)
 		if not initialState then
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
+			UIState.rejectRequest(rawText, tostring(proposalErr))
 			return false, proposalErr
 		end
 
@@ -121,8 +225,10 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		if not validState then
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
+			UIState.rejectRequest(rawText, "invalid initial proposal: " .. tostring(validationErr))
 			return false, "invalid initial proposal: " .. tostring(validationErr)
 		end
+		UIState.appendLog("Initial proposal accepted")
 
 		local job: CIJob = {
 			job_id = request.request_id,
@@ -139,12 +245,16 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		while true do
 			sm:transition("ApplyWorkingSector")
+			UIState.setPhase("ApplyWorkingSector", "Applying sector...")
+			UIState.setAttempt(attemptIndex, Constants.MAX_REPAIR_ATTEMPTS)
+			pauseForUI()
 			sm:transition("RunVerification")
+			UIState.setPhase("RunVerification", "Running simulation...")
 			Tracer.log(string.format(
 				"attempt index=%d sector=%d mechanic=%s",
 				attemptIndex,
 				targetSectorId,
-				tostring(job.working_state.mechanic)
+				stateSummary(job.working_state)
 			))
 
 			local result, hints, updatedState = AttemptRunner.run({
@@ -156,10 +266,15 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				sectors = RuntimeContext.getSectors(),
 				car = RuntimeContext.getCar(),
 				canonicalStart = RuntimeContext.getCanonicalStart(),
-				onSectorChange = nil,
+				onSectorChange = function(id: number, entering: boolean)
+					if entering then
+						UIState.setCurrentSector(id)
+					end
+				end,
 			})
 
 			job.working_state = cloneState(updatedState)
+			UIState.publishAttemptResult(result)
 			table.insert(job.attempts, {
 				attempt_index = attemptIndex,
 				action = nextAction,
@@ -172,6 +287,10 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				job.working_state.version = priorCommitted.version + 1
 				SectorRegistry.commit(job.working_state)
 				job.final_status = "committed"
+				UIState.setPhase("Commit", "Committed")
+				UIState.appendLog(string.format("Committed %s v%d", stateSummary(job.working_state), job.working_state.version))
+				pauseForUI()
+				UIState.publishCommit(targetSector)
 				Tracer.log(string.format("commit sector=%d version=%d", targetSectorId, job.working_state.version))
 				Tracer.log(string.format("job_end id=%s status=committed", job.job_id))
 				_lastJob = job
@@ -180,6 +299,14 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			end
 
 			sm:transition("AnalyzeFailure")
+			UIState.setPhase("AnalyzeFailure", "Analyzing failure...")
+			UIState.showFailure(result)
+			UIState.appendLog(string.format(
+				"Failure: %s in sector %d",
+				tostring(result.failure and result.failure.type or "unknown"),
+				result.failure and result.failure.sector_id or targetSectorId
+			))
+			pauseForUI()
 			if attemptIndex >= Constants.MAX_REPAIR_ATTEMPTS then
 				sm:transition("Revert")
 				finishRevert(job, targetSector, string.format("revert sector=%d attempts=%d", targetSectorId, #job.attempts))
@@ -199,6 +326,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			)
 
 			sm:transition("ApplyRepair")
+			UIState.setPhase("ApplyRepair", "Applying repair...")
 			local action, explanation, repairErr = LLMAdapter.repair(packet)
 			if not action then
 				sm:transition("Revert")
@@ -218,6 +346,10 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			lastAction = action
 			nextAction = action
 			attemptIndex += 1
+			UIState.setAttempt(attemptIndex, Constants.MAX_REPAIR_ATTEMPTS)
+			UIState.setExplanation(explanation or "")
+			UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
+			pauseForUI()
 			Tracer.log(string.format(
 				"repair attempt=%d action=%s explanation=%s",
 				attemptIndex,
@@ -230,6 +362,8 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	JobLock.release()
 	if not ok then
 		local err = tostring(resultOrErr)
+		UIState.setBusy(false)
+		UIState.setError("system failure: " .. err)
 		if request then
 			local targetSector = RuntimeContext.isReady() and RuntimeContext.getSectorById(request.parsed.sector_id) or nil
 			if targetSector and _lastJob and _lastJob.job_id == request.request_id and _lastJob.final_status == "reverted" then

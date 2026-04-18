@@ -195,6 +195,32 @@ The checked-in components for this path are:
 
 For Phase 1, tests also auto-run at boot end (see `Main.server.luau`). Later phases may do the same.
 
+### HUD slash commands
+
+The in-experience HUD command bar supports a small slash-command surface for convenience. Keep this narrow and intentional.
+
+- Demo command shape:
+  - `/demo <name>`
+- Test command shape:
+  - `/test <suite>`
+
+Current supported demo commands:
+
+- `/demo camera`
+
+`/demo camera` toggles the camera demo on and off. It exists to help evaluate spectator-camera behavior without changing the normal boot workflow. The current camera demo loops repeated `RampJump` obstacles in sectors `3` and `7`.
+
+`/test <suite>` is allowed as a **session-local convenience shortcut** into the existing server-side suite dispatcher. It must reuse the same suite names handled by `src/orchestrator/TestDispatcher.luau`.
+
+Important constraints for `/test`:
+
+- It does **not** replace the maintained `make ...` workflow.
+- It does **not** manage boot mode selection, baseline setup, Studio restarts, or HTTP bridge orchestration.
+- It should be treated as a shortcut for a session that is already in the correct state for the requested suite.
+- Final milestone validation should still use the maintained `make` path unless that path is broken and the exception is documented.
+
+Do not reintroduce ad hoc demo/test command aliases once removed. If new slash commands are added later, document them here and keep the shape consistent with `/demo <name>` and `/test <suite>`.
+
 ### Fast inner-loop workflow
 
 When iterating on a specific test or mechanic slice, the automatic boot baseline lap can be skipped to avoid paying the full startup lap time on every run.

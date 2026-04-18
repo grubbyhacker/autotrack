@@ -84,6 +84,9 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		rawResult.metrics,
 		args.targetSectorId
 	)
+	result.failure_position = rawResult.failure_position
+	result.final_position = rawResult.final_position
+	result.trajectory_tail = rawResult.trajectory_tail
 
 	return result, hints, workingState
 end

@@ -87,7 +87,7 @@ end
 function TestPhase6.runUnit()
 	local parsed, err = RequestParser.parse("Add a jump in sector 3", "parser-basic")
 	T.expect("parser_accept_basic",
-		parsed ~= nil and parsed.parsed.sector_id == 3 and parsed.parsed.mechanic == "RampJump",
+		parsed ~= nil and parsed.parsed.sector_id == 3 and parsed.parsed.mechanic == "RampJump" and parsed.parsed.request_kind == "Mechanic",
 		tostring(err)
 	)
 
@@ -114,6 +114,16 @@ function TestPhase6.runUnit()
 		qualifiers
 	)
 
+	local padRequest, padErr = RequestParser.parse("add boost pad to sector 2 exit", "pad-basic")
+	T.expect("parser_accept_pad_request",
+		padRequest ~= nil
+			and padRequest.parsed.request_kind == "Pad"
+			and padRequest.parsed.sector_id == 2
+			and padRequest.parsed.pad_side == "egress"
+			and padRequest.parsed.pad_value == "Boost",
+		tostring(padErr)
+	)
+
 	local rejectCases = {
 		{ name = "parser_reject_empty", text = "", err = "empty request" },
 		{ name = "parser_reject_no_sector", text = "add a jump", err = "sector missing" },
@@ -121,6 +131,7 @@ function TestPhase6.runUnit()
 		{ name = "parser_reject_corner", text = "add a jump in sector 1", err = "sector is not an editable straight" },
 		{ name = "parser_reject_ambiguous", text = "add a jump and a chicane in sector 3", err = "ambiguous mechanic" },
 		{ name = "parser_reject_unsupported", text = "add a loop in sector 3", err = "unsupported mechanic" },
+		{ name = "parser_reject_pad_side_missing", text = "add boost pad to sector 2", err = "pad side missing" },
 	}
 	for index, case in ipairs(rejectCases) do
 		local _, caseErr = RequestParser.parse(case.text, "reject-" .. index)
@@ -141,6 +152,18 @@ function TestPhase6.runUnit()
 		tostring(biasedState and biasedState.params.ramp_angle)
 	)
 
+	local padStateRequest, padStateParseErr = RequestParser.parse("add boost pad to sector 2 exit", "pad-state")
+	assert(padStateRequest ~= nil, "expected valid pad request: " .. tostring(padStateParseErr))
+	local padState, padStateErr = MinimalProposer.initial(padStateRequest)
+	T.expect("proposer_initial_pad_only",
+		padState ~= nil
+			and padStateErr == nil
+			and padState.sector_id == 2
+			and padState.mechanic == nil
+			and padState.pads.egress == "Boost",
+		tostring(padStateErr)
+	)
+
 	local rampAction = MinimalProposer.repair(makePacket("RampJump", "mechanic_integrity_failure", { "verifier never became airborne" }))
 	T.expect("proposer_repair_rampjump_not_airborne",
 		rampAction ~= nil and rampAction.type == "SetNumericLever" and rampAction.lever == "ramp_angle",
@@ -157,6 +180,17 @@ function TestPhase6.runUnit()
 	T.expect("proposer_repair_crestdip_displacement_low",
 		crestAction ~= nil and crestAction.type == "SetNumericLever" and crestAction.lever == "height_or_depth",
 		tostring(crestAction and crestAction.lever)
+	)
+
+	local crestStallAction = MinimalProposer.repair(makePacket("CrestDip", "local_execution_failure", {}, nil))
+	T.expect("proposer_repair_crestdip_stall_softens_shape",
+		crestStallAction ~= nil
+			and (
+				(crestStallAction.type == "SetNumericLever" and (crestStallAction.lever == "height_or_depth" or crestStallAction.lever == "radius"))
+				or (crestStallAction.type == "SetPad" and crestStallAction.pad == "ingress" and crestStallAction.value == "Boost")
+			)
+			and not (crestStallAction.type == "SetNumericLever" and crestStallAction.lever == "sector_length"),
+		tostring(crestStallAction and crestStallAction.type == "SetNumericLever" and crestStallAction.lever or crestStallAction and crestStallAction.type)
 	)
 
 	local downstreamAction = MinimalProposer.repair(makePacket("RampJump", "downstream_failure", {}, nil))
@@ -224,6 +258,19 @@ function TestPhase6.runIntegration()
 	local okBusy, busyReason = JobRunner.submit("add a jump in sector 3")
 	JobLock.release()
 	T.expect("submit_rejects_busy", okBusy == false and string.find(tostring(busyReason), "busy", 1, true) ~= nil, tostring(busyReason))
+
+	Tracer.clear()
+	local okPad, padReason = JobRunner.submit("add boost pad to sector 2 exit")
+	local padCommit = SectorRegistry.getCommitted(2)
+	T.expect("job_commits_pad_request",
+		okPad == true
+			and padReason == nil
+			and padCommit ~= nil
+			and padCommit.mechanic == nil
+			and padCommit.pads.egress == "Boost"
+			and padCommit.version == 1,
+		tostring(padReason)
+	)
 
 	Tracer.clear()
 	local okChicane, chicaneReason = JobRunner.submit("add a chicane in sector 3")

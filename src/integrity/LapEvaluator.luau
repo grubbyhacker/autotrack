@@ -44,6 +44,10 @@ function LapEvaluator.evaluate(
 		return { success = false, failure = failure, metrics = metrics }, {}
 	end
 
+	if targetState.mechanic == nil then
+		return { success = true, failure = nil, metrics = metrics }, {}
+	end
+
 	-- Lap completed — now check mechanic integrity.
 	local evaluator = INTEGRITY_EVALUATORS[targetState.mechanic]
 	assert(evaluator, "LapEvaluator: no integrity evaluator for " .. tostring(targetState.mechanic))

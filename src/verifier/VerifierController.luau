@@ -13,6 +13,8 @@ local ReacquireDetector = require(script.Parent.ReacquireDetector)
 type RunResult = Types.RunResult
 
 local VerifierController = {}
+local TRAIL_POINT_SPACING = 5
+local MAX_TRAIL_POINTS = 8
 
 local function projectPointToSegment(point: Vector3, startPoint: Vector3, endPoint: Vector3): (Vector3, number)
 	local segment = endPoint - startPoint
@@ -116,8 +118,8 @@ function VerifierController.runLap(
 	local alignOrientation = Instance.new("AlignOrientation")
 	alignOrientation.Attachment0 = attachment
 	alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	alignOrientation.MaxTorque = 100000
-	alignOrientation.Responsiveness = 5
+	alignOrientation.MaxTorque = Constants.CAR_ORIENTATION_MAX_TORQUE
+	alignOrientation.Responsiveness = Constants.CAR_ORIENTATION_RESPONSIVENESS
 	alignOrientation.RigidityEnabled = false
 	alignOrientation.Parent = car
 
@@ -132,12 +134,26 @@ function VerifierController.runLap(
 	local startTime = os.clock()
 	local waypointIndex = 1
 	local completed = false
+	local recentTrail = { car.Position }
+	local lastTrailPoint = car.Position
+
+	local function recordTrail(position: Vector3)
+		if (position - lastTrailPoint).Magnitude < TRAIL_POINT_SPACING then
+			return
+		end
+		table.insert(recentTrail, position)
+		lastTrailPoint = position
+		while #recentTrail > MAX_TRAIL_POINTS do
+			table.remove(recentTrail, 1)
+		end
+	end
 
 	while not completed do
 		local now = os.clock()
 		local elapsed = now - startTime
 
 		local carPosition = car.Position
+		local carCFrame = car.CFrame
 		local targetPosition = waypoints[waypointIndex].Position
 		local toTarget = targetPosition - carPosition
 		local distanceToTarget = toTarget.Magnitude
@@ -176,11 +192,26 @@ function VerifierController.runLap(
 		local lookDirection = (lookTarget - carPosition).Magnitude > 0
 			and (lookTarget - carPosition).Unit
 			or moveDirection
+		local orientationLookAheadIndex = math.min(waypointIndex + Constants.ORIENTATION_LOOKAHEAD, #waypoints)
+		local orientationTarget = waypoints[orientationLookAheadIndex].Position
+		local anticipatedDirection = (orientationTarget - carPosition).Magnitude > 0
+			and (orientationTarget - carPosition).Unit
+			or lookDirection
+		local orientationDirection = (segmentDirection * (1 - Constants.ORIENTATION_BLEND)
+			+ anticipatedDirection * Constants.ORIENTATION_BLEND)
+		if orientationDirection.Magnitude <= 0 then
+			orientationDirection = segmentDirection
+		else
+			orientationDirection = orientationDirection.Unit
+		end
 		local isAirborne = not ReacquireDetector.isGrounded(carPosition, rayParams)
 		local speed = car.AssemblyLinearVelocity.Magnitude
+		local angularSpeed = car.AssemblyAngularVelocity.Magnitude
+		local upDot = carCFrame.UpVector:Dot(Vector3.yAxis)
 		local lateralOffset = projectedPoint - carPosition
 		local lateralError = lateralOffset.Magnitude
 
+		recordTrail(carPosition)
 		MetricCollector.record(speed, carPosition, isAirborne, lateralError)
 
 		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
@@ -197,8 +228,8 @@ function VerifierController.runLap(
 		if isAirborne then
 			alignOrientation.MaxTorque = 0
 		else
-			alignOrientation.MaxTorque = 10000
-			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, segmentDirection)
+			alignOrientation.MaxTorque = Constants.CAR_ORIENTATION_MAX_TORQUE
+			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)
 		end
 
 		local failure = FailureDetector.check(
@@ -207,7 +238,9 @@ function VerifierController.runLap(
 			carPosition,
 			projectedPoint,
 			isAirborne,
-			speed
+			speed,
+			angularSpeed,
+			upDot
 		)
 		if failure then
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
@@ -216,6 +249,9 @@ function VerifierController.runLap(
 				success = false,
 				failure = failure,
 				metrics = metrics,
+				failure_position = carPosition,
+				final_position = carPosition,
+				trajectory_tail = recentTrail,
 			}
 		end
 
@@ -230,6 +266,9 @@ function VerifierController.runLap(
 		success = true,
 		failure = nil,
 		metrics = metrics,
+		failure_position = nil,
+		final_position = car.Position,
+		trajectory_tail = recentTrail,
 	}
 end
 

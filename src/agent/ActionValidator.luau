@@ -21,7 +21,7 @@ local ActionValidator = {}
 
 -- Validate an AgentAction against the legal actions for a mechanic.
 -- Returns (true, nil) or (false, errorString).
-function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic): (boolean, string?)
+function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?): (boolean, string?)
 	if action.type == "SetNumericLever" then
 		local legal = LevelMappings.NUMERIC_LEVERS[mechanic]
 		if not legal then
@@ -60,9 +60,6 @@ function ActionValidator.validateSectorState(state: SectorState): (boolean, stri
 	if type(state.sector_id) ~= "number" then
 		return false, "sector_id must be a number"
 	end
-	if type(state.mechanic) ~= "string" or LevelMappings.DEFAULTS[state.mechanic] == nil then
-		return false, "mechanic must be a supported mechanic"
-	end
 	if type(state.params) ~= "table" then
 		return false, "params must be a table"
 	end
@@ -79,10 +76,17 @@ function ActionValidator.validateSectorState(state: SectorState): (boolean, stri
 		return false, "version must be a number"
 	end
 
-	for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic]) do
-		if type(state.params[lever]) ~= "number" then
-			return false, "missing numeric lever: " .. lever
+	if state.mechanic ~= nil then
+		if type(state.mechanic) ~= "string" or LevelMappings.DEFAULTS[state.mechanic] == nil then
+			return false, "mechanic must be a supported mechanic"
 		end
+		for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic]) do
+			if type(state.params[lever]) ~= "number" then
+				return false, "missing numeric lever: " .. lever
+			end
+		end
+	elseif next(state.params) ~= nil then
+		return false, "flat sector state must not include numeric params"
 	end
 
 	return true, nil

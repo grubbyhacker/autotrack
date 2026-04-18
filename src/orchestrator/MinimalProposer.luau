@@ -46,6 +46,19 @@ local function cloneParams(params)
 	return out
 end
 
+local function cloneState(state)
+	return {
+		sector_id = state.sector_id,
+		mechanic = state.mechanic,
+		params = cloneParams(state.params),
+		pads = {
+			ingress = state.pads.ingress,
+			egress = state.pads.egress,
+		},
+		version = state.version,
+	}
+end
+
 local function applyParamDelta(params, deltas)
 	for key, delta in pairs(deltas) do
 		local current = params[key]
@@ -81,15 +94,21 @@ local function choose(packet: FailurePacket, candidates: { AgentAction }): (Agen
 end
 
 function MinimalProposer.initial(request: Request): (SectorState?, string?)
+	local committed = SectorRegistry.getCommitted(request.parsed.sector_id)
+	if not committed then
+		return nil, "sector " .. tostring(request.parsed.sector_id) .. " is not editable"
+	end
+
+	if request.parsed.request_kind == "Pad" then
+		local nextState = cloneState(committed)
+		nextState.pads[request.parsed.pad_side] = request.parsed.pad_value
+		return nextState, nil
+	end
+
 	local mechanic = request.parsed.mechanic
 	local defaults = LevelMappings.DEFAULTS[mechanic]
 	if not defaults then
 		return nil, "unsupported mechanic: " .. tostring(mechanic)
-	end
-
-	local committed = SectorRegistry.getCommitted(request.parsed.sector_id)
-	if not committed then
-		return nil, "sector " .. tostring(request.parsed.sector_id) .. " is not editable"
 	end
 
 	local params = cloneParams(defaults)
@@ -168,6 +187,11 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			table.insert(candidates, { type = "SetNumericLever", lever = "radius", value = math.max(1, (params.radius or 0) + 4) })
 			table.insert(candidates, { type = "SetPad", pad = "egress", value = "Brake" })
 			explanation = "reacquisition was unstable; smoothed the landing"
+		elseif failure.type == "local_execution_failure" then
+			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(1, (params.height_or_depth or 0) - 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "radius", value = math.max(1, (params.radius or 0) + 4) })
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = "Boost" })
+			explanation = "the crest stalled the verifier; softened the climb"
 		else
 			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(1, (params.height_or_depth or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.max(1, (params.sector_length or 0) + 4) })

@@ -26,6 +26,9 @@
         "$className": "StarterPlayerScripts",
         "TrackCamera": {
           "$path": "src/client/TrackCamera.client.luau"
+        },
+        "HUD": {
+          "$path": "src/client/HUD.client.luau"
         }
       }
     }

@@ -1,19 +1,33 @@
--- StatsPanel.luau
--- Displays session statistics: baseline lap time, current lap time, slowdown.
--- prd_plan.md §10, §13, Phase 8
+local HUDRegistry = require(script.Parent.HUDRegistry)
 
 local StatsPanel = {}
 
+local function refs()
+	return HUDRegistry.get()
+end
+
+local function formatSeconds(seconds: number): string
+	if seconds == nil or seconds < 0 then
+		return "--"
+	end
+	return ("%.2fs"):format(seconds)
+end
+
 function StatsPanel.setBaseline(seconds: number)
-	-- TODO: Phase 8
+	refs().baselineLabel.Text = ("Baseline\n%s"):format(formatSeconds(seconds))
 end
 
 function StatsPanel.setLastLapTime(seconds: number)
-	-- TODO: Phase 8
+	refs().lastLapLabel.Text = ("Last Lap\n%s"):format(formatSeconds(seconds))
 end
 
 function StatsPanel.setSlowdown(ratio: number)
-	-- TODO: Phase 8 — display as percentage delta, e.g. "+12%"
+	local percent = math.floor(((ratio or 1) - 1) * 100 + 0.5)
+	refs().slowdownLabel.Text = ("Slowdown\n%+d%%"):format(percent)
+end
+
+function StatsPanel.setCurrentSpeed(speed: number)
+	refs().currentSpeedLabel.Text = ("Current Speed\n%.1f"):format(speed or 0)
 end
 
 return StatsPanel

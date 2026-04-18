@@ -3,6 +3,7 @@
 -- sector registry state, job lock, and baseline lap completion.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local JobLock = require(script.Parent.JobLock)
@@ -69,6 +70,17 @@ function TestPhase1.run()
 
 	-- Job lock
 	T.expect("job_lock_free", not JobLock.isHeld(), "job lock still held after baseline lap")
+
+	-- Player model
+	T.expect("player_characters_disabled", Players.CharacterAutoLoads == false, "Players.CharacterAutoLoads should be false")
+	local hasCharacter = false
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character ~= nil then
+			hasCharacter = true
+			break
+		end
+	end
+	T.expect("player_character_absent", hasCharacter == false, "player character should not exist in spectator mode")
 
 	-- Baseline lap result (written by Main.server.luau)
 	local lapDone = workspace:GetAttribute("AutoTrack_BaselineLapDone")

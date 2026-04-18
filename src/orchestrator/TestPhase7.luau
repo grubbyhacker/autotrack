@@ -16,6 +16,9 @@ local function makeRequest()
 		parsed = {
 			sector_id = 4,
 			mechanic = "Chicane",
+			request_kind = "Mechanic",
+			pad_side = nil,
+			pad_value = nil,
 		},
 		qualifiers = { "wide" },
 		timestamp = os.time(),

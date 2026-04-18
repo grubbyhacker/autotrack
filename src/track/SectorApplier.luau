@@ -5,6 +5,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local UIState = require(script.Parent.Parent.Orchestrator.UIState)
 
 type SectorState = Types.SectorState
 
@@ -41,6 +42,7 @@ end
 -- Called both for the initial working proposal and for each repair step.
 function SectorApplier.apply(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
 	SectorApplier.clear(state.sector_id)
+	UIState.setSectorMechanic(state.sector_id, state.mechanic)
 	-- Lazy-require builders — they error until Phase 4.
 	local Mechanics = script.Parent.Parent.Mechanics
 	if state.mechanic == nil then
