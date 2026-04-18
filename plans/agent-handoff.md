@@ -18,6 +18,7 @@
 | 10 | Complete (RampJump/Chicane rigor + persistent pad speed setting) |
 | 11a | Prototype on branch `feature/phase11-challenge-rewards` — ChallengeScore scaffolding + tests, no wiring yet |
 | 11b | Prototype on branch `feature/phase11-challenge-rewards` — Stage B challenge-up via `extreme` qualifier; ChallengeRunner module + unit tests |
+| 11c | Prototype on branch `feature/phase11-challenge-rewards` — MaximizerAgent campaign via `/demo maximize`; six-step plan + aggregate score |
 
 ---
 
@@ -803,6 +804,33 @@ HUD log will show `Escalate r1 ramp_angle 15→18 ACCEPT` style rounds.
 - **No integration test.** `make phase11_unit` covers scoring + escalation
   direction; a lap-level test that exercises `ChallengeRunner.runUp` end-
   to-end is still missing.
+
+### What shipped on the branch (sub-phase 11c)
+
+The "uber agent". `MaximizerAgent.run` walks a fixed six-step plan
+(sectors 2/3/4/7/8/9, one extreme request each) and drives the normal
+JobRunner pipeline for each step. After the pass, it calls
+`ChallengeScore.aggregate` over the published per-sector scores and
+logs the scalar to the HUD.
+
+Files added:
+- `src/orchestrator/MaximizerAgent.luau` — stateless module. Accepts
+  `submit`, `isBusy`, `isCameraDemoActive` injected callables to avoid
+  a circular require with JobRunner.
+
+Files modified:
+- `src/orchestrator/JobRunner.luau` — `/demo maximize` slash command
+  spawns the campaign via `task.spawn` so the submit call returns
+  immediately. Rejects concurrent starts and camera-demo conflicts.
+
+Known limitations of v1:
+- Plan is fixed — no per-sector mechanic search. The three mechanics
+  are assigned statically to sector groups.
+- The aggregate tallies published-score attributes, which means a
+  sector whose commit was reverted later will still count its last
+  score. Acceptable for v1 since the campaign runs forward-only.
+- If a single step times out (`CHALLENGE_UP_ROUNDS * 45 + padding`
+  seconds), the whole campaign aborts. There is no retry.
 
 ### Known risks (carried over from phase10 note: stronger pad tiers)
 
