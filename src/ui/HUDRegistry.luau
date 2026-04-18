@@ -181,7 +181,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, 188, 0, 252),
+		Size = UDim2.new(0, 188, 0, 290),
 		Position = UDim2.new(1, -20, 0, 110),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
@@ -248,6 +248,16 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		Position = UDim2.new(0, 20, 0, 166),
 		Size = UDim2.new(1, -40, 0, 46),
 		Text = "Slowdown\n+0%",
+		TextColor3 = TEXT,
+		TextSize = 18,
+		Font = Enum.Font.GothamMedium,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+
+	local scoreLabel = createLabel(rightRail, {
+		Position = UDim2.new(0, 20, 0, 222),
+		Size = UDim2.new(1, -40, 0, 46),
+		Text = "Score\n--",
 		TextColor3 = TEXT,
 		TextSize = 18,
 		Font = Enum.Font.GothamMedium,
@@ -410,6 +420,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		baselineLabel = baselineLabel,
 		lastLapLabel = lastLapLabel,
 		slowdownLabel = slowdownLabel,
+		scoreLabel = scoreLabel,
 		currentSpeedLabel = currentSpeedLabel,
 		recentLoopLabel = recentLoopLabel,
 		logContainer = logContainer,

@@ -30,4 +30,16 @@ function StatsPanel.setCurrentSpeed(speed: number)
 	refs().currentSpeedLabel.Text = ("Current Speed\n%.1f"):format(speed or 0)
 end
 
+function StatsPanel.setScore(sectorId: number, total: number, overBudget: boolean)
+	local label = refs().scoreLabel
+	if not sectorId or sectorId == 0 then
+		label.Text = "Score\n--"
+		label.TextColor3 = refs().colors.text
+		return
+	end
+	local flag = if overBudget then "  !" else ""
+	label.Text = ("Score S%d\n%.1f%s"):format(sectorId, total or 0, flag)
+	label.TextColor3 = if overBudget then refs().colors.danger else refs().colors.text
+end
+
 return StatsPanel

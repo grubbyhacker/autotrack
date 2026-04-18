@@ -47,6 +47,11 @@ local function render()
 	StatsPanel.setLastLapTime(stateFolder:GetAttribute("last_lap_time") or -1)
 	StatsPanel.setSlowdown(stateFolder:GetAttribute("slowdown_ratio") or 1)
 	StatsPanel.setCurrentSpeed(stateFolder:GetAttribute("current_speed") or 0)
+	StatsPanel.setScore(
+		stateFolder:GetAttribute("last_score_sector") or 0,
+		stateFolder:GetAttribute("last_score_total") or 0,
+		stateFolder:GetAttribute("last_score_over_budget") == true
+	)
 end
 
 local observedAttributes = {
@@ -70,6 +75,9 @@ local observedAttributes = {
 	"log_2",
 	"log_3",
 	"log_4",
+	"last_score_sector",
+	"last_score_total",
+	"last_score_over_budget",
 }
 
 for _, attributeName in ipairs(observedAttributes) do
