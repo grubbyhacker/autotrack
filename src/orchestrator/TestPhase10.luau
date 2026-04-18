@@ -288,11 +288,14 @@ function TestPhase10.runUnit()
 		tostring(chicaneInstabilityAction and chicaneInstabilityAction.type == "SetPad" and chicaneInstabilityAction.pad or chicaneInstabilityAction and chicaneInstabilityAction.lever)
 	)
 
+	-- Mid-sector stall (progress=0.5): boost is the right first lever.
 	local crestStallBoostAction = MinimalProposer.repair(makePacket(
 		"CrestDip",
 		{ height_or_depth = 10, radius = 20, sector_length = 24 },
 		{},
-		"local_execution_failure"
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.5 }
 	))
 	T.expect(
 		"phase10_proposer_crestdip_stall_picks_ingress_boost_first",
@@ -303,6 +306,27 @@ function TestPhase10.runUnit()
 		tostring(crestStallBoostAction and crestStallBoostAction.type == "SetPad" and crestStallBoostAction.pad or crestStallBoostAction and crestStallBoostAction.lever)
 	)
 
+	-- Early-sector crash (progress=0.1): geometry is the blocking constraint;
+	-- boost cannot overcome a near-vertical face.
+	local crestEarlyFailAction = MinimalProposer.repair(makePacket(
+		"CrestDip",
+		{ height_or_depth = 14, radius = 8, sector_length = 20 },
+		{},
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.1 }
+	))
+	T.expect(
+		"phase10_proposer_crestdip_early_fail_skips_boost",
+		crestEarlyFailAction ~= nil
+			and crestEarlyFailAction.type == "SetNumericLever"
+			and (
+				crestEarlyFailAction.lever == "sector_length"
+				or crestEarlyFailAction.lever == "height_or_depth"
+			),
+		tostring(crestEarlyFailAction and crestEarlyFailAction.type == "SetPad" and crestEarlyFailAction.pad or crestEarlyFailAction and crestEarlyFailAction.lever)
+	)
+
 	local crestStallFollowupAction = MinimalProposer.repair({
 		request = makeRequest("phase10", "CrestDip"),
 		sector_state = makeState("CrestDip", { height_or_depth = 10, radius = 20, sector_length = 24 }),
@@ -311,7 +335,7 @@ function TestPhase10.runUnit()
 		run_result = {
 			success = false,
 			failure = { type = "local_execution_failure", sector_id = 3 },
-			metrics = makeMetrics(),
+			metrics = makeMetrics({ target_progress = 0.5 }),
 		},
 		diagnostics = { failure_sector = 3, hints = {} },
 		legal_actions = {

@@ -333,19 +333,40 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) - 2) })
 			explanation = "reacquisition unstable; softened the landing"
 		elseif failure.type == "local_execution_failure" then
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "sector_length",
-				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "height_or_depth",
-				value = math.max(2, (params.height_or_depth or 0) - softenHeightDelta),
-			})
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			explanation = "the crest stalled the car; boosted entry and softened the feature"
+			-- If the car failed early in the sector (< 30% progress) the crest
+			-- geometry is the blocking constraint — boost cannot overcome a near-
+			-- vertical face. Skip straight to shape softening so the repair budget
+			-- is not wasted on pads that cannot fix the problem.
+			local progress = (packet.run_result.metrics.target_progress or 0)
+			if progress < 0.30 then
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "sector_length",
+					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "height_or_depth",
+					value = math.max(2, (params.height_or_depth or 0) - softenHeightDelta),
+				})
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "crest too steep for entry speed; softened geometry first"
+			else
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "sector_length",
+					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+				})
+				table.insert(candidates, {
+					type = "SetNumericLever",
+					lever = "height_or_depth",
+					value = math.max(2, (params.height_or_depth or 0) - softenHeightDelta),
+				})
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "the crest stalled the car; boosted entry and softened the feature"
+			end
 		else
 			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(2, (params.height_or_depth or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 4) })
