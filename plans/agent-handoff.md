@@ -16,6 +16,7 @@
 | 8 | Complete (broadcast HUD + replicated UI state + live markers) |
 | 9 | Complete (CrestDip path + early integrity gating + repair-story tuning) |
 | 10 | Complete (RampJump/Chicane rigor + persistent pad speed setting) |
+| 11a | Prototype on branch `feature/phase11-challenge-rewards` — ChallengeScore scaffolding + tests, no wiring yet |
 
 ---
 
@@ -651,3 +652,124 @@ When CrestDip looked like a wall, `ingress Boost` was a wasted repair. The bette
 ### Remaining note
 
 The user raised the idea of adding stronger pad tiers (effectively "really slow" / "really fast" variants). That is not implemented in this phase. The current schema and UI still expose only `None`, `Boost`, and `Brake`; the observed improvement came from changing how those pads behave, not from expanding the pad taxonomy.
+
+---
+
+## Phase 11 handoff (Challenge rewards — overnight design)
+
+### What you are walking into
+
+The user asked for a reward system that makes agents build bigger jumps, deeper
+crests, and tighter chicanes instead of the satisfice-the-gate obstacles we
+ship today. They specifically called out "hang time", "near crash", and the
+idea of an "uber agent that tries to build a track with the maximum amount of
+points but is still within x% of the vanilla lap time". They gave the night to
+prototype and said to impress them.
+
+All design work is in `plans/phase11.md`. Read that first.
+
+### Branch
+
+`feature/phase11-challenge-rewards` — not merged. All 11a changes live on this
+branch. `main` is untouched.
+
+### What shipped on the branch (sub-phase 11a)
+
+Pure scoring infrastructure. No runtime behaviour change, no UI change. The
+`ChallengeScore` module is intentionally decoupled from the lap so it can be
+unit-tested without a running Studio session.
+
+Files added:
+- `plans/phase11.md` — the full design (§1–§11). This is the source of truth.
+- `src/integrity/ChallengeScore.luau` — pure scoring function over
+  `(SectorState, RunMetrics) -> ChallengeScore`. No side effects, no workspace.
+- `src/orchestrator/TestPhase11.luau` — 12 unit tests covering zero metrics,
+  air saturation, crest near-miss ramp, chicane occupancy ramp, budget flag
+  semantics, time-cost penalty, and the raw margin helper.
+
+Files modified:
+- `src/common/Types.luau` — `ChallengeScore` export, optional
+  `hang_time`/`peak_lateral_g`/`target_min_speed` on `RunMetrics`, optional
+  `score` on `RunResult`. All additive.
+- `src/common/Constants.luau` — `CHALLENGE_BUDGET_RATIO = 0.50`,
+  `CHALLENGE_UP_ROUNDS = 3`, per-component `SCORE_W_*` weights,
+  `NEAR_MISS_ZERO_AT_MARGIN`, `LATERAL_G_FULL_SCORE`, `HANG_TIME_FULL_SCORE`,
+  `MIN_ESCALATION_DELTA`.
+- `src/orchestrator/TestDispatcher.luau` — `phase11` / `phase11_unit` branches.
+- `tools/test_bridge_config.json` — both entries as `skip_baseline` (no lap
+  required).
+- `Makefile` — `phase11` / `phase11_unit` targets.
+
+### What did NOT ship (deliberately)
+
+These were left for the next agent so each sub-phase is independently
+shippable and each commit is small:
+
+1. **MetricCollector extension.** `hang_time`, `peak_lateral_g`, and
+   `target_min_speed` are declared in the type but not populated. Until they
+   are, `ChallengeScore.compute` falls back to approximations from
+   `target_airtime_distance` and `target_left/right_offset`. Both fallbacks
+   are intentionally conservative — real telemetry will produce larger
+   numbers, which is the right direction for "make the score responsive".
+
+2. **`LapEvaluator` does not call `ChallengeScore.compute`.** The score is
+   not yet written onto `RunResult`. Wiring is one line in
+   `LapEvaluator.evaluate` on the success branch. Left out because it crosses
+   from pure scoring (safe) into the live lap path (needs an integration lap
+   to verify nothing regresses). Next agent should add it under 11a-tail and
+   re-run `phase9_integration`, `phase10_integration`, `phase8_integration`.
+
+3. **No UI surface.** HUD does not show a score.
+
+4. **No challenge-up (Stage B).** Single-sector jobs still commit at minimum
+   integrity. See `plans/phase11.md` §3.3.
+
+5. **No `/demo maximize` campaign agent.** See `plans/phase11.md` §3.5.
+
+### Recommended next steps (in order)
+
+1. Verify the ship-today wiring on this branch is green:
+   - `make phase11_unit` passes.
+   - `make phase10_integration` still passes (no regression — only new files
+     and additive type fields).
+2. Wire `LapEvaluator` to compute the score on success. One new line plus
+   threading `state` through (already available to the evaluator — no
+   new argument needed for existing callers).
+3. Extend `MetricCollector` for `hang_time` (wall-clock seconds of the
+   longest continuous airborne segment — the existing `_airborne` bool and
+   timestamps make this a 10-line change).
+4. Surface the score in HUD log (`UIState.appendLog` is enough for v1).
+5. Start Stage B (`extreme` qualifier + challenge-up loop in `JobRunner`).
+6. Write `MaximizerAgent`. The user specifically wants to *watch* this run.
+
+### Design choices worth preserving (do not silently rewrite)
+
+- **`near_miss` is the main reward lever.** Without it, the score is just
+  "bigger number better" and the budget constraint is the only corrector. The
+  near-miss component explicitly rewards *margin to the integrity threshold*,
+  which is the thing the user described as "near crash".
+
+- **Single scalar `total` with weighted components.** Several alternatives
+  were considered (Pareto front, per-mechanic max, RL-style pair of signals).
+  Rejected because the project has exactly one agent making discrete commit
+  decisions — a scalar is enough, and a scalar is trivially renderable on the
+  HUD.
+
+- **Budget is a hard flag, not a score penalty.** Making it a steep penalty
+  produces trivial tracks (agent races to the bottom of the penalty basin).
+  Making it a hard gate at the track level preserves the "sacrifice a sector"
+  watch moment.
+
+- **Score is computed only on success.** A failing run has no score. Do not
+  add a "partial score" for failed runs — it would muddy the repair loop
+  signal.
+
+### Known risks (carried over from phase10 note: stronger pad tiers)
+
+The user's standing idea of "really slow / really fast" pad tiers is *still*
+not implemented in 11a. Phase 11's approach addresses the same complaint from
+a different angle: instead of giving the agent a bigger pad, give the agent a
+reason to use the pads it already has more deliberately. If Phase 11 lands and
+the user is still frustrated with pad fidelity, the pad-tier idea is the next
+natural follow-up.
+

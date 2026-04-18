@@ -77,6 +77,22 @@ export type RunMetrics = {
 	target_lateral_band_changes: number?,
 	lap_time: number,
 	slowdown_ratio: number,
+	-- Phase 11 additions (optional, zero-default if MetricCollector unchanged)
+	hang_time: number?,
+	peak_lateral_g: number?,
+	target_min_speed: number?,
+}
+
+-- Phase 11 fitness signal. See plans/phase11.md §3.1, §10 and
+-- src/integrity/ChallengeScore.luau for the formula.
+export type ChallengeScore = {
+	total: number,
+	air: number,
+	lateral: number,
+	near_miss: number,
+	time_cost: number,
+	budget_used: number,
+	over_budget: boolean,
 }
 
 export type FailureType =
@@ -97,6 +113,8 @@ export type RunResult = {
 	failure_position: Vector3?,
 	final_position: Vector3?,
 	trajectory_tail: { Vector3 }?,
+	-- Phase 11: populated only on success.
+	score: ChallengeScore?,
 }
 
 export type Diagnostics = {

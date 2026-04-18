@@ -72,6 +72,19 @@ Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT = 3  -- studs
 Constants.CRESTDIP_MIN_CURVATURE = 0.006          -- |h|/L^2, 1/studs
 Constants.CRESTDIP_MAX_AIRTIME_DISTANCE = 30      -- studs; largest allowed airborne segment after liftoff
 
+-- Phase 11: ChallengeScore weights and budget
+-- See plans/phase11.md §3, §10 for the formula and motivation.
+Constants.CHALLENGE_BUDGET_RATIO   = 0.50   -- allowed lap-time slowdown vs clean baseline
+Constants.CHALLENGE_UP_ROUNDS      = 3      -- score-escalation rounds per job
+Constants.SCORE_W_AIR              = 1.0
+Constants.SCORE_W_LATERAL          = 1.0
+Constants.SCORE_W_NEAR_MISS        = 1.5
+Constants.SCORE_W_TIME             = 0.25
+Constants.NEAR_MISS_ZERO_AT_MARGIN = 0.75   -- occupancy below this → near-miss component is 0
+Constants.LATERAL_G_FULL_SCORE     = 60     -- studs/s² mapping to 10 points
+Constants.HANG_TIME_FULL_SCORE     = 0.75   -- seconds mapping to 10 points
+Constants.MIN_ESCALATION_DELTA     = 0.25   -- required score improvement for a challenge-up to supersede
+
 -- UI pacing delays (seconds)
 Constants.UI_PHASE_DELAY = 0.75
 Constants.UI_FAILURE_DWELL = 1.25

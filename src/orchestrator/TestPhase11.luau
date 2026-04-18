@@ -1,0 +1,232 @@
+-- TestPhase11.luau
+-- Unit tests for the Phase 11 ChallengeScore (plans/phase11.md §11).
+-- These tests are stateless and do not require a running lap, so they run
+-- under skip_baseline boot mode.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local T = require(script.Parent.TestUtils)
+local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
+
+local TestPhase11 = {}
+
+local function stateCrest(overrides)
+	local params = { height_or_depth = 6, radius = 20, sector_length = 40 }
+	if overrides then
+		for k, v in pairs(overrides) do params[k] = v end
+	end
+	return {
+		sector_id = 3,
+		mechanic = "CrestDip",
+		params = params,
+		pads = { ingress = "None", egress = "None" },
+		version = 0,
+	}
+end
+
+local function stateJump(overrides)
+	local params = { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 }
+	if overrides then
+		for k, v in pairs(overrides) do params[k] = v end
+	end
+	return {
+		sector_id = 3,
+		mechanic = "RampJump",
+		params = params,
+		pads = { ingress = "None", egress = "None" },
+		version = 0,
+	}
+end
+
+local function stateChicane(overrides)
+	local params = { amplitude = 8, transition_length = 15, corridor_width = 14 }
+	if overrides then
+		for k, v in pairs(overrides) do params[k] = v end
+	end
+	return {
+		sector_id = 3,
+		mechanic = "Chicane",
+		params = params,
+		pads = { ingress = "None", egress = "None" },
+		version = 0,
+	}
+end
+
+local function metrics(overrides)
+	local m = {
+		entry_speed = 80, exit_speed = 60,
+		airborne = false, air_distance = 0,
+		lateral_error = 0, vertical_displacement = 0,
+		reacquired = true, airtime_distance = 0,
+		target_airborne = false, target_air_distance = 0,
+		target_vertical_displacement = 0, target_reacquired = true,
+		target_airtime_distance = 0,
+		target_left_offset = 0, target_right_offset = 0,
+		target_lateral_band_changes = 0,
+		lap_time = 25, slowdown_ratio = 1.0,
+		hang_time = 0, peak_lateral_g = 0, target_min_speed = 80,
+	}
+	if overrides then
+		for k, v in pairs(overrides) do m[k] = v end
+	end
+	return m
+end
+
+local function runUnit()
+	-- 1. Zero metrics → zero score, not over budget.
+	do
+		local s = ChallengeScore.compute(stateCrest(), metrics())
+		T.expect("phase11_zero_metrics_total_zero",
+			math.abs(s.total) < 1e-6,
+			"expected near-zero total, got " .. tostring(s.total))
+		T.expect("phase11_zero_metrics_not_over_budget",
+			s.over_budget == false, "over_budget should be false")
+		T.expect("phase11_zero_metrics_budget_used_zero",
+			math.abs(s.budget_used) < 1e-6, "budget_used should be 0")
+	end
+
+	-- 2. Air component saturates at HANG_TIME_FULL_SCORE.
+	do
+		local s = ChallengeScore.compute(
+			stateJump(),
+			metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 2 })
+		)
+		T.expect("phase11_air_saturates_at_10",
+			math.abs(s.air - 10) < 1e-6,
+			"expected air==10, got " .. tostring(s.air))
+	end
+
+	-- 3. Air component is linear below saturation.
+	do
+		local s = ChallengeScore.compute(
+			stateJump(),
+			metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 0.5 })
+		)
+		T.expect("phase11_air_linear_half",
+			math.abs(s.air - 5) < 0.01,
+			"expected air~5, got " .. tostring(s.air))
+	end
+
+	-- 4. CrestDip near-miss: airtime at 90% of the cap scores close to 9.
+	do
+		local s = ChallengeScore.compute(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.9 })
+		)
+		T.expect("phase11_crest_near_miss_high",
+			s.near_miss >= 8.9 and s.near_miss <= 9.1,
+			"expected near_miss≈9, got " .. tostring(s.near_miss))
+	end
+
+	-- 5. CrestDip near-miss is zero when airtime is zero.
+	do
+		local s = ChallengeScore.compute(stateCrest(), metrics())
+		T.expect("phase11_crest_near_miss_zero",
+			math.abs(s.near_miss) < 1e-6,
+			"expected near_miss==0, got " .. tostring(s.near_miss))
+	end
+
+	-- 6. Chicane near-miss rewards corridor occupancy above the threshold.
+	do
+		-- corridor_width=14 → half=7. At 95% occupancy of a half-corridor =>
+		-- offset = 6.65. Below the NEAR_MISS_ZERO_AT_MARGIN ramp starts at 0.75.
+		local offset = 6.65
+		local s = ChallengeScore.compute(
+			stateChicane({ corridor_width = 14 }),
+			metrics({
+				target_left_offset = offset,
+				target_right_offset = offset,
+			})
+		)
+		T.expect("phase11_chicane_near_miss_high",
+			s.near_miss > 5,
+			"expected near_miss > 5 at high occupancy, got " .. tostring(s.near_miss))
+	end
+
+	-- 7. Chicane near-miss is zero at low occupancy.
+	do
+		local s = ChallengeScore.compute(
+			stateChicane({ corridor_width = 14 }),
+			metrics({ target_left_offset = 1, target_right_offset = 1 })
+		)
+		T.expect("phase11_chicane_near_miss_low",
+			s.near_miss < 1e-6,
+			"expected near_miss==0 at low occupancy, got " .. tostring(s.near_miss))
+	end
+
+	-- 8. Over-budget flag fires when slowdown_ratio exceeds (1 + ratio).
+	do
+		local ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.01
+		local s = ChallengeScore.compute(stateJump(), metrics({ slowdown_ratio = ratio }))
+		T.expect("phase11_over_budget_fires",
+			s.over_budget == true,
+			"over_budget should be true for slowdown " .. tostring(ratio))
+	end
+
+	-- 9. Over-budget flag does NOT fire at exact cap.
+	do
+		local ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO
+		local s = ChallengeScore.compute(stateJump(), metrics({ slowdown_ratio = ratio }))
+		T.expect("phase11_at_cap_not_over_budget",
+			s.over_budget == false,
+			"over_budget should be false exactly at cap")
+		T.expect("phase11_at_cap_budget_used_one",
+			math.abs(s.budget_used - 1) < 1e-6,
+			"budget_used should be 1 at cap")
+	end
+
+	-- 10. Time cost reduces total but does not make near-miss score negative alone.
+	do
+		local base = ChallengeScore.compute(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.9 })
+		)
+		local slowed = ChallengeScore.compute(
+			stateCrest(),
+			metrics({
+				target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.9,
+				slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO * 0.5,
+			})
+		)
+		T.expect("phase11_time_cost_reduces_total",
+			slowed.total < base.total,
+			string.format("expected slowed total < base; got slowed=%.3f base=%.3f",
+				slowed.total, base.total))
+	end
+
+	-- 11. A challenging chicane (both sides + lateral G) totals higher than zero metrics.
+	do
+		local s = ChallengeScore.compute(
+			stateChicane({ corridor_width = 14 }),
+			metrics({
+				target_left_offset = 6,
+				target_right_offset = 6,
+				peak_lateral_g = Constants.LATERAL_G_FULL_SCORE * 0.5,
+			})
+		)
+		T.expect("phase11_chicane_with_signal_scores_positive",
+			s.total > 1,
+			"expected total > 1, got " .. tostring(s.total))
+	end
+
+	-- 12. The nearMissMargin helper exposes the raw [0,1] margin.
+	do
+		local m = ChallengeScore.nearMissMargin(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 })
+		)
+		T.expect("phase11_near_miss_margin_half",
+			math.abs(m - 0.5) < 1e-6,
+			"expected margin~0.5, got " .. tostring(m))
+	end
+end
+
+function TestPhase11.runUnit()
+	runUnit()
+end
+
+function TestPhase11.run()
+	TestPhase11.runUnit()
+end
+
+return TestPhase11
