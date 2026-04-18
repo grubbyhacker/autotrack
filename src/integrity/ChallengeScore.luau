@@ -164,4 +164,77 @@ function ChallengeScore.nearMissMargin(state: SectorState, metrics: RunMetrics):
 	return nearMissMargin(state, metrics)
 end
 
+-- Track-level aggregator used by the Phase 11c maximiser. Pure function over a
+-- list of per-sector scores. Applies an over-budget penalty at the track level
+-- (score halved) and exposes the running total, sector count, and whether any
+-- sector was over budget.
+function ChallengeScore.aggregate(sectorScores: { Types.ChallengeScore })
+	local total = 0
+	local anyOverBudget = false
+	local maxBudgetUsed = 0
+	for _, s in ipairs(sectorScores) do
+		total += s.total
+		if s.over_budget then anyOverBudget = true end
+		if s.budget_used > maxBudgetUsed then maxBudgetUsed = s.budget_used end
+	end
+	if anyOverBudget then total = total * 0.5 end
+	return {
+		total = total,
+		sector_count = #sectorScores,
+		any_over_budget = anyOverBudget,
+		max_budget_used = maxBudgetUsed,
+	}
+end
+
+-- Suggest the lever most likely to raise the score when called during Stage B
+-- challenge-up. Picks the lowest non-saturated component and maps it to the
+-- mechanic-appropriate lever. Returns (lever_name, reason) or nil.
+--
+-- This is intentionally a hint, not an action — the caller (MinimalProposer in
+-- phase 11d) is responsible for picking the sign and magnitude of the delta
+-- and for validating the resulting state.
+function ChallengeScore.suggestEscalation(state: SectorState, score: Types.ChallengeScore): (string?, string?)
+	if score.over_budget then
+		return nil, "over budget; escalation blocked"
+	end
+
+	local mechanic = state.mechanic
+	if not mechanic then return nil, "no mechanic" end
+
+	-- Identify the lowest non-saturated reward component. Time_cost is not a
+	-- reward, so it does not enter the "raise me" comparison.
+	local lowest = math.huge
+	local lowestName: string? = nil
+	local function considerLow(name: string, value: number)
+		if value < 10 and value < lowest then
+			lowest = value
+			lowestName = name
+		end
+	end
+	considerLow("air", score.air)
+	considerLow("lateral", score.lateral)
+	considerLow("near_miss", score.near_miss)
+
+	if lowestName == nil then
+		return nil, "all components saturated"
+	end
+
+	-- Per-mechanic lever selection. Phase 11d can extend this with a full
+	-- EscalationLadder; this is the v1 mapping sufficient for Stage B.
+	if mechanic == "RampJump" then
+		if lowestName == "air" then return "ramp_angle", "raise hang time" end
+		if lowestName == "near_miss" then return "gap_length", "push landing margin" end
+		return "ramp_length", "extend ramp" -- lateral is typically 0 for jumps
+	elseif mechanic == "CrestDip" then
+		if lowestName == "air" then return "height_or_depth", "raise peak" end
+		if lowestName == "near_miss" then return "sector_length", "compress feature for tighter margin" end
+		return "height_or_depth", "raise peak"
+	elseif mechanic == "Chicane" then
+		if lowestName == "lateral" then return "amplitude", "deeper swing" end
+		if lowestName == "near_miss" then return "corridor_width", "narrow corridor" end
+		return "transition_length", "compress the S"
+	end
+	return nil, "unknown mechanic"
+end
+
 return ChallengeScore

@@ -219,6 +219,61 @@ local function runUnit()
 			math.abs(m - 0.5) < 1e-6,
 			"expected margin~0.5, got " .. tostring(m))
 	end
+
+	-- 13. aggregate sums and halves over-budget totals.
+	do
+		local a = ChallengeScore.compute(stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 }))
+		local b = ChallengeScore.compute(stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 }))
+		local agg = ChallengeScore.aggregate({ a, b })
+		T.expect("phase11_aggregate_sum",
+			math.abs(agg.total - (a.total + b.total)) < 1e-6,
+			"expected sum; got " .. tostring(agg.total))
+		T.expect("phase11_aggregate_count",
+			agg.sector_count == 2, "expected count=2")
+		T.expect("phase11_aggregate_not_over_budget",
+			agg.any_over_budget == false, "should not be over budget")
+	end
+
+	-- 14. aggregate halves when any sector is over budget.
+	do
+		local a = ChallengeScore.compute(stateJump(), metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE }))
+		local b = ChallengeScore.compute(stateJump(),
+			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local agg = ChallengeScore.aggregate({ a, b })
+		T.expect("phase11_aggregate_over_budget_flag",
+			agg.any_over_budget == true, "expected any_over_budget=true")
+		T.expect("phase11_aggregate_over_budget_halved",
+			math.abs(agg.total - (a.total + b.total) * 0.5) < 1e-6,
+			string.format("expected halved; got %.3f vs %.3f", agg.total, (a.total + b.total) * 0.5))
+	end
+
+	-- 15. suggestEscalation returns nil when over budget.
+	do
+		local s = ChallengeScore.compute(stateJump(),
+			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local lever = ChallengeScore.suggestEscalation(stateJump(), s)
+		T.expect("phase11_escalation_blocked_over_budget", lever == nil, "expected nil when over budget")
+	end
+
+	-- 16. suggestEscalation points at air for a flat jump.
+	do
+		local s = ChallengeScore.compute(stateJump(), metrics())
+		local lever = ChallengeScore.suggestEscalation(stateJump(), s)
+		T.expect("phase11_escalation_jump_prefers_angle",
+			lever == "ramp_angle",
+			"expected ramp_angle; got " .. tostring(lever))
+	end
+
+	-- 17. suggestEscalation points at amplitude for a flat chicane.
+	do
+		local s = ChallengeScore.compute(stateChicane(), metrics())
+		local lever = ChallengeScore.suggestEscalation(stateChicane(), s)
+		T.expect("phase11_escalation_chicane_returns_lever",
+			lever == "amplitude" or lever == "corridor_width" or lever == "transition_length",
+			"expected a chicane lever; got " .. tostring(lever))
+	end
 end
 
 function TestPhase11.runUnit()
