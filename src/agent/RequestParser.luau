@@ -38,6 +38,10 @@ local QUALIFIER_WORDS = {
 	narrow = true,
 	shallow = true,
 	deep = true,
+	-- Phase 11: opt-in to Stage B challenge-up. The word itself has no
+	-- geometry bias (MinimalProposer ignores it); JobRunner reads it to
+	-- decide whether to run the escalation loop after a successful commit.
+	extreme = true,
 }
 
 local PAD_VALUE_TOKENS = {

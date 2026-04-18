@@ -22,6 +22,7 @@ local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
+local ChallengeRunner = require(script.Parent.ChallengeRunner)
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
@@ -366,6 +367,63 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 					))
 				end
 				pauseForUI()
+
+				-- Phase 11b Stage B: opt-in challenge-up via the "extreme"
+				-- qualifier. We already committed the minimum-valid state, so
+				-- a failure here just stops escalation — the commit stands.
+				local wantsChallengeUp = false
+				for _, q in ipairs(request.qualifiers) do
+					if q == "extreme" then wantsChallengeUp = true; break end
+				end
+				if wantsChallengeUp and result.score then
+					UIState.setPhase("ChallengeUp", "Challenging up...")
+					UIState.appendLog("Escalating for extreme qualifier")
+					local bestState, bestResult, rounds = ChallengeRunner.runUp({
+						baseState = job.working_state,
+						baseResult = result,
+						targetSectorId = targetSectorId,
+						targetSector = targetSector,
+						sectors = RuntimeContext.getSectors(),
+						car = RuntimeContext.getCar(),
+						canonicalStart = RuntimeContext.getCanonicalStart(),
+						onSectorChange = function(id, entering)
+							if entering then UIState.setCurrentSector(id) end
+						end,
+						onRound = function(round, attempt, improved, reason)
+							if attempt then
+								UIState.appendLog(string.format(
+									"Escalate r%d %s %s→%s %s%s",
+									round,
+									attempt.lever,
+									tostring(attempt.from),
+									tostring(attempt.to),
+									if improved then "ACCEPT" else "REJECT",
+									reason and (" (" .. reason .. ")") or ""
+								))
+							elseif reason then
+								UIState.appendLog("Escalate stopped: " .. reason)
+							end
+						end,
+					})
+					if bestResult and bestResult.score and bestResult ~= result then
+						bestState.version = job.working_state.version + 1
+						SectorRegistry.commit(bestState)
+						job.working_state = cloneState(bestState)
+						UIState.publishScore(targetSectorId, bestResult.score)
+						UIState.appendLog(string.format(
+							"Escalated in %d rounds → score %.1f (was %.1f)",
+							rounds, bestResult.score.total, result.score.total
+						))
+						Tracer.log(string.format(
+							"challenge_up sector=%d rounds=%d score=%.2f->%.2f",
+							targetSectorId, rounds, result.score.total, bestResult.score.total
+						))
+					else
+						UIState.appendLog(string.format("Escalate produced no net improvement in %d rounds", rounds))
+					end
+					pauseForUI()
+				end
+
 				UIState.publishCommit(targetSector)
 				Tracer.log(string.format("commit sector=%d version=%d", targetSectorId, job.working_state.version))
 				Tracer.log(string.format("job_end id=%s status=committed", job.job_id))
