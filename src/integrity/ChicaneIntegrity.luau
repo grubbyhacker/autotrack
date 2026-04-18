@@ -22,6 +22,9 @@ function ChicaneIntegrity.preflight(
 	if (p.amplitude or 0) < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT then
 		table.insert(hints, "amplitude below minimum lateral displacement")
 	end
+	if (p.amplitude or 0) > Constants.TRACK_WIDTH * 0.5 then
+		table.insert(hints, "amplitude exceeds track half-width")
+	end
 
 	local transitionLength = p.transition_length or 0
 	if transitionLength <= 0 then

@@ -23,6 +23,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type SectorState = Types.SectorState
 type RunMetrics = Types.RunMetrics
@@ -107,13 +108,25 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 	elseif mechanic == "Chicane" then
 		local leftOffset = metrics.target_left_offset or 0
 		local rightOffset = metrics.target_right_offset or 0
-		local maxOffset = math.max(leftOffset, rightOffset)
-		local corridorWidth = state.params.corridor_width or Constants.TRACK_WIDTH
-		local corridorHalf = corridorWidth * 0.5
-		if corridorHalf <= 0 then return 0 end
-		local occupancy = safeDiv(maxOffset, corridorHalf)
-		-- Ramp: below zeroAt fraction → 0, at 1.0 → 1.0 (wall contact).
-		return clamp01(safeDiv(occupancy - zeroAt, 1 - zeroAt))
+		-- Use absolute track half-width as denominator so amplitude drives the score,
+		-- not corridor_width. amplitude=TRACK_WIDTH/2 (max swing) → occupancy=1.
+		local trackHalf = Constants.TRACK_WIDTH * 0.5
+		if trackHalf <= 0 then return 0 end
+		local leftOccupancy = clamp01(safeDiv(leftOffset, trackHalf))
+		local rightOccupancy = clamp01(safeDiv(rightOffset, trackHalf))
+		local balancedOccupancy = math.min(leftOccupancy, rightOccupancy)
+		local occupancyScore = clamp01(safeDiv(balancedOccupancy - zeroAt, 1 - zeroAt))
+		local bandChanges = metrics.target_lateral_band_changes or 0
+		local alternationScore = clamp01(safeDiv(bandChanges, Constants.CHICANE_SCORE_ALT_FULL))
+		local targetMinSpeed = metrics.target_min_speed or metrics.exit_speed or 0
+		local entrySpeed = metrics.entry_speed
+		if entrySpeed <= 0 then entrySpeed = Constants.BASELINE_SPEED end
+		local speedRatio = safeDiv(targetMinSpeed, entrySpeed)
+		local speedScore = clamp01(safeDiv(
+			speedRatio - Constants.CHICANE_SPEED_RETENTION_FLOOR,
+			1 - Constants.CHICANE_SPEED_RETENTION_FLOOR
+		))
+		return occupancyScore * (0.6 + 0.4 * alternationScore) * (0.35 + 0.65 * speedScore)
 	end
 
 	return 0
@@ -143,6 +156,10 @@ function ChallengeScore.compute(state: SectorState, metrics: RunMetrics)
 		+ Constants.SCORE_W_LATERAL * lateral
 		+ Constants.SCORE_W_NEAR_MISS * nearMiss
 		- Constants.SCORE_W_TIME * timeCost
+
+	if state.mechanic == "Chicane" and PadValueUtils.kind(state.pads.ingress) == "Brake" then
+		total -= Constants.CHICANE_INGRESS_BRAKE_PENALTY
+	end
 
 	local slowdown = metrics.slowdown_ratio or 1
 	local budgetUsed = clamp01(safeDiv(slowdown - 1, Constants.CHALLENGE_BUDGET_RATIO))
@@ -230,9 +247,10 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 		if lowestName == "near_miss" then return "sector_length", "compress feature for tighter margin" end
 		return "height_or_depth", "raise peak"
 	elseif mechanic == "Chicane" then
-		if lowestName == "lateral" then return "amplitude", "deeper swing" end
-		if lowestName == "near_miss" then return "corridor_width", "narrow corridor" end
-		return "transition_length", "compress the S"
+		-- near_miss now scores amplitude vs trackHalf, so amplitude is the lever
+		-- for both near_miss and lateral. transition_length is a tiebreaker only.
+		if lowestName == "near_miss" or lowestName == "lateral" then return "amplitude", "wider swing" end
+		return "amplitude", "maximize swing"
 	end
 	return nil, "unknown mechanic"
 end

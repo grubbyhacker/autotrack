@@ -16,9 +16,10 @@
 | 8 | Complete (broadcast HUD + replicated UI state + live markers) |
 | 9 | Complete (CrestDip path + early integrity gating + repair-story tuning) |
 | 10 | Complete (RampJump/Chicane rigor + persistent pad speed setting) |
-| 11a | Prototype on branch `feature/phase11-challenge-rewards` — ChallengeScore scaffolding + tests, no wiring yet |
-| 11b | Prototype on branch `feature/phase11-challenge-rewards` — Stage B challenge-up via `extreme` qualifier; ChallengeRunner module + unit tests |
-| 11c | Prototype on branch `feature/phase11-challenge-rewards` — MaximizerAgent campaign via `/demo maximize`; six-step plan + aggregate score |
+| 11a | Complete — ChallengeScore telemetry, scoring, and automated Phase 11 coverage |
+| 11b | Complete — Stage B challenge-up via `extreme` qualifier + per-sector HUD score publication |
+| 11c | Complete — `/demo maximize` campaign with retained sector scores, final budget probe, and eviction loop |
+| 11d | Partial — `extreme` opening proposals are now biased harder; escalation/search remains simple |
 
 ---
 
@@ -841,3 +842,185 @@ reason to use the pads it already has more deliberately. If Phase 11 lands and
 the user is still frustrated with pad fidelity, the pad-tier idea is the next
 natural follow-up.
 
+### Superseding update after the next session
+
+The status blocks above for 11a/11b/11c are now stale historically useful notes,
+not the current branch truth. The current branch state is:
+
+- `phase11_unit`: passing
+- `phase11_integration`: passing
+- `/demo maximize`: now retains per-sector committed scores, runs a final
+  whole-track budget probe, and evicts the lowest-value sectors until the
+  assembled track is back under budget or no scored sectors remain
+- HUD state now publishes both:
+  - `last_score_*` for the most recently committed sector
+  - `track_score_*` for the running maximizer campaign total
+
+#### Additional Phase 11 lessons
+
+1. The maximizer needs campaign memory
+
+Calling `JobRunner.submit(...)` several times is not enough on its own. The
+campaign must keep a per-sector score map so later eviction and aggregate HUD
+publication operate on committed campaign state rather than whatever the last
+job happened to publish.
+
+2. Budget authority belongs to a final full-track lap
+
+Per-sector `score.over_budget` is informative, but the real budget contract is
+the assembled live track. The maximizer now performs a final probe lap over the
+current committed geometry and uses that `slowdown_ratio` to drive:
+
+- `track_budget_used`
+- `track_budget_headroom`
+- the eviction decision
+
+3. Eviction is not rollback
+
+`SectorRollback.revert(...)` restores the latest committed state, which is
+correct for failed jobs and wrong for budget sacrifice. A maximizer eviction
+must explicitly commit and apply a new flat `SectorState` with version bump.
+
+4. The HUD needs distinct sector and campaign score channels
+
+Do not overload one score attribute family to mean both the latest sector score
+and the campaign total. Keeping `last_score_*` and `track_score_*` separate made
+the client HUD logic much cleaner.
+
+5. The maintained `make` path must be run sequentially
+
+The local Studio bridge uses one localhost port. Running multiple `make phase...`
+targets in parallel will collide with `Address already in use`. Sequential runs
+are the intended contract.
+
+6. A stale Phase 6 unit expectation was still asserting an old CrestDip repair path
+
+`TestPhase6` still rejected `sector_length` as a valid softening lever for
+`CrestDip` `local_execution_failure`, but the current proposer has used that
+path since the Phase 9 repair-story tuning. The test now matches the live
+contract.
+
+7. `/demo maximize` must suppress Stage B challenge-up until campaign observability is stronger
+
+The maximize plan uses `extreme` requests for aggressive initial proposals, but
+that same qualifier also enables the single-sector challenge-up loop in
+`JobRunner`. Letting Stage B run inside maximize mixed extra escalation laps
+into campaign behavior and made sector-local debugging much harder. The current
+branch sets `workspace.AutoTrack_MaximizeCampaignActive = true` for the whole
+campaign and `JobRunner` now logs `challenge_up_skip ... reason=maximize_campaign`
+instead of escalating during maximize.
+
+8. Wrong-sector repairs need explicit trace evidence, not just a guard
+
+The branch already had a pre-target revert guard, but that alone was not enough
+to debug live reports. `JobRunner` now emits:
+
+- `attempt_result ... target_sector=<n> failure_sector=<n|-> target_entered=<bool>`
+- `failure_analysis ...`
+- `repair attempt=... target_sector=... failure_sector=... target_entered=...`
+
+Use those trace lines first when a live maximize run appears to "repair the
+wrong thing". They make it clear whether the target was ever entered and whether
+the repair loop should have been allowed to continue.
+
+9. `target_entered` was too weak for downstream classification
+
+The earlier guard only distinguished "never touched the target" from
+"touched it at all". That still allowed coin-flip traversals to enter the
+target sector briefly, fail before a stable exit, and then get treated like
+downstream failures. The current contract adds:
+
+- `RunMetrics.target_exited`
+- `RunMetrics.target_progress`
+
+`LapEvaluator` now only reclassifies a non-target local failure to
+`downstream_failure` when `target_exited == true`. `JobRunner` also reverts
+wrong-sector failures whenever the target was not exited yet, even if it was
+entered.
+
+10. Pads are now discrete-strength controls, not a binary toggle
+
+The pad model now supports:
+
+- `None`
+- `Boost5`, `Boost10`, `Boost25`
+- `Brake5`, `Brake10`, `Brake25`
+
+Legacy `Boost` / `Brake` inputs are normalized to the medium values. This was
+needed so repair actions can strengthen, weaken, or remove pads rather than
+only flipping a binary switch. The verifier reads the speed delta from
+`src/common/PadValueUtils.luau`, and prompts/validation now expose the richer
+pad set to the agent boundary.
+
+11. Late-in-sector failures can justify extra repair budget
+
+`JobRunner` now grants
+`Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS` additional repair rounds
+when the failure is still in the target sector and `target_progress >= 0.5`.
+This is intended for "almost worked" mechanics that fail after substantial
+progress through the obstacle. Do not apply this bonus to upstream or non-target
+failures.
+
+---
+
+## Phase 11d chicane optimization fixes (current session)
+
+### Status at checkpoint
+
+- `make phase10_integration`: PASS (both tests)
+- `make phase11_integration`: PASS (all 5 tests)
+- All changes are **uncommitted** (still in the working tree on `feature/phase11-challenge-rewards`)
+
+### Root cause: chicane was "pathologically easy" AND "unoptimizable"
+
+Two separate bugs conspired:
+
+1. **Default amplitude=8 = track half-width (8).** `nearMissMargin` used `corridorHalf` (typically 7) as denominator, so amplitude=8 → occupancy > 1 → clamped to 1 → score maxed at initial proposal. Challenge-up had nothing to improve.
+
+2. **`suggestEscalation` pointed at `corridor_width`, not `amplitude`.** Even if near_miss wasn't maxed, the suggested lever was corridor_width (narrowing the path), which doesn't raise amplitude or lateral swing.
+
+3. **Extreme qualifier bias added +6 to already-max amplitude=8 → 14**, which exceeds the 16-wide track and produced illegal geometry without rejection.
+
+4. **Chicane repair branch tried geometry relaxation before brake pads.** Brake pads were always last in the candidate list, so the repair loop spent all its budget softening geometry before ever reaching the first pad upgrade.
+
+5. **"Never became airborne" RampJump repair used `ramp_angle - 3` (flatten).** For a gentle ramp (e.g., 10°), flattening to 7° makes things worse. The correct direction is steepen.
+
+### Fixes applied (all in working tree)
+
+| File | Change |
+|------|--------|
+| `src/common/LevelMappings.luau` | `Chicane.amplitude` default: `8 → 5` (creates room to escalate) |
+| `src/integrity/ChallengeScore.luau` | `nearMissMargin` uses `TRACK_WIDTH * 0.5 = 8` as denominator (not corridorHalf); `suggestEscalation` Chicane maps near_miss/lateral → `"amplitude"` |
+| `src/integrity/ChicaneIntegrity.luau` | Preflight now rejects `amplitude > TRACK_WIDTH * 0.5` |
+| `src/orchestrator/MinimalProposer.luau` | Extreme bias for Chicane.amplitude: `6 → 3` (5+3=8=ceiling); `normalizeParams` clamps amplitude to `[MIN, TRACK_WIDTH/2]`; Chicane repair: Brake pads moved to TOP of candidates before geometry changes; "never became airborne" branch: `ramp_angle - 3 → + 5` |
+| `src/orchestrator/ChallengeRunner.luau` | Added `LEVER_CEILING` table; `escalateState` caps amplitude at `TRACK_WIDTH * 0.5` and returns nil if already at ceiling |
+| `src/orchestrator/TestPhase11.luau` | Test 6: offset updated to 7.5 (reflects trackHalf=8 denominator); Test 22: fixture uses `amplitude=6` (room to escalate to 8) |
+| `src/orchestrator/TestPhase10.luau` | `phase10_chicane_commits_after_repair_chain`: assertion relaxed from `>= 2` to `>= 1` (tight chicane now passes first-try because extreme default is capped to 8) |
+
+### What the chicane flow looks like now (expected behavior)
+
+1. Default proposal: amplitude=5, transition=15, corridor=14
+2. Preflight passes; lap runs; integrity passes (amplitude < corridorHalf but score is low)
+3. With `extreme` qualifier: Challenge-up loop calls `suggestEscalation` → `"amplitude"`, increments by delta=1 each round toward ceiling=8
+4. At amplitude=8: near_miss component saturates; total score peaks; challenge-up stops escalating
+5. No over-budget penalty because amplitude changes don't slow the car materially
+
+### For the next agent
+
+The chicane optimization path is now sound. Recommended next steps toward a good `/demo maximize` e2e demo:
+
+1. Commit all working-tree changes (a single commit is fine; they all belong together as "11d chicane + jump repair fixes")
+2. Run `/demo maximize` in Studio and verify:
+   - Chicane sectors score progressively higher through challenge-up (watch HUD log for `Escalate ... ACCEPT` lines)
+   - RampJump sectors show "never became airborne" repairing correctly (ramp_angle climbing, not falling)
+   - Campaign aggregate score is non-trivial
+3. If the e2e demo looks good, prepare a PR against main
+
+### RampJump "integrity failure after successful-looking jump" clarification
+
+The RampJump has two gate conditions:
+
+1. **Airborne** — car leaves the ramp surface (hang_time > 0). This is visually obvious.
+2. **Reacquire** — car lands back on the track within `RAMPJUMP_REACQUIRE_MAX` studs after the gap. This is not visually obvious. If the car overshoots the landing zone or physics registers contact outside the landing tiles, this fails even when the jump looked clean.
+
+So "jumped fine but integrity failed" almost always means reacquire failed — the landing strip was too short, the speed was too high relative to gap length, or a bounce took the car off the landing tiles. The repair lever for this is `gap_length` (shorten the gap) or `landing_length` (lengthen landing zone).

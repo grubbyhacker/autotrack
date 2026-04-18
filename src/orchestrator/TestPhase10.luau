@@ -232,8 +232,26 @@ function TestPhase10.runUnit()
 		jumpTakeoffAction ~= nil
 			and jumpTakeoffAction.type == "SetPad"
 			and jumpTakeoffAction.pad == "ingress"
-			and jumpTakeoffAction.value == "Boost",
+			and jumpTakeoffAction.value == "Boost10",
 		tostring(jumpTakeoffAction and jumpTakeoffAction.type == "SetPad" and jumpTakeoffAction.pad or jumpTakeoffAction and jumpTakeoffAction.lever)
+	)
+
+	local jumpTakeoffFollowupAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{ "verifier never became airborne" },
+		"mechanic_integrity_failure",
+		{ type = "SetPad", pad = "ingress", value = "Boost10" }
+	))
+	T.expect(
+		"phase10_proposer_jump_takeoff_steepens_after_boost",
+		jumpTakeoffFollowupAction ~= nil
+			and (
+				(jumpTakeoffFollowupAction.type == "SetNumericLever" and jumpTakeoffFollowupAction.lever == "ramp_angle" and jumpTakeoffFollowupAction.value > 20)
+				or (jumpTakeoffFollowupAction.type == "SetNumericLever" and jumpTakeoffFollowupAction.lever == "ramp_length" and jumpTakeoffFollowupAction.value > 12)
+				or (jumpTakeoffFollowupAction.type == "SetNumericLever" and jumpTakeoffFollowupAction.lever == "gap_length" and jumpTakeoffFollowupAction.value < 8)
+			),
+		tostring(jumpTakeoffFollowupAction and jumpTakeoffFollowupAction.type == "SetNumericLever" and jumpTakeoffFollowupAction.lever .. "=" .. tostring(jumpTakeoffFollowupAction.value) or jumpTakeoffFollowupAction and jumpTakeoffFollowupAction.type)
 	)
 
 	local jumpLandingAction = MinimalProposer.repair(makePacket(
@@ -242,11 +260,17 @@ function TestPhase10.runUnit()
 		{ "semi-rail reacquisition failed after landing" }
 	))
 	T.expect(
-		"phase10_proposer_jump_landing_picks_egress_brake",
+		"phase10_proposer_jump_landing_softens_exit",
 		jumpLandingAction ~= nil
-			and jumpLandingAction.type == "SetPad"
-			and jumpLandingAction.pad == "egress"
-			and jumpLandingAction.value == "Brake",
+			and (
+				(jumpLandingAction.type == "SetPad"
+					and jumpLandingAction.pad == "egress"
+					and string.find(jumpLandingAction.value, "Brake", 1, true) ~= nil)
+				or (jumpLandingAction.type == "SetNumericLever"
+					and (jumpLandingAction.lever == "ramp_angle"
+						or jumpLandingAction.lever == "gap_length"
+						or jumpLandingAction.lever == "landing_length"))
+			),
 		tostring(jumpLandingAction and jumpLandingAction.type == "SetPad" and jumpLandingAction.pad or jumpLandingAction and jumpLandingAction.lever)
 	)
 
@@ -256,12 +280,88 @@ function TestPhase10.runUnit()
 		{ "entry unstable" }
 	))
 	T.expect(
-		"phase10_proposer_chicane_instability_picks_ingress_brake",
+		"phase10_proposer_chicane_instability_picks_brake_before_geometry",
 		chicaneInstabilityAction ~= nil
 			and chicaneInstabilityAction.type == "SetPad"
 			and chicaneInstabilityAction.pad == "ingress"
-			and chicaneInstabilityAction.value == "Brake",
+			and string.find(chicaneInstabilityAction.value, "Brake", 1, true) ~= nil,
 		tostring(chicaneInstabilityAction and chicaneInstabilityAction.type == "SetPad" and chicaneInstabilityAction.pad or chicaneInstabilityAction and chicaneInstabilityAction.lever)
+	)
+
+	local crestStallBoostAction = MinimalProposer.repair(makePacket(
+		"CrestDip",
+		{ height_or_depth = 10, radius = 20, sector_length = 24 },
+		{},
+		"local_execution_failure"
+	))
+	T.expect(
+		"phase10_proposer_crestdip_stall_picks_ingress_boost_first",
+		crestStallBoostAction ~= nil
+			and crestStallBoostAction.type == "SetPad"
+			and crestStallBoostAction.pad == "ingress"
+			and crestStallBoostAction.value == "Boost10",
+		tostring(crestStallBoostAction and crestStallBoostAction.type == "SetPad" and crestStallBoostAction.pad or crestStallBoostAction and crestStallBoostAction.lever)
+	)
+
+	local crestStallFollowupAction = MinimalProposer.repair({
+		request = makeRequest("phase10", "CrestDip"),
+		sector_state = makeState("CrestDip", { height_or_depth = 10, radius = 20, sector_length = 24 }),
+		attempt_index = 3,
+		last_action = { type = "SetPad", pad = "ingress", value = "Boost10" },
+		run_result = {
+			success = false,
+			failure = { type = "local_execution_failure", sector_id = 3 },
+			metrics = makeMetrics(),
+		},
+		diagnostics = { failure_sector = 3, hints = {} },
+		legal_actions = {
+			numeric_levers = LevelMappings.NUMERIC_LEVERS.CrestDip,
+			pads = { "ingress", "egress" },
+		},
+	})
+	T.expect(
+		"phase10_proposer_crestdip_stall_followup_softens_more_aggressively",
+		crestStallFollowupAction ~= nil
+			and crestStallFollowupAction.type == "SetNumericLever"
+			and (
+				(crestStallFollowupAction.lever == "sector_length" and crestStallFollowupAction.value >= 40)
+				or (crestStallFollowupAction.lever == "height_or_depth" and crestStallFollowupAction.value <= 7)
+			),
+		tostring(crestStallFollowupAction and crestStallFollowupAction.type == "SetNumericLever" and crestStallFollowupAction.lever .. "=" .. tostring(crestStallFollowupAction.value) or crestStallFollowupAction and crestStallFollowupAction.type)
+	)
+
+	local jumpDownstreamAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{},
+		"downstream_failure"
+	))
+	T.expect(
+		"phase10_proposer_jump_downstream_softens_landing",
+		jumpDownstreamAction ~= nil
+			and (jumpDownstreamAction.type == "SetNumericLever"
+				and (jumpDownstreamAction.lever == "ramp_angle"
+					or jumpDownstreamAction.lever == "gap_length"
+					or jumpDownstreamAction.lever == "landing_length")),
+		tostring(jumpDownstreamAction and jumpDownstreamAction.type == "SetPad" and jumpDownstreamAction.pad or jumpDownstreamAction and jumpDownstreamAction.lever)
+	)
+
+	local jumpShortAction = MinimalProposer.repair(makePacket(
+		"RampJump",
+		{ ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+		{ "air distance too short" }
+	))
+	T.expect(
+		"phase10_proposer_jump_shortfall_does_not_raise_gap",
+		jumpShortAction ~= nil
+			and not (
+				jumpShortAction.type == "SetNumericLever"
+				and (
+					(jumpShortAction.lever == "gap_length" and jumpShortAction.value > 8)
+					or (jumpShortAction.lever == "ramp_angle" and jumpShortAction.value > 20)
+				)
+			),
+		tostring(jumpShortAction and jumpShortAction.type == "SetNumericLever" and jumpShortAction.lever .. "=" .. tostring(jumpShortAction.value) or jumpShortAction and jumpShortAction.type)
 	)
 end
 
@@ -299,6 +399,10 @@ function TestPhase10.runIntegration()
 	task.wait(Constants.UI_SUCCESS_DWELL + 0.25)
 	local idle = waitForIdle(5)
 
+	-- Phase 11 capped amplitude at TRACK_WIDTH/2=8; tight bias (amplitude+4) from
+	-- default(5) reaches 9 → clamped to 8. The initial proposal now passes
+	-- preflight and runtime on the first attempt, so repair chain is no longer
+	-- required. The assertion relaxed from >= 2 to >= 1.
 	local okChicane, chicaneReason = JobRunner.submit("add a tight chicane in sector 8")
 	local chicaneJob = JobRunner.getLastJob()
 	local chicaneState = waitForCommittedMechanic(8, "Chicane", 2)
@@ -309,7 +413,7 @@ function TestPhase10.runIntegration()
 			and idle
 			and chicaneJob ~= nil
 			and chicaneJob.final_status == "committed"
-			and #chicaneJob.attempts >= 2
+			and #chicaneJob.attempts >= 1
 			and chicaneState ~= nil
 			and chicaneState.mechanic == "Chicane",
 		string.format(

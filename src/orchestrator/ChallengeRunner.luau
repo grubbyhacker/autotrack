@@ -43,6 +43,12 @@ local ESCALATION_DELTA = {
 	},
 }
 
+-- Per-lever upper bounds. Amplitude must stay within the physical track half-width
+-- so the chicane centerline never exits the sector.
+local LEVER_CEILING = {
+	amplitude = Constants.TRACK_WIDTH * 0.5,
+}
+
 -- Per-lever clamps. Values below the floor are rejected so we do not ask for
 -- physically impossible geometry. Mirrors existing MinimalProposer floors.
 local LEVER_FLOOR = {
@@ -90,9 +96,16 @@ local function escalateState(state: SectorState, score: Types.ChallengeScore): (
 	if type(current) ~= "number" then return nil, nil, "lever not numeric" end
 
 	local candidate = current + delta
+	local ceiling = LEVER_CEILING[lever]
+	if ceiling and candidate > ceiling then
+		candidate = ceiling
+	end
 	local floor = LEVER_FLOOR[lever] or 1
 	if candidate < floor then
 		return nil, nil, string.format("%s=%d would underflow floor %d", lever, candidate, floor)
+	end
+	if candidate == current then
+		return nil, nil, string.format("%s already at ceiling %s", lever, tostring(ceiling))
 	end
 
 	local next_ = cloneState(state)

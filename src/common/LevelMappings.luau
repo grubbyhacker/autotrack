@@ -39,7 +39,7 @@ LevelMappings.DEFAULTS = {
 		landing_length  = 12,
 	},
 	Chicane = {
-		amplitude          = 8,
+		amplitude          = 5,
 		transition_length  = 15,
 		corridor_width     = 14,
 	},
