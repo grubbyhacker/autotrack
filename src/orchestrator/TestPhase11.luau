@@ -357,8 +357,76 @@ function TestPhase11.runUnit()
 	runUnit()
 end
 
+local function waitForBaseline(): boolean
+	local deadline = os.clock() + 45
+	while os.clock() < deadline do
+		if workspace:GetAttribute("AutoTrack_BaselineLapDone") == true then
+			return true
+		end
+		task.wait(0.25)
+	end
+	return false
+end
+
+local function waitForIdle(timeoutSeconds: number): boolean
+	local JobRunner = require(script.Parent.JobRunner)
+	local deadline = os.clock() + timeoutSeconds
+	while os.clock() < deadline do
+		if JobRunner.isBusy() == false then
+			return true
+		end
+		task.wait(0.1)
+	end
+	return JobRunner.isBusy() == false
+end
+
+function TestPhase11.runIntegration()
+	local ReplicatedStorage2 = game:GetService("ReplicatedStorage")
+	local JobRunner = require(script.Parent.JobRunner)
+	local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
+
+	if workspace:GetAttribute("AutoTrack_BootBaselineSkipped") == true then
+		T.fail("phase11_integration_requires_baseline", "restart without AutoTrack_SkipBootBaseline")
+		return
+	end
+	if not waitForBaseline() then
+		T.fail("phase11_baseline_ready", "baseline lap did not complete before integration tests")
+		return
+	end
+
+	local ok, reason = JobRunner.submit("add an extreme tall jump in sector 3")
+	if not ok then
+		T.fail("phase11_extreme_submit_accepted", "submit rejected: " .. tostring(reason))
+		return
+	end
+
+	-- Stage B can take a while (up to CHALLENGE_UP_ROUNDS extra laps).
+	local idle = waitForIdle(Constants.CHALLENGE_UP_ROUNDS * 45 + 60)
+	T.expect("phase11_extreme_reaches_idle", idle, "JobRunner never returned to idle")
+
+	local job = JobRunner.getLastJob()
+	T.expect("phase11_extreme_job_committed",
+		job ~= nil and job.final_status == "committed",
+		"expected committed; got " .. tostring(job and job.final_status))
+
+	local state = SectorRegistry.getCommitted(3)
+	T.expect("phase11_extreme_commit_is_rampjump",
+		state ~= nil and state.mechanic == "RampJump",
+		"expected RampJump commit; got " .. tostring(state and state.mechanic))
+
+	local stateFolder = ReplicatedStorage2:WaitForChild("AutoTrackUIState")
+	T.expect("phase11_extreme_score_published",
+		stateFolder:GetAttribute("last_score_sector") == 3,
+		"expected last_score_sector=3; got " .. tostring(stateFolder:GetAttribute("last_score_sector")))
+	local total = stateFolder:GetAttribute("last_score_total") or -1
+	T.expect("phase11_extreme_score_nonzero",
+		type(total) == "number" and total >= 0,
+		"expected numeric score; got " .. tostring(total))
+end
+
 function TestPhase11.run()
 	TestPhase11.runUnit()
+	TestPhase11.runIntegration()
 end
 
 return TestPhase11

@@ -38,7 +38,8 @@
     "phase10": { "boot_mode": "baseline" },
     "phase10_unit": { "boot_mode": "skip_baseline" },
     "phase10_integration": { "boot_mode": "baseline" },
-    "phase11": { "boot_mode": "skip_baseline" },
-    "phase11_unit": { "boot_mode": "skip_baseline" }
+    "phase11": { "boot_mode": "baseline" },
+    "phase11_unit": { "boot_mode": "skip_baseline" },
+    "phase11_integration": { "boot_mode": "baseline" }
   }
 }
