@@ -17,6 +17,7 @@
 | 9 | Complete (CrestDip path + early integrity gating + repair-story tuning) |
 | 10 | Complete (RampJump/Chicane rigor + persistent pad speed setting) |
 | 11a | Prototype on branch `feature/phase11-challenge-rewards` — ChallengeScore scaffolding + tests, no wiring yet |
+| 11b | Prototype on branch `feature/phase11-challenge-rewards` — Stage B challenge-up via `extreme` qualifier; ChallengeRunner module + unit tests |
 
 ---
 
@@ -763,6 +764,45 @@ shippable and each commit is small:
 - **Score is computed only on success.** A failing run has no score. Do not
   add a "partial score" for failed runs — it would muddy the repair loop
   signal.
+
+### What shipped on the branch (sub-phase 11b)
+
+Stage B challenge-up. After a normal request commits at minimum integrity,
+if the user included the word **`extreme`** in the qualifier set, JobRunner
+now runs an escalation loop that pushes one lever at a time, re-runs the
+full lap, and promotes the candidate only if (a) integrity still passes,
+(b) the slowdown budget is not breached, and (c) the score improved by at
+least `Constants.MIN_ESCALATION_DELTA`. The original commit always stands
+— Stage B only ratchets up from there.
+
+Files added:
+- `src/orchestrator/ChallengeRunner.luau` — stateless loop. `runUp(args)`
+  is the entry point; `_escalateState` is exposed for unit tests.
+
+Files modified:
+- `src/agent/RequestParser.luau` — `extreme` added to `QUALIFIER_WORDS`.
+  Intentionally carries no geometry bias; MinimalProposer ignores it. Only
+  JobRunner reads it.
+- `src/orchestrator/JobRunner.luau` — after the existing successful
+  commit, checks for the `extreme` qualifier and invokes
+  `ChallengeRunner.runUp`. On improvement, commits the escalated state with
+  `version += 1` and re-publishes the score via `UIState.publishScore`.
+- `src/orchestrator/TestPhase11.luau` — 5 new cases for `_escalateState`
+  covering per-mechanic lever selection and the LEVER_FLOOR invariant.
+
+To try it: run `/submit sector 3 extreme jump` (or any mechanic word). The
+HUD log will show `Escalate r1 ramp_angle 15→18 ACCEPT` style rounds.
+
+### What did NOT ship in 11b
+
+- **No HUD panel for scores.** The `UIState.publishScore` attributes are
+  replicated, but no client reads them. The `Escalate …` log lines are the
+  only user-visible signal.
+- **No MaximizerAgent / `/demo maximize`.** Phase 11c.
+- **No QUALIFIER_BIAS tuning for score-awareness.** Phase 11d.
+- **No integration test.** `make phase11_unit` covers scoring + escalation
+  direction; a lap-level test that exercises `ChallengeRunner.runUp` end-
+  to-end is still missing.
 
 ### Known risks (carried over from phase10 note: stronger pad tiers)
 
