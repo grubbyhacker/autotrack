@@ -89,6 +89,7 @@ function UIState.init(baselineLapTime: number)
 		attempt_current = 0,
 		attempt_max = Constants.MAX_REPAIR_ATTEMPTS,
 		explanation = "",
+		repair_action_text = "",
 		baseline_lap_time = baselineLapTime,
 		last_lap_time = -1,
 		slowdown_ratio = 1,
@@ -96,6 +97,8 @@ function UIState.init(baselineLapTime: number)
 		current_sector_id = 0,
 		final_status = "",
 		error_text = "",
+		failure_banner_text = "",
+		failure_banner_visible = false,
 	})
 	setLogs()
 	FailureMarker.hide()
@@ -158,8 +161,18 @@ function UIState.setExplanation(text: string)
 	})
 end
 
+function UIState.setRepairAction(text: string)
+	setAttributes({
+		repair_action_text = text or "",
+	})
+end
+
 function UIState.clearExplanation()
 	UIState.setExplanation("")
+end
+
+function UIState.clearRepairAction()
+	UIState.setRepairAction("")
 end
 
 function UIState.setError(text: string)
@@ -170,6 +183,20 @@ end
 
 function UIState.clearError()
 	UIState.setError("")
+end
+
+function UIState.showFailureBanner(text: string)
+	setAttributes({
+		failure_banner_text = text or "",
+		failure_banner_visible = text ~= nil and text ~= "",
+	})
+end
+
+function UIState.hideFailureBanner()
+	setAttributes({
+		failure_banner_text = "",
+		failure_banner_visible = false,
+	})
 end
 
 function UIState.resetLogs()
@@ -187,12 +214,14 @@ function UIState.beginJob(request)
 	UIState.resetLogs()
 	UIState.clearError()
 	UIState.clearExplanation()
+	UIState.clearRepairAction()
 	UIState.setBusy(true)
 	UIState.setRequestContext(request.raw_text, request.parsed.sector_id, request.parsed.mechanic)
 	UIState.setAttempt(0, Constants.MAX_REPAIR_ATTEMPTS)
 	setAttributes({
 		final_status = "",
 	})
+	UIState.hideFailureBanner()
 	FailureMarker.hide()
 	SuccessMarker.clear()
 end
@@ -205,9 +234,11 @@ function UIState.rejectRequest(rawText: string, reason: string)
 	UIState.setError(reason)
 	UIState.setAttempt(0, Constants.MAX_REPAIR_ATTEMPTS)
 	UIState.clearExplanation()
+	UIState.clearRepairAction()
 	setAttributes({
 		final_status = "",
 	})
+	UIState.hideFailureBanner()
 	UIState.appendLog(label .. ": " .. reason)
 end
 
@@ -274,6 +305,7 @@ function UIState.publishCommit(sectorMeta)
 		final_status = "committed",
 	})
 	UIState.hideFailure()
+	UIState.hideFailureBanner()
 	SuccessMarker.flash(collectSectorParts(sectorMeta))
 end
 
@@ -284,6 +316,7 @@ function UIState.publishRevert()
 		final_status = "reverted",
 	})
 	UIState.hideFailure()
+	UIState.hideFailureBanner()
 	SuccessMarker.clear()
 end
 
@@ -292,7 +325,9 @@ function UIState.publishReady()
 	UIState.setPhase("Idle", "Ready for request")
 	UIState.clearError()
 	UIState.clearExplanation()
+	UIState.clearRepairAction()
 	UIState.hideFailure()
+	UIState.hideFailureBanner()
 	SuccessMarker.clear()
 	setAttributes({
 		final_status = "",

@@ -61,8 +61,21 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	local width = math.min(p.corridor_width, Constants.TRACK_WIDTH)
 	local folder = getSectorFolder(state.sector_id)
 	local color = BrickColor.new("Bright blue")
+	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
+	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
+
+	if startOffset > 0 then
+		local worldStart = worldPoint(entryFrame, Vector3.new(0, 0, 0))
+		local worldEnd = worldPoint(entryFrame, Vector3.new(0, 0, startOffset))
+		local delta = worldEnd - worldStart
+		local center = worldStart:Lerp(worldEnd, 0.5)
+		local cf = CFrame.lookAt(center, center + delta.Unit)
+		makePart("ChicEntryFlat", Vector3.new(width, Constants.TRACK_THICKNESS, startOffset), cf, color, folder)
+	end
 
 	local points = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength)
+	local featureStartIndex = if startOffset > 0 then 2 else 1
+	local featurePointCount = #points - featureStartIndex
 
 	local names = { "ChicEntry" }
 	for turnIndex = 1, 3 do
@@ -72,10 +85,10 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	end
 	table.insert(names, "ChicExit")
 
-	assert(#points == #names + 1, "ChicaneBuilder: point/name count mismatch")
+	assert(featurePointCount == #names + 1, "ChicaneBuilder: point/name count mismatch")
 	for index, name in ipairs(names) do
-		local startPoint = points[index]
-		local endPoint = points[index + 1]
+		local startPoint = points[featureStartIndex + index - 1]
+		local endPoint = points[featureStartIndex + index]
 		local worldStart = worldPoint(entryFrame, startPoint)
 		local worldEnd = worldPoint(entryFrame, endPoint)
 		local delta = worldEnd - worldStart
@@ -86,9 +99,9 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		makePart(name, Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, color, folder)
 	end
 
-	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalLength
+	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalLength - startOffset
 	if exitFlatLength > 0 then
-		local startPoint = Vector3.new(0, 0, totalLength)
+		local startPoint = Vector3.new(0, 0, startOffset + totalLength)
 		local endPoint = Vector3.new(0, 0, Constants.STRAIGHT_LENGTH)
 		local worldStart = worldPoint(entryFrame, startPoint)
 		local worldEnd = worldPoint(entryFrame, endPoint)

@@ -22,6 +22,78 @@ local INTEGRITY_EVALUATORS = {
 	CrestDip = CrestDipIntegrity.evaluate,
 }
 
+local function zeroMetrics(): RunMetrics
+	return {
+		entry_speed = 0,
+		exit_speed = 0,
+		airborne = false,
+		air_distance = 0,
+		lateral_error = 0,
+		vertical_displacement = 0,
+		reacquired = true,
+		airtime_distance = 0,
+		target_airborne = false,
+		target_air_distance = 0,
+		target_vertical_displacement = 0,
+		target_reacquired = true,
+		target_airtime_distance = 0,
+		target_left_offset = 0,
+		target_right_offset = 0,
+		target_lateral_band_changes = 0,
+		lap_time = 0,
+		slowdown_ratio = 1,
+	}
+end
+
+function LapEvaluator.preflight(
+	targetState: SectorState,
+	targetSectorId: number
+): (RunResult?, { string })
+	if targetState.mechanic == nil then
+		return nil, {}
+	end
+
+	if targetState.mechanic == "CrestDip" then
+		local ok, hints = CrestDipIntegrity.preflight(targetState)
+		if not ok then
+			return {
+				success = false,
+				failure = {
+					type = "mechanic_integrity_failure",
+					sector_id = targetSectorId,
+				},
+				metrics = zeroMetrics(),
+			}, hints
+		end
+	elseif targetState.mechanic == "RampJump" then
+		local ok, hints = RampJumpIntegrity.preflight(targetState)
+		if not ok then
+			return {
+				success = false,
+				failure = {
+					type = "mechanic_integrity_failure",
+					sector_id = targetSectorId,
+				},
+				metrics = zeroMetrics(),
+			}, hints
+		end
+	elseif targetState.mechanic == "Chicane" then
+		local ok, hints = ChicaneIntegrity.preflight(targetState)
+		if not ok then
+			return {
+				success = false,
+				failure = {
+					type = "mechanic_integrity_failure",
+					sector_id = targetSectorId,
+				},
+				metrics = zeroMetrics(),
+			}, hints
+		end
+	end
+
+	return nil, {}
+end
+
 -- Produce a RunResult given the raw lap outcome.
 -- lapFailure:     pre-existing failure detected during the run (or nil if lap completed)
 -- targetState:    the SectorState that was under evaluation
@@ -33,7 +105,8 @@ function LapEvaluator.evaluate(
 	lapFailure: FailureInfo?,
 	targetState: SectorState,
 	metrics: RunMetrics,
-	targetSectorId: number
+	targetSectorId: number,
+	earlyHints: { string }?
 ): (RunResult, { string })
 	-- Reclassify local_execution_failure in a non-target sector as downstream_failure.
 	if lapFailure then
@@ -41,7 +114,7 @@ function LapEvaluator.evaluate(
 		if failure.type == "local_execution_failure" and failure.sector_id ~= targetSectorId then
 			failure = { type = "downstream_failure", sector_id = failure.sector_id }
 		end
-		return { success = false, failure = failure, metrics = metrics }, {}
+		return { success = false, failure = failure, metrics = metrics }, earlyHints or {}
 	end
 
 	if targetState.mechanic == nil then

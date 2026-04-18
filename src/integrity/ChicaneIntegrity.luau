@@ -5,15 +5,15 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 
 type RunMetrics = Types.RunMetrics
 type SectorState = Types.SectorState
 
 local ChicaneIntegrity = {}
 
-function ChicaneIntegrity.evaluate(
-	state: SectorState,
-	metrics: RunMetrics
+function ChicaneIntegrity.preflight(
+	state: SectorState
 ): (boolean, { string })
 	local hints: { string } = {}
 	local p = state.params
@@ -30,8 +30,52 @@ function ChicaneIntegrity.evaluate(
 		table.insert(hints, "effective curvature below minimum")
 	end
 
-	-- TODO: Phase 5 — add runtime alternation and speed-management checks
-	-- once the metric collector tracks lateral path data through the sector.
+	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
+	if totalLength > Constants.STRAIGHT_LENGTH then
+		table.insert(hints, "geometry exceeds sector length")
+	end
+
+	return #hints == 0, hints
+end
+
+function ChicaneIntegrity.evaluateRuntime(
+	metrics: RunMetrics
+): (boolean, { string })
+	local hints: { string } = {}
+	local leftOffset = metrics.target_left_offset or 0
+	local rightOffset = metrics.target_right_offset or 0
+	local bandChanges = metrics.target_lateral_band_changes or 0
+
+	if leftOffset < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5
+		or rightOffset < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5 then
+		table.insert(hints, "runtime lateral excursion too small")
+	end
+
+	if bandChanges < Constants.CHICANE_MIN_ALTERNATIONS then
+		table.insert(hints, "runtime lateral alternation too small")
+	end
+
+	return #hints == 0, hints
+end
+
+function ChicaneIntegrity.evaluate(
+	state: SectorState,
+	metrics: RunMetrics
+): (boolean, { string })
+	local hints: { string } = {}
+	local preflightOk, preflightHints = ChicaneIntegrity.preflight(state)
+	local runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime(metrics)
+
+	if not preflightOk then
+		for _, hint in ipairs(preflightHints) do
+			table.insert(hints, hint)
+		end
+	end
+	if not runtimeOk then
+		for _, hint in ipairs(runtimeHints) do
+			table.insert(hints, hint)
+		end
+	end
 
 	return #hints == 0, hints
 end

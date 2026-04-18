@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local ChicanePath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath"))
+local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
 
 type SectorState = Types.SectorState
 
@@ -177,6 +178,10 @@ local function buildStraightWaypoints(
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
 
+	local function ridePosY(p: Vector3, liftY: number): Vector3
+		return Vector3.new(p.X, CAR_RIDE_Y + liftY, p.Z)
+	end
+
 	if overrideState and overrideState.mechanic == "Chicane" then
 		local params = overrideState.params
 		assert(params.amplitude, "TrackGenerator.buildStraightWaypoints: chicane amplitude missing")
@@ -193,6 +198,21 @@ local function buildStraightWaypoints(
 
 		if points[#points].Z < Constants.STRAIGHT_LENGTH then
 			table.insert(waypoints, buildLapWaypoint(ridePos(sector.exit.Position), sector.exit.LookVector))
+			table.insert(waypointSectorIds, sector.id)
+		end
+	elseif overrideState and overrideState.mechanic == "CrestDip" then
+		local params = overrideState.params
+		assert(params.height_or_depth, "TrackGenerator.buildStraightWaypoints: crestdip height_or_depth missing")
+		assert(params.sector_length, "TrackGenerator.buildStraightWaypoints: crestdip sector_length missing")
+
+		local points = CrestDipPath.buildLocalCenterlinePoints(params.height_or_depth, params.sector_length)
+		for index = 2, #points do
+			local currentLocal = points[index]
+			local previousLocal = points[index - 1]
+			local current = worldPoint(sector.entry, currentLocal)
+			local previous = worldPoint(sector.entry, previousLocal)
+			local forward = (current - previous).Magnitude > 0 and (current - previous).Unit or sector.exit.LookVector
+			table.insert(waypoints, buildLapWaypoint(ridePosY(current, currentLocal.Y), forward))
 			table.insert(waypointSectorIds, sector.id)
 		end
 	else

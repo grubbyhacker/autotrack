@@ -54,15 +54,20 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		applyAction(workingState, args.action)
 	end
 
+	local preflightResult, preflightHints = LapEvaluator.preflight(workingState, args.targetSectorId)
+	if preflightResult then
+		return preflightResult, preflightHints, workingState
+	end
+
 	SectorApplier.apply(workingState, args.entryFrame, args.exitFrame)
 
 	local stateOverrides = {}
 	for _, state in ipairs(SectorRegistry.getStraights()) do
-		if state.mechanic == "Chicane" then
+		if state.mechanic ~= nil then
 			stateOverrides[state.sector_id] = state
 		end
 	end
-	if workingState.mechanic == "Chicane" then
+	if workingState.mechanic ~= nil then
 		stateOverrides[workingState.sector_id] = workingState
 	end
 
@@ -75,14 +80,17 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		waypointSectors,
 		sectorKinds,
 		args.onSectorChange,
-		args.targetSectorId
+		args.targetSectorId,
+		workingState,
+		args.entryFrame
 	)
 
 	local result, hints = LapEvaluator.evaluate(
 		rawResult.failure,
 		workingState,
 		rawResult.metrics,
-		args.targetSectorId
+		args.targetSectorId,
+		rawResult.integrity_hints
 	)
 	result.failure_position = rawResult.failure_position
 	result.final_position = rawResult.final_position

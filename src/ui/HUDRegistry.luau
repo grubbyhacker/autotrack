@@ -190,6 +190,31 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(rightRail, 18)
 	addStroke(rightRail, STEEL_LIGHT, 0.35)
 
+	local failureBanner = createFrame(gui, {
+		Size = UDim2.new(0, 520, 0, 104),
+		Position = UDim2.new(0.5, 0, 0.5, -44),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.18,
+		ZIndex = 30,
+	})
+	failureBanner.Visible = false
+	addCorner(failureBanner, 18)
+	addStroke(failureBanner, DANGER, 0.15)
+
+	local failureBannerLabel = createLabel(failureBanner, {
+		Size = UDim2.new(1, -32, 1, -20),
+		Position = UDim2.new(0, 16, 0, 10),
+		Text = "",
+		TextColor3 = DANGER,
+		TextSize = 32,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextWrapped = true,
+		ZIndex = 31,
+	})
+
 	local railTitle = createLabel(rightRail, {
 		Position = UDim2.new(0, 20, 0, 14),
 		Size = UDim2.new(1, -40, 0, 22),
@@ -309,15 +334,24 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local explanationLabel = createLabel(bottomDock, {
 		Position = UDim2.new(0, 20, 0, 32),
-		Size = UDim2.new(1, -40, 0, 20),
+		Size = UDim2.new(1, -40, 0, 18),
 		Text = "No repair explanation yet",
 		TextColor3 = MUTED,
 		TextSize = 14,
 		Font = Enum.Font.GothamMedium,
 	})
 
+	local actionLabel = createLabel(bottomDock, {
+		Position = UDim2.new(0, 20, 0, 50),
+		Size = UDim2.new(1, -40, 0, 18),
+		Text = "",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.Code,
+	})
+
 	local inputBox = createTextBox(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 58),
+		Position = UDim2.new(0, 20, 0, 74),
 		Size = UDim2.new(1, -170, 0, 38),
 		PlaceholderText = "Try: Add a chicane in sector 3",
 		TextSize = 17,
@@ -326,7 +360,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(inputBox, STEEL_LIGHT, 0.25)
 
 	local submitButton = createButton(bottomDock, {
-		Position = UDim2.new(1, -20, 0, 58),
+		Position = UDim2.new(1, -20, 0, 74),
 		AnchorPoint = Vector2.new(1, 0),
 		Size = UDim2.new(0, 120, 0, 38),
 		Text = "Submit",
@@ -370,6 +404,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		attemptLabel = attemptLabel,
 		errorLabel = errorLabel,
 		explanationLabel = explanationLabel,
+		actionLabel = actionLabel,
 		inputBox = inputBox,
 		submitButton = submitButton,
 		baselineLabel = baselineLabel,
@@ -379,6 +414,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		recentLoopLabel = recentLoopLabel,
 		logContainer = logContainer,
 		logLabels = logLabels,
+		failureBanner = failureBanner,
+		failureBannerLabel = failureBannerLabel,
 		colors = {
 			amber = AMBER,
 			amberSoft = AMBER_SOFT,

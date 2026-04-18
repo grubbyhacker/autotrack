@@ -41,6 +41,15 @@ function StatusPanel.setExplanation(text: string)
 	end
 end
 
+function StatusPanel.setRepairAction(text: string)
+	local hud = refs()
+	if text == "" then
+		hud.actionLabel.Text = ""
+	else
+		hud.actionLabel.Text = "REPAIR ACTION  " .. text
+	end
+end
+
 function StatusPanel.setError(text: string, finalStatus: string)
 	local hud = refs()
 	if text ~= "" then
@@ -65,6 +74,18 @@ function StatusPanel.setBusy(isBusy: boolean)
 	hud.submitButton.BackgroundColor3 = if isBusy then hud.colors.steelLight else hud.colors.amber
 	hud.submitButton.TextColor3 = if isBusy then hud.colors.text else Color3.fromRGB(18, 21, 25)
 	hud.inputBox.TextEditable = not isBusy
+end
+
+function StatusPanel.setFailureBanner(text: string, isVisible: boolean)
+	local hud = refs()
+	hud.failureBanner.Visible = isVisible
+	hud.failureBannerLabel.Text = if isVisible then text else ""
+	if isVisible then
+		hud.failureBanner.BackgroundTransparency = 0.18
+		hud.failureBannerLabel.TextTransparency = 0
+		hud.tweenFlash(hud.failureBanner, { BackgroundTransparency = 0.08 })
+		hud.tweenFlash(hud.failureBannerLabel, { TextTransparency = 0 })
+	end
 end
 
 function StatusPanel.setLogLines(lines: { string })

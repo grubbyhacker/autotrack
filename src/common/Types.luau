@@ -66,6 +66,15 @@ export type RunMetrics = {
 	lateral_error: number,
 	vertical_displacement: number,
 	reacquired: boolean,
+	airtime_distance: number,
+	target_airborne: boolean?,
+	target_air_distance: number?,
+	target_vertical_displacement: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_left_offset: number?,
+	target_right_offset: number?,
+	target_lateral_band_changes: number?,
 	lap_time: number,
 	slowdown_ratio: number,
 }
@@ -114,6 +123,7 @@ export type AttemptRecord = {
 	attempt_index: number,
 	action: AgentAction?,
 	result: RunResult,
+	hints: { string }?,
 }
 
 export type FinalStatus = "committed" | "reverted"

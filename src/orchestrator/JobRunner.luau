@@ -23,6 +23,7 @@ local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
 local TestDispatcher = require(script.Parent.TestDispatcher)
+local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
 type CIJob = Types.CIJob
 
@@ -62,6 +63,30 @@ local function actionSummary(action)
 	return string.format("%s=%s", action.pad, action.value)
 end
 
+local function repairActionLabel(action): string
+	if not action then
+		return ""
+	end
+	if action.type == "SetPad" then
+		local side = if action.pad == "ingress" then "ENTRY" else "EXIT"
+		return string.format("%s %s", side, string.upper(action.value))
+	end
+
+	local leverLabels = {
+		ramp_angle = "RAMP ANGLE",
+		ramp_length = "RAMP LENGTH",
+		gap_length = "GAP LENGTH",
+		landing_length = "LANDING LENGTH",
+		amplitude = "AMPLITUDE",
+		transition_length = "TRANSITION",
+		corridor_width = "CORRIDOR",
+		height_or_depth = "HEIGHT",
+		radius = "RADIUS",
+		sector_length = "FEATURE LENGTH",
+	}
+	return string.format("%s %s", leverLabels[action.lever] or string.upper(action.lever), tostring(action.value))
+end
+
 local function requestSummary(parsed): string
 	if parsed.request_kind == "Pad" then
 		return string.format("pad %s=%s", tostring(parsed.pad_side), tostring(parsed.pad_value))
@@ -93,6 +118,32 @@ local function pauseForUI()
 	task.wait(Constants.UI_PHASE_DELAY)
 end
 
+local function failureBannerText(result): string
+	local failureType = result and result.failure and result.failure.type or "system_failure"
+	if failureType == "mechanic_integrity_failure" then
+		return "INTEGRITY FAIL"
+	elseif failureType == "local_execution_failure" then
+		return "TRAVERSAL FAIL"
+	elseif failureType == "downstream_failure" then
+		return "DOWNSTREAM FAIL"
+	end
+	return "SYSTEM FAIL"
+end
+
+local function pauseOnFailure(result)
+	UIState.showFailureBanner(failureBannerText(result))
+	local ok = pcall(function()
+		VerifierCar.freeze()
+	end)
+	task.wait(Constants.UI_FAILURE_DWELL)
+	if ok then
+		pcall(function()
+			VerifierCar.thaw()
+		end)
+	end
+	UIState.hideFailureBanner()
+end
+
 local function parseSlashCommand(normalized: string): (string?, string?)
 	local command, rest = string.match(normalized, "^/([%a_]+)%s*(.-)%s*$")
 	if not command then
@@ -110,20 +161,31 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	local slashCommand, slashArg = parseSlashCommand(lowered)
 
 	if slashCommand == "demo" then
-		if slashArg ~= "camera" then
-			UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera")
-			return false, "unknown demo; supported: /demo camera"
+		if slashArg == "camera" then
+			if CameraDemo.isActive() then
+				return CameraDemo.stop()
+			end
+			if JobLock.isHeld() then
+				UIState.rejectRequest(rawText, "track is busy; try again shortly")
+				return false, "track is busy; try again shortly"
+			end
+			return CameraDemo.start()
 		end
 
-		if JobLock.isHeld() then
-			UIState.rejectRequest(rawText, "track is busy; try again shortly")
-			return false, "track is busy; try again shortly"
+		if slashArg == "crest" then
+			if CameraDemo.isActive() then
+				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo crest")
+				return false, "camera demo is running; toggle it off before /demo crest"
+			end
+			if JobLock.isHeld() then
+				UIState.rejectRequest(rawText, "track is busy; try again shortly")
+				return false, "track is busy; try again shortly"
+			end
+			return JobRunner.submit("add a crest in sector 3")
 		end
 
-		if CameraDemo.isActive() then
-			return CameraDemo.stop()
-		end
-		return CameraDemo.start()
+		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest")
+		return false, "unknown demo; supported: /demo camera, /demo crest"
 	end
 
 	if slashCommand == "test" then
@@ -279,6 +341,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				attempt_index = attemptIndex,
 				action = nextAction,
 				result = result,
+				hints = hints,
 			})
 
 			sm:transition("EvaluateResult")
@@ -301,6 +364,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			sm:transition("AnalyzeFailure")
 			UIState.setPhase("AnalyzeFailure", "Analyzing failure...")
 			UIState.showFailure(result)
+			pauseOnFailure(result)
 			UIState.appendLog(string.format(
 				"Failure: %s in sector %d",
 				tostring(result.failure and result.failure.type or "unknown"),
@@ -347,6 +411,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			nextAction = action
 			attemptIndex += 1
 			UIState.setAttempt(attemptIndex, Constants.MAX_REPAIR_ATTEMPTS)
+			UIState.setRepairAction(repairActionLabel(action))
 			UIState.setExplanation(explanation or "")
 			UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
 			pauseForUI()

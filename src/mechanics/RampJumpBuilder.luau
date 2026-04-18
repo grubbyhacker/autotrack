@@ -74,8 +74,22 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 	local width = Constants.TRACK_WIDTH
 	local thickness = Constants.TRACK_THICKNESS
 	local folder = getSectorFolder(state.sector_id)
+	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalHorizontal) * 0.5)
 
-	local rampCF = orientedAlongTrack(entryFrame, 0, rampHeight * 0.5, p.ramp_length * 0.5, angleRad)
+	local entryFlatLength = startOffset
+	if entryFlatLength > 0 then
+		local entryFlatCenter = worldPoint(entryFrame, 0, 0, entryFlatLength * 0.5)
+		local entryFlatCF = CFrame.lookAt(entryFlatCenter, entryFlatCenter + entryFrame.LookVector)
+		makePart(
+			"EntryFlat",
+			Vector3.new(width, thickness, entryFlatLength),
+			entryFlatCF,
+			BrickColor.new("Medium stone grey"),
+			folder
+		)
+	end
+
+	local rampCF = orientedAlongTrack(entryFrame, 0, rampHeight * 0.5, startOffset + p.ramp_length * 0.5, angleRad)
 	makePart(
 		"Ramp",
 		Vector3.new(width, thickness, rampSurfaceLength),
@@ -84,7 +98,7 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 		folder
 	)
 
-	local landingZ = p.ramp_length + p.gap_length + p.landing_length * 0.5
+	local landingZ = startOffset + p.ramp_length + p.gap_length + p.landing_length * 0.5
 	local landingCenter = worldPoint(entryFrame, 0, 0, landingZ)
 	local landingCF = CFrame.lookAt(landingCenter, landingCenter + entryFrame.LookVector)
 	makePart(
@@ -95,9 +109,9 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 		folder
 	)
 
-	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalHorizontal
+	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalHorizontal - startOffset
 	if exitFlatLength > 0 then
-		local exitFlatZ = totalHorizontal + exitFlatLength * 0.5
+		local exitFlatZ = startOffset + totalHorizontal + exitFlatLength * 0.5
 		local exitFlatCenter = worldPoint(entryFrame, 0, 0, exitFlatZ)
 		local exitFlatCF = CFrame.lookAt(exitFlatCenter, exitFlatCenter + entryFrame.LookVector)
 		makePart(

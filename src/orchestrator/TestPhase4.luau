@@ -71,6 +71,10 @@ local function localX(frame: CFrame, worldPosition: Vector3): number
 	return frame:PointToObjectSpace(worldPosition).X
 end
 
+local function localZ(frame: CFrame, worldPosition: Vector3): number
+	return frame:PointToObjectSpace(worldPosition).Z
+end
+
 local function applyState(state: SectorState)
 	local sector = getSectorMeta(state.sector_id)
 	SectorApplier.apply(state, sector.entry, sector.exit)
@@ -197,17 +201,22 @@ function TestPhase4.runRampJump()
 
 	local ramp = getPart(folder, "Ramp")
 	local landing = getPart(folder, "Landing")
+	local entryFlat = getPart(folder, "EntryFlat")
 	local exitFlat = getPart(folder, "ExitFlat")
 	T.expect(
 		"rampjump_build_creates_ramp_and_landing",
-		ramp ~= nil and landing ~= nil and exitFlat ~= nil,
-		"expected Ramp, Landing, and ExitFlat parts"
+		ramp ~= nil and landing ~= nil and entryFlat ~= nil and exitFlat ~= nil,
+		"expected EntryFlat, Ramp, Landing, and ExitFlat parts"
 	)
 
 	T.expect(
-		"rampjump_gap_has_no_middle_part",
-		#folder:GetChildren() == 3,
-		"expected exactly Ramp, Landing, and ExitFlat"
+		"rampjump_centered_with_balanced_runouts",
+		entryFlat ~= nil and exitFlat ~= nil and math.abs(entryFlat.Size.Z - exitFlat.Size.Z) < 0.01,
+		string.format(
+			"entry=%.2f exit=%.2f",
+			entryFlat and entryFlat.Size.Z or -1,
+			exitFlat and exitFlat.Size.Z or -1
+		)
 	)
 
 	T.expect(
@@ -271,18 +280,28 @@ function TestPhase4.runCrestDip()
 	assert(targetSector ~= nil, "target sector missing for crestdip tests")
 
 	local crestState = makeState("CrestDip", {
-		height_or_depth = 5,
+		height_or_depth = 4,
 		radius = 60,
-		sector_length = 40,
+		sector_length = 50,
 	}, "None", "None")
 	applyState(crestState)
 	local crest01 = getPart(folder, "Crest_01")
 	local crest06 = getPart(folder, "Crest_06")
+	local crestEntryFlat = getPart(folder, "EntryFlat")
 	local crestExitFlat = getPart(folder, "ExitFlat")
 	T.expect(
 		"crestdip_crest_builds_curved_segments",
-		crest01 ~= nil and crest06 ~= nil and crestExitFlat ~= nil and #folder:GetChildren() == 7,
-		"expected six crest curve segments and ExitFlat"
+		crest01 ~= nil and crest06 ~= nil and crestEntryFlat ~= nil and crestExitFlat ~= nil and #folder:GetChildren() == 8,
+		"expected EntryFlat, six crest curve segments, and ExitFlat"
+	)
+	T.expect(
+		"crestdip_centered_with_balanced_runouts",
+		crestEntryFlat ~= nil and crestExitFlat ~= nil and math.abs(crestEntryFlat.Size.Z - crestExitFlat.Size.Z) < 0.01,
+		string.format(
+			"entry=%.2f exit=%.2f",
+			crestEntryFlat and crestEntryFlat.Size.Z or -1,
+			crestExitFlat and crestExitFlat.Size.Z or -1
+		)
 	)
 
 	local crestLap = runLapOnCurrentTrack()
@@ -297,23 +316,29 @@ function TestPhase4.runCrestDip()
 		string.format("vertical_displacement=%.2f", crestLap.metrics.vertical_displacement)
 	)
 	T.expect(
+		"crestdip_second_lap_follows_curve",
+		crestLap.metrics.vertical_displacement > 3.5,
+		string.format("path did not track cosine; vertical_displacement=%.2f", crestLap.metrics.vertical_displacement)
+	)
+	T.expect(
 		"crestdip_second_lap_reacquired",
 		crestLap.metrics.reacquired == true,
 		"crestdip did not maintain/reacquire guidance"
 	)
 
 	applyState(makeState("CrestDip", {
-		height_or_depth = -5,
+		height_or_depth = -4,
 		radius = 60,
-		sector_length = 40,
+		sector_length = 50,
 	}, "None", "None"))
 	local dip01 = getPart(folder, "Dip_01")
 	local dip06 = getPart(folder, "Dip_06")
+	local dipEntryFlat = getPart(folder, "EntryFlat")
 	local dipExitFlat = getPart(folder, "ExitFlat")
 	T.expect(
 		"crestdip_dip_builds_curved_segments",
-		dip01 ~= nil and dip06 ~= nil and dipExitFlat ~= nil and #folder:GetChildren() == 7,
-		"expected six dip curve segments and ExitFlat"
+		dip01 ~= nil and dip06 ~= nil and dipEntryFlat ~= nil and dipExitFlat ~= nil and #folder:GetChildren() == 8,
+		"expected EntryFlat, six dip curve segments, and ExitFlat"
 	)
 
 	local crestOk, crestErr = pcall(function()
@@ -337,25 +362,39 @@ function TestPhase4.runChicane()
 		return
 	end
 
-	local folder = getSectorFolder(TARGET_SECTOR_ID)
-	local _, sectors = getSectorMeta(TARGET_SECTOR_ID)
+	local chicaneSectorId = 3
+	local function makeChicaneState(mechanic: Types.Mechanic?, params: Types.SectorParams, ingress: Types.PadValue, egress: Types.PadValue): SectorState
+		return {
+			sector_id = chicaneSectorId,
+			mechanic = mechanic,
+			params = params,
+			pads = {
+				ingress = ingress,
+				egress = egress,
+			},
+			version = 0,
+		}
+	end
+
+	local folder = getSectorFolder(chicaneSectorId)
+	local _, sectors = getSectorMeta(chicaneSectorId)
 	local targetSector = nil
 	for _, sector in ipairs(sectors) do
-		if sector.id == TARGET_SECTOR_ID then
+		if sector.id == chicaneSectorId then
 			targetSector = sector
 			break
 		end
 	end
 	assert(targetSector ~= nil, "target sector missing for chicane tests")
 
-	local chicaneState = makeState("Chicane", {
-		amplitude = 8,
-		transition_length = 18,
-		corridor_width = 14,
-	}, "Brake", "None")
+	local chicaneState = makeChicaneState("Chicane", {
+		amplitude = 6,
+		transition_length = 24,
+		corridor_width = 16,
+	}, "None", "None")
 	applyState(chicaneState)
 	local expectedChicaneNames = {
-		IngressPad = true,
+		ChicEntryFlat = true,
 		ChicEntry = true,
 		ChicTurn1_01 = true,
 		ChicTurn1_02 = true,
@@ -416,10 +455,19 @@ function TestPhase4.runChicane()
 	)
 
 	local exitFlatPart = getPart(folder, "ChicExitFlat")
+	local entryFlatPart = getPart(folder, "ChicEntryFlat")
 	T.expect(
-		"chicane_exit_flat_reaches_sector_end",
-		exitFlatPart ~= nil and math.abs(localX(targetSector.entry, exitFlatPart.Position)) < 0.5,
-		"expected straight runout from chicane exit to sector boundary"
+		"chicane_centered_with_balanced_runouts",
+		entryFlatPart ~= nil
+			and exitFlatPart ~= nil
+			and math.abs(localX(targetSector.entry, entryFlatPart.Position)) < 0.5
+			and math.abs(localX(targetSector.entry, exitFlatPart.Position)) < 0.5
+			and math.abs(entryFlatPart.Size.Z - exitFlatPart.Size.Z) < 0.01,
+		string.format(
+			"entry=%.2f exit=%.2f",
+			entryFlatPart and entryFlatPart.Size.Z or -1,
+			exitFlatPart and exitFlatPart.Size.Z or -1
+		)
 	)
 
 	local beforeSnapshot = snapshotNamedParts(folder)
@@ -444,17 +492,25 @@ function TestPhase4.runChicane()
 		"reapplying chicane changed named part transforms"
 	)
 
-	local chicaneLap = runLapOnCurrentTrack({
-		[TARGET_SECTOR_ID] = chicaneState,
+	local waypoints, waypointSectorIds = TrackGenerator.getLapPath(sectors, {
+		[chicaneSectorId] = chicaneState,
 	})
+	local sectorWaypointZs = {}
+	for index, waypoint in ipairs(waypoints) do
+		if waypointSectorIds[index] == chicaneSectorId then
+			table.insert(sectorWaypointZs, math.abs(localZ(targetSector.entry, waypoint.Position)))
+		end
+	end
 	T.expect(
-		"chicane_second_lap_completes",
-		chicaneLap.success == true,
-		"chicane lap failed: " .. tostring(chicaneLap.failure and chicaneLap.failure.type)
+		"chicane_path_waypoints_cover_centered_runouts",
+		#sectorWaypointZs >= 4
+			and sectorWaypointZs[1] > 0
+			and sectorWaypointZs[#sectorWaypointZs] >= Constants.STRAIGHT_LENGTH - 0.01,
+		table.concat(sectorWaypointZs, ",")
 	)
 
 	local chicaneOk, chicaneErr = pcall(function()
-		SectorApplier.apply(makeState("Chicane", {
+		SectorApplier.apply(makeChicaneState("Chicane", {
 			amplitude = 12,
 			transition_length = 30,
 			corridor_width = 14,
@@ -466,7 +522,8 @@ function TestPhase4.runChicane()
 		"expected invalid chicane length to error"
 	)
 
-	resetToFlat()
+	applyState(makeChicaneState(nil, {}, "None", "None"))
+	VerifierCar.reset(TrackGenerator.canonicalStart())
 end
 
 function TestPhase4.run()

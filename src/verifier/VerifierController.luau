@@ -9,6 +9,9 @@ local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForC
 local FailureDetector = require(script.Parent.FailureDetector)
 local MetricCollector = require(script.Parent.MetricCollector)
 local ReacquireDetector = require(script.Parent.ReacquireDetector)
+local RampJumpIntegrity = require(script.Parent.Parent.Integrity.RampJumpIntegrity)
+local ChicaneIntegrity = require(script.Parent.Parent.Integrity.ChicaneIntegrity)
+local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegrity)
 
 type RunResult = Types.RunResult
 
@@ -34,20 +37,20 @@ local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, a
 	alignOrientation:Destroy()
 end
 
-local function getPadSpeedDelta(currentSectorId: number?): number
+local function getActivePad(currentSectorId: number?): (string?, string?, string?)
 	if not currentSectorId then
-		return 0
+		return nil, nil, nil
 	end
 
 	local track = workspace:FindFirstChild("Track")
 	local folder = track and track:FindFirstChild(string.format("Sector_%02d", currentSectorId))
 	if not folder then
-		return 0
+		return nil, nil, nil
 	end
 
 	local car = workspace:FindFirstChild("VerifierCar")
 	if not car or not car:IsA("BasePart") then
-		return 0
+		return nil, nil, nil
 	end
 
 	for _, padName in ipairs({ "IngressPad", "EgressPad" }) do
@@ -58,16 +61,12 @@ local function getPadSpeedDelta(currentSectorId: number?): number
 				and math.abs(localPoint.Y) <= math.max(pad.Size.Y, Constants.CAR_HEIGHT) * 0.5
 				and math.abs(localPoint.Z) <= pad.Size.Z * 0.5 then
 				local padType = pad:GetAttribute("PadType")
-				if padType == "Boost" then
-					return Constants.BOOST_SPEED_DELTA
-				elseif padType == "Brake" then
-					return Constants.BRAKE_SPEED_DELTA
-				end
+				return string.format("%d:%s", currentSectorId, padName), padType, padName
 			end
 		end
 	end
 
-	return 0
+	return nil, nil, nil
 end
 
 function VerifierController.runLap(
@@ -76,7 +75,9 @@ function VerifierController.runLap(
 	waypointSectors: { number }?,
 	sectorKinds: { [number]: string }?,
 	onSectorChange: ((id: number, entering: boolean) -> ())?,
-	targetSectorId: number?
+	targetSectorId: number?,
+	targetState,
+	targetEntryFrame: CFrame?
 ): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
 
@@ -127,7 +128,7 @@ function VerifierController.runLap(
 	rayParams.FilterDescendantsInstances = { car }
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	MetricCollector.reset(car.Position.Y)
+	MetricCollector.reset(car.Position.Y, targetSectorId)
 	FailureDetector.reset()
 	local baselineLapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime") or 30
 
@@ -136,6 +137,9 @@ function VerifierController.runLap(
 	local completed = false
 	local recentTrail = { car.Position }
 	local lastTrailPoint = car.Position
+	local persistentTargetSpeed = Constants.CAR_TARGET_SPEED
+	local activePadToken = nil
+	local padEffectSectorHopsRemaining = 0
 
 	local function recordTrail(position: Vector3)
 		if (position - lastTrailPoint).Magnitude < TRAIL_POINT_SPACING then
@@ -146,6 +150,54 @@ function VerifierController.runLap(
 		while #recentTrail > MAX_TRAIL_POINTS do
 			table.remove(recentTrail, 1)
 		end
+	end
+
+	local function evaluateTargetSectorRuntime(elapsed: number, carPosition: Vector3)
+		if currentSectorId ~= targetSectorId or not targetState then
+			return nil
+		end
+
+		local targetMetrics = MetricCollector.getTargetMetrics()
+		local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+		local runtimeOk, runtimeHints
+
+		if targetState.mechanic == "CrestDip" then
+			runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime({
+				target_airborne = targetMetrics.airborne,
+				target_air_distance = targetMetrics.air_distance,
+				target_vertical_displacement = targetMetrics.vertical_displacement,
+				target_reacquired = targetMetrics.reacquired,
+				target_airtime_distance = targetMetrics.airtime_distance,
+			})
+		elseif targetState.mechanic == "RampJump" then
+			runtimeOk, runtimeHints = RampJumpIntegrity.evaluateRuntime({
+				target_airborne = targetMetrics.airborne,
+				target_air_distance = targetMetrics.air_distance,
+				target_reacquired = targetMetrics.reacquired,
+			})
+		elseif targetState.mechanic == "Chicane" then
+			runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime({
+				target_left_offset = targetMetrics.left_offset,
+				target_right_offset = targetMetrics.right_offset,
+				target_lateral_band_changes = targetMetrics.lateral_band_changes,
+			})
+		else
+			return nil
+		end
+
+		if runtimeOk then
+			return nil
+		end
+
+		return {
+			success = false,
+			failure = { type = "mechanic_integrity_failure", sector_id = targetSectorId or currentSectorId or 1 },
+			metrics = metrics,
+			integrity_hints = runtimeHints,
+			failure_position = carPosition,
+			final_position = carPosition,
+			trajectory_tail = recentTrail,
+		}
 	end
 
 	while not completed do
@@ -171,6 +223,17 @@ function VerifierController.runLap(
 				local newSectorId = (waypointSectors :: { number })[waypointIndex]
 				if newSectorId ~= currentSectorId then
 					handleSectorChange(currentSectorId :: number, false)
+					local runtimeResult = evaluateTargetSectorRuntime(elapsed, carPosition)
+					if runtimeResult then
+						cleanup(attachment, linearVelocity, alignOrientation)
+						return runtimeResult
+					end
+					if padEffectSectorHopsRemaining > 0 then
+						padEffectSectorHopsRemaining -= 1
+						if padEffectSectorHopsRemaining <= 0 then
+							persistentTargetSpeed = Constants.CAR_TARGET_SPEED
+						end
+					end
 					currentSectorId = newSectorId
 					handleSectorChange(currentSectorId :: number, true)
 				end
@@ -210,13 +273,61 @@ function VerifierController.runLap(
 		local upDot = carCFrame.UpVector:Dot(Vector3.yAxis)
 		local lateralOffset = projectedPoint - carPosition
 		local lateralError = lateralOffset.Magnitude
+		local targetLocalX = nil
+		if currentSectorId == targetSectorId and targetEntryFrame ~= nil then
+			targetLocalX = targetEntryFrame:PointToObjectSpace(carPosition).X
+		end
 
 		recordTrail(carPosition)
-		MetricCollector.record(speed, carPosition, isAirborne, lateralError)
+		MetricCollector.record(speed, carPosition, isAirborne, lateralError, targetLocalX)
+
+		if currentSectorId == targetSectorId and targetState and targetState.mechanic == "CrestDip" then
+			local targetMetrics = MetricCollector.getTargetMetrics()
+			if targetMetrics.in_target_sector
+				and targetMetrics.airborne
+				and targetMetrics.airtime_distance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE then
+				local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+				cleanup(attachment, linearVelocity, alignOrientation)
+				return {
+					success = false,
+					failure = { type = "mechanic_integrity_failure", sector_id = targetSectorId or currentSectorId or 1 },
+					metrics = metrics,
+					integrity_hints = { "airborne too long after liftoff" },
+					failure_position = carPosition,
+					final_position = carPosition,
+					trajectory_tail = recentTrail,
+				}
+			end
+		end
+
+		local padToken, padType, padName = getActivePad(currentSectorId)
+		if padToken ~= nil then
+			if padToken ~= activePadToken then
+				if padType == "Boost" then
+					persistentTargetSpeed = Constants.CAR_TARGET_SPEED + Constants.BOOST_SPEED_DELTA
+				elseif padType == "Brake" then
+					persistentTargetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + Constants.BRAKE_SPEED_DELTA)
+				else
+					persistentTargetSpeed = Constants.CAR_TARGET_SPEED
+				end
+				car.AssemblyLinearVelocity = moveDirection * persistentTargetSpeed
+				if padName == "EgressPad" then
+					padEffectSectorHopsRemaining = 2
+				else
+					padEffectSectorHopsRemaining = 1
+				end
+			end
+			activePadToken = padToken
+		else
+			activePadToken = nil
+		end
 
 		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
-		local speedFactor = isCorner and Constants.CORNER_SPEED_FACTOR or 1
-		local targetSpeed = math.max(5, Constants.CAR_TARGET_SPEED * speedFactor + getPadSpeedDelta(currentSectorId))
+		local targetSpeed = persistentTargetSpeed
+		if isCorner then
+			targetSpeed = math.min(targetSpeed, Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR)
+		end
+		targetSpeed = math.max(5, targetSpeed)
 		local vectorVelocity = moveDirection * targetSpeed
 		if not isAirborne and lateralError > 1 then
 			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)

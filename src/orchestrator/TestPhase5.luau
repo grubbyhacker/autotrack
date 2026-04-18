@@ -26,6 +26,15 @@ local function makeMetrics(overrides)
 		lateral_error          = overrides.lateral_error or 0,
 		vertical_displacement  = overrides.vertical_displacement or 0,
 		reacquired             = if overrides.reacquired ~= nil then overrides.reacquired else true,
+		airtime_distance       = overrides.airtime_distance or 0,
+		target_airborne = if overrides.target_airborne ~= nil then overrides.target_airborne else nil,
+		target_air_distance = overrides.target_air_distance,
+		target_vertical_displacement = overrides.target_vertical_displacement,
+		target_reacquired = overrides.target_reacquired,
+		target_airtime_distance = overrides.target_airtime_distance,
+		target_left_offset = overrides.target_left_offset,
+		target_right_offset = overrides.target_right_offset,
+		target_lateral_band_changes = overrides.target_lateral_band_changes,
 		lap_time               = overrides.lap_time or 25,
 		slowdown_ratio         = overrides.slowdown_ratio or 1,
 	}
@@ -68,9 +77,9 @@ local function makeCrestDipState(overrides)
 		sector_id = overrides.sector_id or 2,
 		mechanic  = "CrestDip",
 		params    = {
-			height_or_depth  = if overrides.height_or_depth ~= nil then overrides.height_or_depth else 6,
+			height_or_depth  = if overrides.height_or_depth ~= nil then overrides.height_or_depth else 8,
 			radius           = overrides.radius or 20,
-			sector_length    = overrides.sector_length or 40,
+			sector_length    = overrides.sector_length or 30,
 		},
 		pads    = { ingress = "None", egress = "None" },
 		version = 1,
@@ -137,14 +146,22 @@ end
 local function testChicane()
 	local ok, hints
 
-	-- pass: amplitude=8, curvature=8/15=0.53 > 0.05
-	ok, hints = ChicaneIntegrity.evaluate(makeChicaneState(), makeMetrics())
+	-- pass: valid geometry + target-sector lateral movement to both sides
+	ok, hints = ChicaneIntegrity.evaluate(makeChicaneState(), makeMetrics({
+		target_left_offset = 4,
+		target_right_offset = 4,
+		target_lateral_band_changes = 2,
+	}))
 	T.expect("chicane_pass", ok == true, "expected pass, hints: " .. table.concat(hints, "; "))
 
 	-- fail: amplitude below minimum
 	ok, hints = ChicaneIntegrity.evaluate(
 		makeChicaneState({ amplitude = 2 }),
-		makeMetrics()
+		makeMetrics({
+			target_left_offset = 4,
+			target_right_offset = 4,
+			target_lateral_band_changes = 2,
+		})
 	)
 	T.expect("chicane_fail_amplitude", ok == false and #hints > 0,
 		"expected fail when amplitude < " .. Constants.CHICANE_MIN_LATERAL_DISPLACEMENT)
@@ -152,7 +169,11 @@ local function testChicane()
 	-- fail: curvature below minimum (amplitude=4, transition_length=200 → 0.02 < 0.05)
 	ok, hints = ChicaneIntegrity.evaluate(
 		makeChicaneState({ amplitude = 4, transition_length = 200 }),
-		makeMetrics()
+		makeMetrics({
+			target_left_offset = 4,
+			target_right_offset = 4,
+			target_lateral_band_changes = 2,
+		})
 	)
 	T.expect("chicane_fail_curvature", ok == false and #hints > 0,
 		"expected fail when effective curvature < " .. Constants.CHICANE_MIN_CURVATURE)

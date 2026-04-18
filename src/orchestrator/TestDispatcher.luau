@@ -49,6 +49,18 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase8).runUnit()
 	elseif cmd == "phase8_integration" then
 		require(script.Parent.TestPhase8).runIntegration()
+	elseif cmd == "phase9" then
+		require(script.Parent.TestPhase9).run()
+	elseif cmd == "phase9_unit" then
+		require(script.Parent.TestPhase9).runUnit()
+	elseif cmd == "phase9_integration" then
+		require(script.Parent.TestPhase9).runIntegration()
+	elseif cmd == "phase10" then
+		require(script.Parent.TestPhase10).run()
+	elseif cmd == "phase10_unit" then
+		require(script.Parent.TestPhase10).runUnit()
+	elseif cmd == "phase10_integration" then
+		require(script.Parent.TestPhase10).runIntegration()
 	else
 		local unknownLine = "[TEST FAIL: unknown_suite] " .. tostring(cmd)
 		print(unknownLine)

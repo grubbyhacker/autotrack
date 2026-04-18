@@ -50,11 +50,11 @@ Constants.OVERTURN_UP_DOT_THRESHOLD = -0.25
 Constants.OVERTURN_TIME_THRESHOLD = 0.75
 
 -- CI loop
-Constants.MAX_REPAIR_ATTEMPTS = 5
+Constants.MAX_REPAIR_ATTEMPTS = 7
 
 -- Pad effect magnitudes (fixed, not agent-tunable)
-Constants.BOOST_SPEED_DELTA = 30    -- studs/s added
-Constants.BRAKE_SPEED_DELTA = -30   -- studs/s removed
+Constants.BOOST_SPEED_DELTA = 60    -- studs/s added
+Constants.BRAKE_SPEED_DELTA = -60   -- studs/s removed
 
 -- RampJump integrity thresholds
 Constants.RAMPJUMP_MIN_GAP = 2              -- studs
@@ -65,13 +65,16 @@ Constants.RAMPJUMP_REACQUIRE_MAX = 20       -- studs after landing
 Constants.CHICANE_MIN_LATERAL_DISPLACEMENT = 4  -- studs
 Constants.CHICANE_MIN_ALTERNATIONS = 2
 Constants.CHICANE_MIN_CURVATURE = 0.05          -- 1/studs
+Constants.CHICANE_LATERAL_BAND_THRESHOLD = 2    -- studs; local X threshold for left/center/right band transitions
 
 -- CrestDip integrity thresholds
-Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT = 2  -- studs
-Constants.CRESTDIP_MIN_CURVATURE = 0.02           -- 1/studs
+Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT = 3  -- studs
+Constants.CRESTDIP_MIN_CURVATURE = 0.006          -- |h|/L^2, 1/studs
+Constants.CRESTDIP_MAX_AIRTIME_DISTANCE = 30      -- studs; largest allowed airborne segment after liftoff
 
 -- UI pacing delays (seconds)
 Constants.UI_PHASE_DELAY = 0.75
+Constants.UI_FAILURE_DWELL = 1.25
 Constants.UI_SUCCESS_DWELL = 2.0
 
 -- Camera tuning

@@ -64,6 +64,7 @@ local LEGAL_TRANSITIONS = {
 	},
 	ApplyRepair = {
 		ApplyWorkingSector = true,
+		Revert = true,
 	},
 	Commit = {
 		Idle = true,

@@ -32,6 +32,17 @@ local function waitForBaseline(): boolean
 	return false
 end
 
+local function waitForCondition(timeoutSeconds: number, predicate): boolean
+	local deadline = os.clock() + timeoutSeconds
+	while os.clock() < deadline do
+		if predicate() then
+			return true
+		end
+		task.wait(0.1)
+	end
+	return false
+end
+
 function TestPhase8.runUnit()
 	local stateFolder = getStateFolder()
 
@@ -61,6 +72,34 @@ function TestPhase8.runUnit()
 		"phase8_phase_label_mapping",
 		stateFolder:GetAttribute("phase") == "AnalyzeFailure" and stateFolder:GetAttribute("phase_label") == "Analyzing failure...",
 		tostring(stateFolder:GetAttribute("phase_label"))
+	)
+
+	UIState.showFailureBanner("TRAVERSAL FAIL")
+	T.expect(
+		"phase8_failure_banner_state_updates",
+		stateFolder:GetAttribute("failure_banner_visible") == true
+			and stateFolder:GetAttribute("failure_banner_text") == "TRAVERSAL FAIL",
+		tostring(stateFolder:GetAttribute("failure_banner_text"))
+	)
+	UIState.hideFailureBanner()
+	T.expect(
+		"phase8_failure_banner_state_clears",
+		stateFolder:GetAttribute("failure_banner_visible") == false
+			and stateFolder:GetAttribute("failure_banner_text") == "",
+		tostring(stateFolder:GetAttribute("failure_banner_text"))
+	)
+
+	UIState.setRepairAction("ENTRY BOOST")
+	T.expect(
+		"phase8_repair_action_state_updates",
+		stateFolder:GetAttribute("repair_action_text") == "ENTRY BOOST",
+		tostring(stateFolder:GetAttribute("repair_action_text"))
+	)
+	UIState.clearRepairAction()
+	T.expect(
+		"phase8_repair_action_state_clears",
+		stateFolder:GetAttribute("repair_action_text") == "",
+		tostring(stateFolder:GetAttribute("repair_action_text"))
 	)
 
 	UIState.resetLogs()
@@ -105,32 +144,39 @@ function TestPhase8.runUnit()
 	)
 
 	local okDemoStart, demoStartReason = JobRunner.submit("/demo camera")
-	local sector3Demo = SectorRegistry.getCommitted(3)
-	local sector7Demo = SectorRegistry.getCommitted(7)
+	local demoStarted = waitForCondition(2, function()
+		local sector3Demo = SectorRegistry.getCommitted(3)
+		local sector7Demo = SectorRegistry.getCommitted(7)
+		local phase = stateFolder:GetAttribute("phase")
+		return (phase == "CameraDemo" or phase == "CameraDemoLap")
+			and sector3Demo ~= nil
+			and sector3Demo.mechanic == "RampJump"
+			and sector7Demo ~= nil
+			and sector7Demo.mechanic == "RampJump"
+	end)
 	T.expect(
 		"phase8_camera_demo_start_command",
 		okDemoStart == true
 			and demoStartReason == nil
-			and stateFolder:GetAttribute("phase") == "CameraDemo"
-			and sector3Demo ~= nil
-			and sector3Demo.mechanic == "RampJump"
-			and sector7Demo ~= nil
-			and sector7Demo.mechanic == "RampJump",
+			and demoStarted,
 		tostring(demoStartReason)
 	)
 
 	local okDemoStop, demoStopReason = JobRunner.submit("/demo camera")
-	local sector3Restored = SectorRegistry.getCommitted(3)
-	local sector7Restored = SectorRegistry.getCommitted(7)
+	local demoStopped = waitForCondition(20, function()
+		local sector3Restored = SectorRegistry.getCommitted(3)
+		local sector7Restored = SectorRegistry.getCommitted(7)
+		return stateFolder:GetAttribute("phase_label") == "Ready for request"
+			and sector3Restored ~= nil
+			and sector3Restored.mechanic == nil
+			and sector7Restored ~= nil
+			and sector7Restored.mechanic == nil
+	end)
 	T.expect(
 		"phase8_camera_demo_stop_command",
 		okDemoStop == true
 			and demoStopReason == nil
-			and stateFolder:GetAttribute("phase_label") == "Ready for request"
-			and sector3Restored ~= nil
-			and sector3Restored.mechanic == nil
-			and sector7Restored ~= nil
-			and sector7Restored.mechanic == nil,
+			and demoStopped,
 		tostring(demoStopReason)
 	)
 
@@ -180,7 +226,7 @@ function TestPhase8.runIntegration()
 	local crestFinished = false
 	local crestOk, crestReason = false, nil
 	task.spawn(function()
-		crestOk, crestReason = JobRunner.submit("add a crest in sector 3")
+		crestOk, crestReason = JobRunner.submit("add a really tall steep short crest in sector 3")
 		crestFinished = true
 	end)
 

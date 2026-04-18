@@ -40,9 +40,22 @@ end
 
 function VerifierCar.reset(startCFrame: CFrame)
 	local part = VerifierCar.getPart()
+	part.Anchored = false
 	part.CFrame = startCFrame
 	part.AssemblyLinearVelocity = Vector3.zero
 	part.AssemblyAngularVelocity = Vector3.zero
+end
+
+function VerifierCar.freeze()
+	local part = VerifierCar.getPart()
+	part.AssemblyLinearVelocity = Vector3.zero
+	part.AssemblyAngularVelocity = Vector3.zero
+	part.Anchored = true
+end
+
+function VerifierCar.thaw()
+	local part = VerifierCar.getPart()
+	part.Anchored = false
 end
 
 function VerifierCar.destroy()

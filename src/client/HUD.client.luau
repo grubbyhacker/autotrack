@@ -26,9 +26,14 @@ local function render()
 		stateFolder:GetAttribute("attempt_max") or 0
 	)
 	StatusPanel.setExplanation(stateFolder:GetAttribute("explanation") or "")
+	StatusPanel.setRepairAction(stateFolder:GetAttribute("repair_action_text") or "")
 	StatusPanel.setError(
 		stateFolder:GetAttribute("error_text") or "",
 		stateFolder:GetAttribute("final_status") or ""
+	)
+	StatusPanel.setFailureBanner(
+		stateFolder:GetAttribute("failure_banner_text") or "",
+		stateFolder:GetAttribute("failure_banner_visible") == true
 	)
 	StatusPanel.setBusy(stateFolder:GetAttribute("busy") == true)
 	StatusPanel.setLogLines({
@@ -51,6 +56,7 @@ local observedAttributes = {
 	"attempt_current",
 	"attempt_max",
 	"explanation",
+	"repair_action_text",
 	"error_text",
 	"busy",
 	"baseline_lap_time",
@@ -58,6 +64,8 @@ local observedAttributes = {
 	"slowdown_ratio",
 	"current_speed",
 	"final_status",
+	"failure_banner_text",
+	"failure_banner_visible",
 	"log_1",
 	"log_2",
 	"log_3",

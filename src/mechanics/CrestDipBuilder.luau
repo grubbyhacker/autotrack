@@ -104,12 +104,15 @@ function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 	local height = p.height_or_depth
 	local folder = getSectorFolder(state.sector_id)
 	local color = BrickColor.new("Medium stone grey")
+	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - p.sector_length) * 0.5)
+
+	makeFlatRunout("EntryFlat", entryFrame, 0, startOffset, color, folder)
 
 	local points = {}
 	for index = 0, CURVE_SEGMENTS do
 		local t = index / CURVE_SEGMENTS
 		local y = height * 0.5 * (1 - math.cos(2 * math.pi * t))
-		table.insert(points, Vector3.new(0, y, p.sector_length * t))
+		table.insert(points, Vector3.new(0, y, startOffset + p.sector_length * t))
 	end
 
 	local prefix = if height >= 0 then "Crest" else "Dip"
@@ -124,8 +127,8 @@ function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 		)
 	end
 
-	local exitFlatLength = Constants.STRAIGHT_LENGTH - p.sector_length
-	makeFlatRunout("ExitFlat", entryFrame, p.sector_length, exitFlatLength, color, folder)
+	local exitFlatLength = Constants.STRAIGHT_LENGTH - p.sector_length - startOffset
+	makeFlatRunout("ExitFlat", entryFrame, startOffset + p.sector_length, exitFlatLength, color, folder)
 end
 
 return CrestDipBuilder

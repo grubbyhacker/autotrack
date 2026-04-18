@@ -1,6 +1,6 @@
 -- CrestDipIntegrity.luau
 -- Evaluates whether a completed run satisfies CrestDip mechanic integrity.
--- prd_plan.md §11.4, §15.7, Phase 5
+-- prd_plan.md §11.4, §15.7, Phase 5; curvature + airtime-cap added in Phase 9
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
@@ -11,23 +11,73 @@ type SectorState = Types.SectorState
 
 local CrestDipIntegrity = {}
 
+function CrestDipIntegrity.preflight(
+	state: SectorState
+): (boolean, { string })
+	local hints: { string } = {}
+	local p = state.params
+	local h = p.height_or_depth or 0
+	local L = p.sector_length or 0
+
+	if math.abs(h) < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
+		table.insert(hints, "vertical displacement below minimum")
+	end
+
+	-- Curvature approximation for the cosine profile: peak |d²y/dz²| ∝ |h|/L².
+	-- Tuned against CRESTDIP_MIN_CURVATURE in Constants.
+	if L > 0 then
+		local curvature = math.abs(h) / (L * L)
+		if curvature < Constants.CRESTDIP_MIN_CURVATURE then
+			table.insert(hints, "crest curvature too gentle")
+		end
+	end
+
+	return #hints == 0, hints
+end
+
+function CrestDipIntegrity.evaluateRuntime(
+	metrics: RunMetrics
+): (boolean, { string })
+	local hints: { string } = {}
+	local verticalDisplacement = metrics.target_vertical_displacement or metrics.vertical_displacement
+	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
+	local airtimeDistance = metrics.target_airtime_distance or metrics.airtime_distance or 0
+	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
+
+	if verticalDisplacement < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
+		table.insert(hints, "runtime vertical displacement too small")
+	end
+
+	-- Airtime cap — only enforced if the car actually left the surface.
+	-- PRD §4.3: CrestDip has no airborne requirement, so skip when never airborne.
+	if airborne and airtimeDistance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE then
+		table.insert(hints, "airborne too long after liftoff")
+	end
+
+	if not reacquired then
+		table.insert(hints, "car did not reacquire semi-rail before sector exit")
+	end
+
+	return #hints == 0, hints
+end
+
 function CrestDipIntegrity.evaluate(
 	state: SectorState,
 	metrics: RunMetrics
 ): (boolean, { string })
 	local hints: { string } = {}
-	local p = state.params
+	local preflightOk, preflightHints = CrestDipIntegrity.preflight(state)
+	local runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime(metrics)
 
-	if math.abs(p.height_or_depth or 0) < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
-		table.insert(hints, "vertical displacement below minimum")
+	if not preflightOk then
+		for _, hint in ipairs(preflightHints) do
+			table.insert(hints, hint)
+		end
 	end
-
-	if metrics.vertical_displacement < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
-		table.insert(hints, "runtime vertical displacement too small")
-	end
-
-	if not metrics.reacquired then
-		table.insert(hints, "car did not reacquire semi-rail before sector exit")
+	if not runtimeOk then
+		for _, hint in ipairs(runtimeHints) do
+			table.insert(hints, hint)
+		end
 	end
 
 	return #hints == 0, hints

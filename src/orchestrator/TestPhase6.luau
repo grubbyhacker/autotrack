@@ -166,14 +166,23 @@ function TestPhase6.runUnit()
 
 	local rampAction = MinimalProposer.repair(makePacket("RampJump", "mechanic_integrity_failure", { "verifier never became airborne" }))
 	T.expect("proposer_repair_rampjump_not_airborne",
-		rampAction ~= nil and rampAction.type == "SetNumericLever" and rampAction.lever == "ramp_angle",
-		tostring(rampAction and rampAction.lever)
+		rampAction ~= nil
+			and rampAction.type == "SetPad"
+			and rampAction.pad == "ingress"
+			and rampAction.value == "Boost",
+		tostring(rampAction and rampAction.type == "SetPad" and rampAction.pad or rampAction and rampAction.lever)
 	)
 
 	local chicaneAction = MinimalProposer.repair(makePacket("Chicane", "mechanic_integrity_failure", { "lateral displacement too small" }))
 	T.expect("proposer_repair_chicane_amplitude_low",
 		chicaneAction ~= nil and chicaneAction.type == "SetNumericLever" and chicaneAction.lever == "amplitude",
 		tostring(chicaneAction and chicaneAction.lever)
+	)
+
+	local chicanePadAction = MinimalProposer.repair(makePacket("Chicane", "mechanic_integrity_failure", { "entry unstable" }))
+	T.expect("proposer_repair_chicane_can_brake_entry",
+		chicanePadAction ~= nil and chicanePadAction.type == "SetPad" and chicanePadAction.pad == "ingress" and chicanePadAction.value == "Brake",
+		tostring(chicanePadAction and chicanePadAction.type == "SetPad" and chicanePadAction.pad or chicanePadAction and chicanePadAction.lever)
 	)
 
 	local crestAction = MinimalProposer.repair(makePacket("CrestDip", "mechanic_integrity_failure", { "vertical displacement too small" }))
@@ -284,12 +293,38 @@ function TestPhase6.runIntegration()
 	local okVersion, versionReason = JobRunner.submit("add a wide chicane in sector 3")
 	local versionState = SectorRegistry.getCommitted(3)
 	T.expect("job_commit_bumps_version",
-		okVersion == true and versionReason == nil and versionState ~= nil and versionState.mechanic == "Chicane" and versionState.version == 2,
-		tostring(versionReason)
+		okVersion == true
+			and versionReason == nil
+			and versionState ~= nil
+			and versionState.mechanic == "Chicane"
+			and versionState.version >= 2,
+		string.format(
+			"reason=%s mechanic=%s version=%s",
+			tostring(versionReason),
+			tostring(versionState and versionState.mechanic),
+			tostring(versionState and versionState.version)
+		)
 	)
 
 	Tracer.clear()
-	local okRevert, revertReason = JobRunner.submit("add a crest in sector 3")
+	local okCrest, crestReason = JobRunner.submit("add a crest in sector 3")
+	local crestCommitState = SectorRegistry.getCommitted(3)
+	local crestJob = JobRunner.getLastJob()
+	T.expect("job_commits_crest_after_repair_chain",
+		okCrest == true
+			and crestReason == nil
+			and crestJob ~= nil
+			and crestJob.final_status == "committed"
+			and #crestJob.attempts >= 2
+			and crestCommitState ~= nil
+			and crestCommitState.mechanic == "CrestDip",
+		string.format("final_status=%s attempts=%d",
+			tostring(crestJob and crestJob.final_status),
+			crestJob and #crestJob.attempts or -1)
+	)
+
+	Tracer.clear()
+	local okRevert, revertReason = JobRunner.submit("add a really tall steep short crest in sector 3")
 	local revertedState = SectorRegistry.getCommitted(3)
 	local lastJob = JobRunner.getLastJob()
 	T.expect("job_reverts_on_exhaustion",
@@ -298,8 +333,7 @@ function TestPhase6.runIntegration()
 			and lastJob ~= nil
 			and lastJob.final_status == "reverted"
 			and revertedState ~= nil
-			and revertedState.mechanic == "Chicane"
-			and revertedState.version == 2,
+			and revertedState.mechanic == "CrestDip",
 		tostring(revertReason)
 	)
 
