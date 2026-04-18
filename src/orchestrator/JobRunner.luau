@@ -23,6 +23,7 @@ local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
+local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
@@ -185,8 +186,27 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return JobRunner.submit("add a crest in sector 3")
 		end
 
-		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest")
-		return false, "unknown demo; supported: /demo camera, /demo crest"
+		if slashArg == "maximize" then
+			if CameraDemo.isActive() then
+				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo maximize")
+				return false, "camera demo is running; toggle it off before /demo maximize"
+			end
+			if MaximizerAgent.isActive() then
+				UIState.rejectRequest(rawText, "maximizer already running")
+				return false, "maximizer already running"
+			end
+			task.spawn(function()
+				MaximizerAgent.run({
+					submit = JobRunner.submit,
+					isBusy = JobRunner.isBusy,
+					isCameraDemoActive = CameraDemo.isActive,
+				})
+			end)
+			return true, nil
+		end
+
+		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize")
+		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize"
 	end
 
 	if slashCommand == "test" then
