@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local ChicanePath = require(script.Parent.ChicanePath)
+local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type SectorState = Types.SectorState
 
@@ -19,11 +20,7 @@ local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 end
 
 local function getSectorFolder(sector_id: number): Folder
-	local name = string.format("Sector_%02d", sector_id)
-	local track = workspace:FindFirstChild("Track")
-	local folder = track and track:FindFirstChild(name)
-	assert(folder, "getSectorFolder: not found: " .. name)
-	return folder :: Folder
+	return TrackVisuals.getCollisionFolder(sector_id)
 end
 
 local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickColor, parent: Instance): Part
@@ -38,6 +35,9 @@ local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickCol
 	part.Material = Enum.Material.SmoothPlastic
 	part.BrickColor = color
 	part.Parent = parent
+	TrackVisuals.styleRoadPiece(part)
+	TrackVisuals.addCurbs(part)
+	TrackVisuals.addAlternatingStripes(part, Constants.CAR_WIDTH * 0.2)
 	return part
 end
 

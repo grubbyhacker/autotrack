@@ -20,6 +20,7 @@
 | 11b | Complete — Stage B challenge-up via `extreme` qualifier + per-sector HUD score publication |
 | 11c | Complete — `/demo maximize` campaign with retained sector scores, final budget probe, and eviction loop |
 | 11d | Partial — integration green again after RampJump `no_progress` repair fix; escalation/search still remains simple |
+| 12 | Complete — visual readability pass: sector-shell styling, visible corner roads, procedural F1 verifier shell, ramp supports, and restyled chicane surfaces |
 
 ## Scoring ADR
 
@@ -35,6 +36,87 @@ Use that as the canonical human-readable explanation of:
 - `Cost`
 
 The HUD is intentionally minimal; the ADR carries the fuller wording.
+
+## Post-Phase 11 repo housekeeping
+
+- Added root `README.md` summarizing project framing, repo layout, and the maintained `make`-based test workflow.
+- Added a standard MIT `LICENSE` file for the first public push.
+- No runtime behavior changed in this follow-up; this was documentation/package hygiene only.
+
+---
+
+## Phase 12 lessons learned
+
+### 1. Visual readability can be added without touching pathing
+
+The safest way to improve the track presentation was to keep the existing collision road pieces and lap path untouched, then attach visual-only children to those parts.
+
+This preserved:
+
+- sector entry/exit transforms
+- `FailureDetector` thresholds based on centerline distance
+- builder determinism tests
+- existing phase coverage for baseline traversal and mechanic geometry
+
+### 2. Child visuals are the right place for this repo's tests
+
+Several historical suites assume exact direct-child sets inside sector folders, especially Phase 1 and Phase 4.
+
+To avoid rewriting stable tests, Phase 12 puts shells, road markings, corner-road ribbons, curbs, and ramp supports under the existing direct parts instead of adding extra direct children at the folder level.
+
+### 3. The verifier should stay a single physics root
+
+`VerifierCar` now looks like a simple F1-style car, but the runtime contract still depends on one `BasePart` root named `VerifierCar`.
+
+Keep these invariants:
+
+- the workspace object named `VerifierCar` must still be a `BasePart`
+- controller forces/attachments bind to that root
+- visual body pieces should stay welded, non-colliding, and massless
+
+### 4. Avoid marketplace art dependencies unless procedural assembly is clearly insufficient
+
+For this phase, a welded procedural shell was more reliable than inserting a creator-store model:
+
+- deterministic test behavior
+- no external asset dependency in the runtime path
+- no scale/orientation cleanup pipeline
+
+If a future pass needs higher-fidelity art, prefer a single generated/imported shell welded to the same root rather than changing the controller contract.
+
+### 5. Sector folders need a fixed internal contract
+
+The main source of the visual regressions was that corners, flat straights, and mechanic straights were not constructed the same way. Some relied on the collision root for visuals, others relied on child overlays, and some mechanic shells were attached to individual obstacle parts.
+
+Phase 12 now standardizes every sector folder to contain:
+
+- `Anchor`
+- `Collision`
+- `Visual`
+- `Pads`
+
+Future visual changes should preserve this contract.
+
+### 6. The collision root should not be the source of cosmetic truth
+
+Flat-sector visuals are now rendered in the `Visual` folder, while colliding geometry lives in `Collision`.
+
+This separation matters because:
+
+- it keeps corner/straight road height logic explicit
+- it prevents accidental cosmetic changes from mutating collision parts
+- it gives tests stable semantic anchors instead of brittle child-count assumptions
+
+### 7. Mechanic shells belong at sector level, not on one obstacle piece
+
+The earlier regression loop around chicane/ramp cosmetics came from attaching sector-level shell/backdrop concepts to individual mechanic pieces.
+
+Keep:
+
+- sector shell visuals in `Visual`
+- obstacle-local accents on the obstacle parts themselves
+
+Do not reintroduce “sector shell as a child of the first mechanic segment”.
 
 ---
 

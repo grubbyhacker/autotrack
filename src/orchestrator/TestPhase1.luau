@@ -22,28 +22,34 @@ function TestPhase1.run()
 		local sectors = track:GetChildren()
 		T.expect("track_sector_count", #sectors == 10, "expected 10 sectors, got " .. #sectors)
 
-		local straights, corners, badParts = 0, 0, {}
+		local straights, corners, badSectors = 0, 0, {}
 		for _, folder in ipairs(sectors) do
-			local kind = folder:GetAttribute("SectorKind") -- set on the part, not folder
-			-- SectorKind attribute is on the part inside the folder
-			local part = folder:FindFirstChildWhichIsA("BasePart")
-			if part then
-				local k = part:GetAttribute("SectorKind")
-				if k == "Straight" then straights += 1
-				elseif k == "Corner" then corners += 1
-				end
-				local partCount = #folder:GetChildren()
-				if partCount ~= 1 then
-					table.insert(badParts, folder.Name .. "(" .. partCount .. ")")
-				end
-			else
-				table.insert(badParts, folder.Name .. "(no part)")
+			local kind = folder:GetAttribute("SectorKind")
+			if kind == "Straight" then
+				straights += 1
+			elseif kind == "Corner" then
+				corners += 1
+			end
+
+			local anchor = folder:FindFirstChild("Anchor")
+			local collision = folder:FindFirstChild("Collision")
+			local visual = folder:FindFirstChild("Visual")
+			local pads = folder:FindFirstChild("Pads")
+			local collisionCount = collision and collision:IsA("Folder") and #collision:GetChildren() or -1
+			local visualCount = visual and visual:IsA("Folder") and #visual:GetChildren() or -1
+			if not (anchor and anchor:IsA("BasePart")
+				and collision and collision:IsA("Folder")
+				and visual and visual:IsA("Folder")
+				and pads and pads:IsA("Folder")
+				and collisionCount >= 1
+				and visualCount >= 1) then
+				table.insert(badSectors, folder.Name)
 			end
 		end
 
 		T.expect("straight_count", straights == 6, "expected 6 straights, got " .. straights)
 		T.expect("corner_count", corners == 4, "expected 4 corners, got " .. corners)
-		T.expect("sector_parts", #badParts == 0, "bad sectors: " .. table.concat(badParts, ", "))
+		T.expect("sector_parts", #badSectors == 0, "bad sectors: " .. table.concat(badSectors, ", "))
 	end
 
 	-- Car

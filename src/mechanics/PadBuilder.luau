@@ -10,24 +10,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
+local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type Pads = Types.Pads
 
 local PadBuilder = {}
 
-local function getSectorFolder(sector_id: number): Folder
-	local name = string.format("Sector_%02d", sector_id)
-	local track = workspace:FindFirstChild("Track")
-	local folder = track and track:FindFirstChild(name)
-	assert(folder, "getSectorFolder: not found: " .. name)
-	return folder :: Folder
-end
-
 -- Place (or remove) the ingress and egress pads for a sector.
 -- padAreaStart: CFrame where the ingress pad should be positioned
 -- padAreaEnd:   CFrame where the egress pad should be positioned
 function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number)
-	local folder = getSectorFolder(sector_id)
+	local folder = TrackVisuals.getPadsFolder(sector_id)
 
 	for _, child in ipairs(folder:GetChildren()) do
 		if child.Name == "IngressPad" or child.Name == "EgressPad" then

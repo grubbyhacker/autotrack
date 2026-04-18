@@ -68,6 +68,10 @@ local function getActivePad(currentSectorId: number?): (string?, string?, string
 	if not folder then
 		return nil, nil, nil
 	end
+	local padsFolder = folder:FindFirstChild("Pads")
+	if not (padsFolder and padsFolder:IsA("Folder")) then
+		return nil, nil, nil
+	end
 
 	local car = workspace:FindFirstChild("VerifierCar")
 	if not car or not car:IsA("BasePart") then
@@ -75,7 +79,7 @@ local function getActivePad(currentSectorId: number?): (string?, string?, string
 	end
 
 	for _, padName in ipairs({ "IngressPad", "EgressPad" }) do
-		local pad = folder:FindFirstChild(padName)
+		local pad = padsFolder:FindFirstChild(padName)
 		if pad and pad:IsA("BasePart") then
 			local localPoint = pad.CFrame:PointToObjectSpace(car.Position)
 			if math.abs(localPoint.X) <= pad.Size.X * 0.5

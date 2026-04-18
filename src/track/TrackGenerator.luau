@@ -4,26 +4,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
-local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local ChicanePath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath"))
 local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
-
-type SectorState = Types.SectorState
-
-export type SectorKind = "Straight" | "Corner"
-
-export type SectorDescriptor = {
-	id: number,
-	kind: SectorKind,
-	entry: CFrame,
-	exit: CFrame,
-	partGroup: Folder?,
-}
-
-type SectorDescriptorInternal = SectorDescriptor & {
-	center: Vector3,
-	size: Vector3,
-}
+local TrackVisuals = require(script.Parent.TrackVisuals)
 
 local TrackGenerator = {}
 
@@ -33,12 +16,12 @@ local CAR_RIDE_Y = Constants.TRACK_THICKNESS + Constants.CAR_HEIGHT * 0.5
 local TOP_ROW_Z = 0
 local BOTTOM_ROW_Z = CORNER_SPAN
 
-local function edgeCFrame(center: Vector3, edgeOffset: Vector3, lookVector: Vector3): CFrame
+local function edgeCFrame(center, edgeOffset, lookVector)
 	local position = center + edgeOffset
 	return CFrame.lookAt(position, position + lookVector)
 end
 
-local function buildColumnCenters(cols: number): { number }
+local function buildColumnCenters(cols)
 	local centers = table.create(cols)
 	local cursor = 0
 
@@ -54,7 +37,7 @@ local function buildColumnCenters(cols: number): { number }
 	return centers
 end
 
-local function straightSector(id: number, center: Vector3, lookVector: Vector3): SectorDescriptorInternal
+local function straightSector(id, center, lookVector)
 	local halfTravel = Constants.STRAIGHT_LENGTH * 0.5
 	local edgeOffset = lookVector * halfTravel
 
@@ -64,37 +47,35 @@ local function straightSector(id: number, center: Vector3, lookVector: Vector3):
 		entry = edgeCFrame(center, -edgeOffset, lookVector),
 		exit = edgeCFrame(center, edgeOffset, lookVector),
 		partGroup = nil,
+		cellCFrame = CFrame.lookAt(center, center + lookVector),
+		cellSize = Vector3.new(CORNER_SPAN, Constants.TRACK_THICKNESS, Constants.STRAIGHT_LENGTH),
 		center = center,
 		size = Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, Constants.STRAIGHT_LENGTH),
 	}
 end
 
-local function cornerSector(
-	id: number,
-	center: Vector3,
-	entryOffset: Vector3,
-	entryLook: Vector3,
-	exitOffset: Vector3,
-	exitLook: Vector3
-): SectorDescriptorInternal
+local function cornerSector(id, center, entryOffset, entryLook, exitOffset, exitLook)
+	local cellCFrame = CFrame.lookAt(center, center + exitLook)
 	return {
 		id = id,
 		kind = "Corner",
 		entry = edgeCFrame(center, entryOffset, entryLook),
 		exit = edgeCFrame(center, exitOffset, exitLook),
 		partGroup = nil,
+		cellCFrame = cellCFrame,
+		cellSize = Vector3.new(CORNER_SPAN, Constants.TRACK_THICKNESS, CORNER_SPAN),
 		center = center,
 		size = Vector3.new(CORNER_SPAN, Constants.TRACK_THICKNESS, CORNER_SPAN),
 	}
 end
 
-local function buildSectors(rows: number, cols: number): { SectorDescriptorInternal }
+local function buildSectors(rows, cols)
 	assert(rows == 2, "TrackGenerator.generate currently supports exactly 2 rows")
 	assert(cols == 5, "TrackGenerator.generate currently supports the Phase 1 2x5 layout")
 
 	local xCenters = buildColumnCenters(cols)
 
-	local sectors: { SectorDescriptorInternal } = {
+	local sectors = {
 		cornerSector(
 			1,
 			Vector3.new(xCenters[1], TRACK_Y, TOP_ROW_Z),
@@ -148,7 +129,7 @@ local function buildSectors(rows: number, cols: number): { SectorDescriptorInter
 	return sectors
 end
 
-local function slerpDir(a: Vector3, b: Vector3, t: number): Vector3
+local function slerpDir(a, b, t)
 	local cosTheta = math.clamp(a:Dot(b), -1, 1)
 	local theta = math.acos(cosTheta)
 	if math.abs(theta) < 1e-6 then return a end
@@ -157,11 +138,11 @@ local function slerpDir(a: Vector3, b: Vector3, t: number): Vector3
 		+ b * (math.sin(t * theta) / sinTheta)
 end
 
-local function buildLapWaypoint(position: Vector3, forward: Vector3): CFrame
+local function buildLapWaypoint(position, forward)
 	return CFrame.lookAt(position, position + forward)
 end
 
-local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
+local function worldPoint(entryFrame, point)
 	return entryFrame.Position
 		+ entryFrame.RightVector * point.X
 		+ entryFrame.UpVector * point.Y
@@ -169,16 +150,16 @@ local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 end
 
 local function buildStraightWaypoints(
-	waypoints: { CFrame },
-	waypointSectorIds: { number },
-	sector: SectorDescriptorInternal,
-	overrideState: SectorState?
+	waypoints,
+	waypointSectorIds,
+	sector,
+	overrideState
 )
-	local function ridePos(p: Vector3): Vector3
+	local function ridePos(p)
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
 
-	local function ridePosY(p: Vector3, liftY: number): Vector3
+	local function ridePosY(p, liftY)
 		return Vector3.new(p.X, CAR_RIDE_Y + liftY, p.Z)
 	end
 
@@ -224,32 +205,32 @@ local function buildStraightWaypoints(
 	end
 end
 
-function TrackGenerator.generate(rows: number?, cols: number?): { SectorDescriptor }
+function TrackGenerator.generate(rows, cols)
 	rows = rows or Constants.TRACK_ROWS
 	cols = cols or Constants.TRACK_COLS
 	return buildSectors(rows, cols)
 end
 
-function TrackGenerator.canonicalStart(): CFrame
+function TrackGenerator.canonicalStart()
 	local sectors = buildSectors(Constants.TRACK_ROWS, Constants.TRACK_COLS)
 	local entry = sectors[1].entry
 	return CFrame.new(entry.Position + Vector3.new(0, CAR_RIDE_Y - TRACK_Y, 0)) * (entry - entry.Position)
 end
 
 function TrackGenerator.getLapPath(
-	sectors: { SectorDescriptor },
-	stateOverrides: { [number]: SectorState }?
-): ({ CFrame }, { number }, { [number]: string })
+	sectors,
+	stateOverrides
+)
 	local waypoints = {}
 	local waypointSectorIds = {}
-	local sectorKinds: { [number]: string } = {}
+	local sectorKinds = {}
 
-	local function ridePos(p: Vector3): Vector3
+	local function ridePos(p)
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
 
 	for _, rawSector in ipairs(sectors) do
-		local sector = rawSector :: SectorDescriptorInternal
+		local sector = rawSector
 		sectorKinds[sector.id] = sector.kind
 
 		if sector.kind == "Corner" then
@@ -277,15 +258,12 @@ function TrackGenerator.getLapPath(
 	return waypoints, waypointSectorIds, sectorKinds
 end
 
-function TrackGenerator.getLapWaypoints(
-	sectors: { SectorDescriptor },
-	stateOverrides: { [number]: SectorState }?
-): { CFrame }
+function TrackGenerator.getLapWaypoints(sectors, stateOverrides)
 	local waypoints = TrackGenerator.getLapPath(sectors, stateOverrides)
 	return waypoints
 end
 
-function TrackGenerator.buildParts(sectors: { SectorDescriptor }): Folder
+function TrackGenerator.buildParts(sectors)
 	local existingTrack = workspace:FindFirstChild("Track")
 	if existingTrack then
 		existingTrack:Destroy()
@@ -296,31 +274,32 @@ function TrackGenerator.buildParts(sectors: { SectorDescriptor }): Folder
 	trackFolder.Parent = workspace
 
 	for _, rawSector in ipairs(sectors) do
-		local sector = rawSector :: SectorDescriptorInternal
+		local sector = rawSector
 
-		local partFolder = Instance.new("Folder")
-		partFolder.Name = string.format("Sector_%02d", sector.id)
-		partFolder.Parent = trackFolder
+		local sectorFolder = Instance.new("Folder")
+		sectorFolder.Name = string.format("Sector_%02d", sector.id)
+		sectorFolder.Parent = trackFolder
 
-		local part = Instance.new("Part")
-		part.Name = string.format("Sector_%02d_%s", sector.id, sector.kind)
-		part.Anchored = true
-		part.TopSurface = Enum.SurfaceType.Smooth
-		part.BottomSurface = Enum.SurfaceType.Smooth
-		part.Material = Enum.Material.SmoothPlastic
-		part.Size = sector.size
-		part.CFrame = CFrame.lookAt(sector.center, sector.center + sector.exit.LookVector)
-		part:SetAttribute("SectorId", sector.id)
-		part:SetAttribute("SectorKind", sector.kind)
+		TrackVisuals.ensureSectorStructure(sectorFolder, sector.id, sector.kind, sector.cellCFrame, sector.cellSize)
+		local collisionFolder = TrackVisuals.getCollisionFolder(sectorFolder)
+		local visualFolder = TrackVisuals.getVisualFolder(sectorFolder)
+
+		TrackVisuals.makeCollisionPart(
+			collisionFolder,
+			string.format("Sector_%02d_%s", sector.id, sector.kind),
+			sector.size,
+			CFrame.lookAt(sector.center, sector.center + sector.exit.LookVector),
+			sector.id,
+			sector.kind
+		)
 
 		if sector.kind == "Straight" then
-			part.BrickColor = BrickColor.new("Dark stone grey")
+			TrackVisuals.renderStraightFlatVisuals(visualFolder, sector.cellCFrame, sector.cellSize, sector.entry, sector.exit)
 		else
-			part.BrickColor = BrickColor.new("Medium stone grey")
+			TrackVisuals.renderCornerFlatVisuals(visualFolder, sector.cellCFrame, sector.cellSize, sector.entry, sector.exit)
 		end
 
-		part.Parent = partFolder
-		sector.partGroup = partFolder
+		sector.partGroup = sectorFolder
 	end
 
 	return trackFolder

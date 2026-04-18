@@ -11,6 +11,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type SectorState = Types.SectorState
 
@@ -30,11 +31,7 @@ local function orientedAlongTrack(entryFrame: CFrame, x: number, y: number, z: n
 end
 
 local function getSectorFolder(sector_id: number): Folder
-	local name = string.format("Sector_%02d", sector_id)
-	local track = workspace:FindFirstChild("Track")
-	local folder = track and track:FindFirstChild(name)
-	assert(folder, "getSectorFolder: not found: " .. name)
-	return folder :: Folder
+	return TrackVisuals.getCollisionFolder(sector_id)
 end
 
 local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickColor, parent: Instance): Part
@@ -49,6 +46,7 @@ local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickCol
 	part.Material = Enum.Material.SmoothPlastic
 	part.BrickColor = color
 	part.Parent = parent
+	TrackVisuals.styleRoadPiece(part)
 	return part
 end
 
@@ -90,24 +88,27 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 	end
 
 	local rampCF = orientedAlongTrack(entryFrame, 0, rampHeight * 0.5, startOffset + p.ramp_length * 0.5, angleRad)
-	makePart(
+	local ramp = makePart(
 		"Ramp",
 		Vector3.new(width, thickness, rampSurfaceLength),
 		rampCF,
 		BrickColor.new("Bright orange"),
 		folder
 	)
+	TrackVisuals.addRampSupports(ramp, rampHeight)
+	TrackVisuals.addRampArrow(ramp)
 
 	local landingZ = startOffset + p.ramp_length + p.gap_length + p.landing_length * 0.5
 	local landingCenter = worldPoint(entryFrame, 0, 0, landingZ)
 	local landingCF = CFrame.lookAt(landingCenter, landingCenter + entryFrame.LookVector)
-	makePart(
+	local landing = makePart(
 		"Landing",
 		Vector3.new(width, thickness, p.landing_length),
 		landingCF,
 		BrickColor.new("Dark stone grey"),
 		folder
 	)
+	TrackVisuals.addCurbs(landing)
 
 	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalHorizontal - startOffset
 	if exitFlatLength > 0 then

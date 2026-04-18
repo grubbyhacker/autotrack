@@ -49,8 +49,14 @@ local function getSectorFolder(sectorId: number): Folder
 	return folder
 end
 
+local function getCollisionFolder(folder: Folder): Folder
+	local collision = folder:FindFirstChild("Collision")
+	assert(collision and collision:IsA("Folder"), "collision folder missing")
+	return collision
+end
+
 local function getPart(folder: Folder, name: string): BasePart?
-	local child = folder:FindFirstChild(name)
+	local child = folder:FindFirstChild(name, true)
 	if child and child:IsA("BasePart") then
 		return child
 	end
@@ -59,7 +65,7 @@ end
 
 local function snapshotNamedParts(folder: Folder): { [string]: string }
 	local snapshot = {}
-	for _, child in ipairs(folder:GetChildren()) do
+	for _, child in ipairs(getCollisionFolder(folder):GetChildren()) do
 		if child:IsA("BasePart") then
 			snapshot[child.Name] = tostring(child.CFrame)
 		end
@@ -251,8 +257,8 @@ function TestPhase4.runRampJump()
 	local restoredBaseline = getPart(folder, string.format("Sector_%02d_Straight", TARGET_SECTOR_ID))
 	T.expect(
 		"rampjump_flat_reapply_restores_baseline",
-		restoredBaseline ~= nil and #folder:GetChildren() == 1,
-		string.format("expected restored baseline after flat reapply; childCount=%d", #folder:GetChildren())
+		restoredBaseline ~= nil and #getCollisionFolder(folder):GetChildren() == 1,
+		string.format("expected restored baseline after flat reapply; childCount=%d", #getCollisionFolder(folder):GetChildren())
 	)
 
 	local ok, err = pcall(function()
@@ -300,7 +306,7 @@ function TestPhase4.runCrestDip()
 	local crestExitFlat = getPart(folder, "ExitFlat")
 	T.expect(
 		"crestdip_crest_builds_curved_segments",
-		crest01 ~= nil and crest06 ~= nil and crestEntryFlat ~= nil and crestExitFlat ~= nil and #folder:GetChildren() == 8,
+		crest01 ~= nil and crest06 ~= nil and crestEntryFlat ~= nil and crestExitFlat ~= nil and #getCollisionFolder(folder):GetChildren() == 8,
 		"expected EntryFlat, six crest curve segments, and ExitFlat"
 	)
 	T.expect(
@@ -346,7 +352,7 @@ function TestPhase4.runCrestDip()
 	local dipExitFlat = getPart(folder, "ExitFlat")
 	T.expect(
 		"crestdip_dip_builds_curved_segments",
-		dip01 ~= nil and dip06 ~= nil and dipEntryFlat ~= nil and dipExitFlat ~= nil and #folder:GetChildren() == 8,
+		dip01 ~= nil and dip06 ~= nil and dipEntryFlat ~= nil and dipExitFlat ~= nil and #getCollisionFolder(folder):GetChildren() == 8,
 		"expected EntryFlat, six dip curve segments, and ExitFlat"
 	)
 
@@ -365,8 +371,8 @@ function TestPhase4.runCrestDip()
 	local baselineAfterError = getPart(folder, string.format("Sector_%02d_Straight", TARGET_SECTOR_ID))
 	T.expect(
 		"crestdip_failed_apply_preserves_baseline",
-		baselineAfterError ~= nil and #folder:GetChildren() == 1,
-		string.format("expected preserved baseline after failed apply; childCount=%d", #folder:GetChildren())
+		baselineAfterError ~= nil and #getCollisionFolder(folder):GetChildren() == 1,
+		string.format("expected preserved baseline after failed apply; childCount=%d", #getCollisionFolder(folder):GetChildren())
 	)
 
 	resetToFlat()
@@ -426,8 +432,9 @@ function TestPhase4.runChicane()
 		ChicExit = true,
 		ChicExitFlat = true,
 	}
-	local chicaneNamesOk = #folder:GetChildren() == 16
-	for _, child in ipairs(folder:GetChildren()) do
+	local collisionChildren = getCollisionFolder(folder):GetChildren()
+	local chicaneNamesOk = #collisionChildren == 16
+	for _, child in ipairs(collisionChildren) do
 		if not expectedChicaneNames[child.Name] then
 			chicaneNamesOk = false
 			break
@@ -441,7 +448,7 @@ function TestPhase4.runChicane()
 
 	local hasPositiveOffset = false
 	local hasNegativeOffset = false
-	for _, child in ipairs(folder:GetChildren()) do
+	for _, child in ipairs(collisionChildren) do
 		if child:IsA("BasePart") and string.find(child.Name, "ChicTurn", 1, true) ~= nil then
 			local x = localX(targetSector.entry, child.Position)
 			if x > 2 then

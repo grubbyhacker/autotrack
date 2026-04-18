@@ -63,17 +63,20 @@ function TestPhase2.run()
 	SectorApplier.clear(2)
 	local track = workspace:FindFirstChild("Track")
 	local folder2 = track and track:FindFirstChild("Sector_02")
-	local childCount = folder2 and #folder2:GetChildren() or -1
+	local collisionFolder = folder2 and folder2:FindFirstChild("Collision")
+	local visualFolder = folder2 and folder2:FindFirstChild("Visual")
+	local childCount = collisionFolder and collisionFolder:IsA("Folder") and #collisionFolder:GetChildren() or -1
+	local visualCount = visualFolder and visualFolder:IsA("Folder") and #visualFolder:GetChildren() or -1
 	T.expect("applier_clear_leaves_baseline",
-		folder2 ~= nil and childCount == 1,
-		string.format("Sector_02 has %d children after clear (expected 1)", childCount))
+		folder2 ~= nil and childCount == 1 and visualCount >= 1,
+		string.format("Sector_02 collision=%d visual=%d after clear", childCount, visualCount))
 
 	-- applier_apply_flat_noop
 	SectorApplier.apply(makeFlatState(2), entry2, exit2)
-	local afterCount = folder2 and #folder2:GetChildren() or -1
+	local afterCount = collisionFolder and collisionFolder:IsA("Folder") and #collisionFolder:GetChildren() or -1
 	T.expect("applier_apply_flat_noop",
 		folder2 ~= nil and afterCount == 1,
-		string.format("Sector_02 has %d children after flat apply (expected 1)", afterCount))
+		string.format("Sector_02 collision has %d children after flat apply (expected 1)", afterCount))
 
 	-- rollback_restores_state
 	local committed = SectorRegistry.getCommitted(2)

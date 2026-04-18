@@ -8,6 +8,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type SectorState = Types.SectorState
 
@@ -22,11 +23,7 @@ local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 end
 
 local function getSectorFolder(sector_id: number): Folder
-	local name = string.format("Sector_%02d", sector_id)
-	local track = workspace:FindFirstChild("Track")
-	local folder = track and track:FindFirstChild(name)
-	assert(folder, "getSectorFolder: not found: " .. name)
-	return folder :: Folder
+	return TrackVisuals.getCollisionFolder(sector_id)
 end
 
 local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickColor, parent: Instance): Part
@@ -41,6 +38,7 @@ local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickCol
 	part.Material = Enum.Material.SmoothPlastic
 	part.BrickColor = color
 	part.Parent = parent
+	TrackVisuals.styleRoadPiece(part)
 	return part
 end
 
@@ -51,7 +49,7 @@ local function makeSegment(
 	entryFrame: CFrame,
 	color: BrickColor,
 	parent: Instance
-)
+): Part
 	local delta = endPoint - startPoint
 	local length = delta.Magnitude
 	assert(length > 0, "CrestDipBuilder.makeSegment: zero-length segment")
@@ -59,7 +57,7 @@ local function makeSegment(
 	local worldEnd = worldPoint(entryFrame, endPoint)
 	local center = worldStart:Lerp(worldEnd, 0.5)
 	local cf = CFrame.lookAt(center, center + (worldEnd - worldStart).Unit)
-	makePart(
+	return makePart(
 		name,
 		Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length),
 		cf,
