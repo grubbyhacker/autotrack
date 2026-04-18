@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local T = require(script.Parent.TestUtils)
 local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
+local ChallengeRunner = require(script.Parent.ChallengeRunner)
 
 local TestPhase11 = {}
 
@@ -273,6 +274,82 @@ local function runUnit()
 		T.expect("phase11_escalation_chicane_returns_lever",
 			lever == "amplitude" or lever == "corridor_width" or lever == "transition_length",
 			"expected a chicane lever; got " .. tostring(lever))
+	end
+
+	-- 18. Runner escalation: RampJump flat state nudges ramp_angle upward.
+	do
+		local st = stateJump()
+		local s = ChallengeScore.compute(st, metrics())
+		local next_, lever, reason = ChallengeRunner._escalateState(st, s)
+		T.expect("phase11_runner_jump_lever",
+			lever == "ramp_angle",
+			"expected ramp_angle; got " .. tostring(lever) .. " reason=" .. tostring(reason))
+		T.expect("phase11_runner_jump_increases_angle",
+			next_ ~= nil and next_.params.ramp_angle > st.params.ramp_angle,
+			"expected ramp_angle to increase")
+	end
+
+	-- 19. Runner escalation: Chicane flat state returns a chicane lever with a delta.
+	do
+		local st = stateChicane()
+		local s = ChallengeScore.compute(st, metrics())
+		local next_, lever = ChallengeRunner._escalateState(st, s)
+		T.expect("phase11_runner_chicane_lever",
+			lever == "amplitude" or lever == "corridor_width" or lever == "transition_length",
+			"expected a chicane lever; got " .. tostring(lever))
+		T.expect("phase11_runner_chicane_mutates",
+			next_ ~= nil and next_.params[lever] ~= st.params[lever],
+			"expected lever value to change")
+	end
+
+	-- 20. Runner escalation: CrestDip flat state drives height_or_depth up.
+	do
+		local st = stateCrest()
+		local s = ChallengeScore.compute(st, metrics())
+		local next_, lever = ChallengeRunner._escalateState(st, s)
+		T.expect("phase11_runner_crest_lever",
+			lever == "height_or_depth" or lever == "sector_length",
+			"expected height_or_depth or sector_length; got " .. tostring(lever))
+		T.expect("phase11_runner_crest_mutates",
+			next_ ~= nil and next_.params[lever] ~= st.params[lever],
+			"expected lever value to change")
+	end
+
+	-- 21. Runner escalation respects the LEVER_FLOOR: a lever already at
+	-- floor whose delta is negative must be rejected (no underflow).
+	do
+		-- corridor_width floor is 4; delta for Chicane corridor_width is -2.
+		-- Starting at 5 yields candidate=3, below floor → rejected.
+		local st = stateChicane({ corridor_width = 5, amplitude = 20, transition_length = 20 })
+		-- Build a score that would nominate corridor_width (high lateral, low near_miss).
+		local m = metrics({ peak_lateral_g = Constants.LATERAL_G_FULL_SCORE })
+		local s = ChallengeScore.compute(st, m)
+		local next_, lever, reason = ChallengeRunner._escalateState(st, s)
+		-- Either: the runner picks corridor_width and floors it out (next_==nil),
+		-- or it picks a different lever that is allowed. Both are acceptable —
+		-- the invariant we care about is "no floor underflow".
+		if next_ ~= nil then
+			T.expect("phase11_runner_no_underflow",
+				next_.params.corridor_width >= 4,
+				"corridor_width dropped below floor to " .. tostring(next_.params.corridor_width))
+		else
+			T.expect("phase11_runner_rejects_with_reason",
+				reason ~= nil and #reason > 0,
+				"expected a rejection reason")
+		end
+		-- Silence unused lever warning.
+		local _ = lever
+	end
+
+	-- 22. Runner escalation: nil returned when score says over budget.
+	do
+		local st = stateJump()
+		local s = ChallengeScore.compute(st,
+			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local next_, lever = ChallengeRunner._escalateState(st, s)
+		T.expect("phase11_runner_blocks_over_budget",
+			next_ == nil and lever == nil,
+			"expected nil state when over budget")
 	end
 end
 
