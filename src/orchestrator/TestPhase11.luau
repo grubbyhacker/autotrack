@@ -357,13 +357,14 @@ local function runUnit()
 			"expected ramp_angle; got " .. tostring(lever))
 	end
 
-	-- 20. suggestEscalation points at amplitude for a flat chicane.
+	-- 20. suggestEscalation always points at amplitude for a flat chicane (near_miss
+	--     and lateral both unsaturated; amplitude is the only lever that moves both).
 	do
 		local s = ChallengeScore.compute(stateChicane(), metrics())
 		local lever = ChallengeScore.suggestEscalation(stateChicane(), s)
-		T.expect("phase11_escalation_chicane_returns_lever",
-			lever == "amplitude" or lever == "corridor_width" or lever == "transition_length",
-			"expected a chicane lever; got " .. tostring(lever))
+		T.expect("phase11_escalation_chicane_returns_amplitude",
+			lever == "amplitude",
+			"expected amplitude; got " .. tostring(lever))
 	end
 
 	-- 21. Runner escalation: RampJump flat state nudges ramp_angle upward.
