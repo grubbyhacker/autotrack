@@ -249,6 +249,22 @@ function UIState.publishAttemptResult(result)
 	})
 end
 
+-- Phase 11: publish a ChallengeScore. Called from JobRunner on successful
+-- commit so HUD observers can show the per-sector score.
+function UIState.publishScore(sectorId: number, score)
+	if score == nil then return end
+	setAttributes({
+		last_score_sector = sectorId,
+		last_score_total = score.total,
+		last_score_air = score.air,
+		last_score_lateral = score.lateral,
+		last_score_near_miss = score.near_miss,
+		last_score_time_cost = score.time_cost,
+		last_score_budget_used = score.budget_used,
+		last_score_over_budget = score.over_budget,
+	})
+end
+
 function UIState.setBaselineLapTime(seconds: number)
 	setAttributes({
 		baseline_lap_time = seconds,

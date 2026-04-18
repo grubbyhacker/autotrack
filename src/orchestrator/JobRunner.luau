@@ -352,6 +352,19 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				job.final_status = "committed"
 				UIState.setPhase("Commit", "Committed")
 				UIState.appendLog(string.format("Committed %s v%d", stateSummary(job.working_state), job.working_state.version))
+				if result.score then
+					UIState.publishScore(targetSectorId, result.score)
+					UIState.appendLog(string.format(
+						"Score %.1f (air %.1f lat %.1f near %.1f cost %.1f budget %.0f%%%s)",
+						result.score.total,
+						result.score.air,
+						result.score.lateral,
+						result.score.near_miss,
+						result.score.time_cost,
+						result.score.budget_used * 100,
+						if result.score.over_budget then " OVER" else ""
+					))
+				end
 				pauseForUI()
 				UIState.publishCommit(targetSector)
 				Tracer.log(string.format("commit sector=%d version=%d", targetSectorId, job.working_state.version))

@@ -8,6 +8,7 @@ local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 local RampJumpIntegrity = require(script.Parent.RampJumpIntegrity)
 local ChicaneIntegrity  = require(script.Parent.ChicaneIntegrity)
 local CrestDipIntegrity = require(script.Parent.CrestDipIntegrity)
+local ChallengeScore    = require(script.Parent.ChallengeScore)
 
 type SectorState = Types.SectorState
 type RunMetrics  = Types.RunMetrics
@@ -118,7 +119,12 @@ function LapEvaluator.evaluate(
 	end
 
 	if targetState.mechanic == nil then
-		return { success = true, failure = nil, metrics = metrics }, {}
+		return {
+			success = true,
+			failure = nil,
+			metrics = metrics,
+			score = ChallengeScore.compute(targetState, metrics),
+		}, {}
 	end
 
 	-- Lap completed — now check mechanic integrity.
@@ -137,7 +143,12 @@ function LapEvaluator.evaluate(
 		}, hints
 	end
 
-	return { success = true, failure = nil, metrics = metrics }, {}
+	return {
+		success = true,
+		failure = nil,
+		metrics = metrics,
+		score = ChallengeScore.compute(targetState, metrics),
+	}, {}
 end
 
 -- Build a FailurePacket for the repair agent from a failed RunResult.
