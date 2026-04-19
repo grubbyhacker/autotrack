@@ -2,12 +2,14 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AutoTrackUI = ReplicatedStorage:WaitForChild("AutoTrackUI")
+local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local StatusPanel = require(AutoTrackUI:WaitForChild("StatusPanel"))
 local StatsPanel = require(AutoTrackUI:WaitForChild("StatsPanel"))
 
 local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState")
 local submitEvent = ReplicatedStorage:WaitForChild("AutoTrack_SubmitRequest")
 local setBaselineEvent = ReplicatedStorage:WaitForChild("AutoTrack_SetBaseline")
+local setLLMConfigEvent = ReplicatedStorage:WaitForChild("AutoTrack_SetLLMConfig")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -23,6 +25,65 @@ hud.setBaselineButton.AutoButtonColor = true
 
 hud.setBaselineButton.MouseButton1Click:Connect(function()
 	setBaselineEvent:FireServer()
+end)
+
+-- LLM controls
+local AMBER_COLOR = Color3.fromRGB(255, 191, 94)
+local AMBER_SOFT_COLOR = Color3.fromRGB(255, 219, 158)
+local STEEL_COLOR = Color3.fromRGB(35, 40, 46)
+local MUTED_COLOR = Color3.fromRGB(168, 163, 154)
+local TEXT_COLOR = Color3.fromRGB(234, 231, 225)
+
+local function renderLLMControls()
+	local enabled = stateFolder:GetAttribute("llm_enabled") == true
+	local modelId = stateFolder:GetAttribute("llm_model") or "heuristic"
+
+	-- Find display name for the current model
+	local displayName = "Heuristic"
+	for _, m in ipairs(LLMConfig.MODELS) do
+		if m.id == modelId then
+			displayName = m.displayName
+			break
+		end
+	end
+
+	hud.llmToggleButton.Text = if enabled then "LLM ON" else "LLM OFF"
+	hud.llmToggleButton.TextColor3 = if enabled then AMBER_SOFT_COLOR else MUTED_COLOR
+	hud.llmToggleButton.BackgroundColor3 = if enabled then AMBER_COLOR else STEEL_COLOR
+	hud.llmModelLabel.Text = "MODEL  " .. displayName
+	hud.llmModelLabel.TextColor3 = if enabled then TEXT_COLOR else MUTED_COLOR
+end
+
+hud.llmToggleButton.MouseButton1Click:Connect(function()
+	local currentEnabled = stateFolder:GetAttribute("llm_enabled") == true
+	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
+	setLLMConfigEvent:FireServer({ enabled = not currentEnabled, model = currentModel })
+end)
+
+hud.llmPrevButton.MouseButton1Click:Connect(function()
+	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local idx = 1
+	for i, m in ipairs(LLMConfig.MODELS) do
+		if m.id == currentModel then idx = i; break end
+	end
+	local count = #LLMConfig.MODELS
+	local newIdx = ((idx - 2) % count) + 1
+	local newModel = LLMConfig.MODELS[newIdx].id
+	local enabled = stateFolder:GetAttribute("llm_enabled") == true
+	setLLMConfigEvent:FireServer({ enabled = enabled, model = newModel })
+end)
+
+hud.llmNextButton.MouseButton1Click:Connect(function()
+	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local idx = 1
+	for i, m in ipairs(LLMConfig.MODELS) do
+		if m.id == currentModel then idx = i; break end
+	end
+	local count = #LLMConfig.MODELS
+	local newIdx = (idx % count) + 1
+	local newModel = LLMConfig.MODELS[newIdx].id
+	local enabled = stateFolder:GetAttribute("llm_enabled") == true
+	setLLMConfigEvent:FireServer({ enabled = enabled, model = newModel })
 end)
 
 -- Overview button — writes overview_mode attribute; TrackCamera reads it
@@ -68,6 +129,8 @@ local function render()
 	StatsPanel.setCurrentSpeed(stateFolder:GetAttribute("current_speed") or 0)
 	StatsPanel.setHeading(stateFolder:GetAttribute("current_heading_deg") or 0)
 	StatsPanel.setPitch(stateFolder:GetAttribute("current_pitch_deg") or 0)
+	renderLLMControls()
+
 	StatsPanel.setScore(
 		stateFolder:GetAttribute("last_score_sector") or 0,
 		stateFolder:GetAttribute("last_score_total") or 0,
@@ -120,6 +183,8 @@ local observedAttributes = {
 	"track_budget_used",
 	"track_budget_headroom",
 	"track_over_budget",
+	"llm_enabled",
+	"llm_model",
 }
 
 for _, attributeName in ipairs(observedAttributes) do

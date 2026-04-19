@@ -145,6 +145,7 @@ export type FailurePacket = {
 export type AttemptRecord = {
 	attempt_index: number,
 	action: AgentAction?,
+	proposed_state: SectorState?,
 	result: RunResult,
 	hints: { string }?,
 }

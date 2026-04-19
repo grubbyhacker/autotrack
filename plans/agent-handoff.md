@@ -21,6 +21,8 @@
 | 11c | Complete — `/demo maximize` campaign with retained sector scores, final budget probe, and eviction loop |
 | 11d | Partial — integration green again after RampJump `no_progress` repair fix; escalation/search still remains simple |
 | 12 | Complete — visual readability pass: sector-shell styling, visible corner roads, procedural F1 verifier shell, ramp supports, and restyled chicane surfaces |
+| 13 | Complete — real LLM integration via OpenRouter; LLMConfig module; multi-turn repair history; HUD model selector; /llm slash commands; split propose/repair prompts; lever bounds + CrestDip curvature fix; phase13_unit green |
+| 14 | Not started — LLM orchestrator for /demo maximize (see below) |
 
 ## Scoring ADR
 
@@ -1208,3 +1210,123 @@ The RampJump has two gate conditions:
 2. **Reacquire** — car lands back on the track within `RAMPJUMP_REACQUIRE_MAX` studs after the gap. This is not visually obvious. If the car overshoots the landing zone or physics registers contact outside the landing tiles, this fails even when the jump looked clean.
 
 So "jumped fine but integrity failed" almost always means reacquire failed — the landing strip was too short, the speed was too high relative to gap length, or a bounce took the car off the landing tiles. The repair lever for this is `gap_length` (shorten the gap) or `landing_length` (lengthen landing zone).
+
+---
+
+## Phase 13 handoff (Real LLM integration)
+
+### Status
+
+`make phase13_unit` — expected green (no live LLM required).
+`make phase13_integration` — skipped by default; set `AutoTrack_LLMEnabled=true` and optionally `AutoTrack_LLMModel=<id>` in workspace before Play to run a live call.
+
+### Architecture summary
+
+**New modules**
+- `src/common/LLMConfig.luau` — enabled flag, selected model, MODELS list. `get()`, `setEnabled()`, `setModel()`, `cycleModel()`.
+- `src/agent/OpenRouterProvider.luau` — `HttpService:GetSecret("OPENROUTER_API_KEY")` → POST to `openrouter.ai/api/v1/chat/completions`. Extracts first JSON `{...}` block from response (handles models that add prose). Rounds levers to int when `integerLevers=true`.
+
+**Changed interfaces**
+- `LLMAdapter.repair(packet, history?)` now returns `(AgentAction?, SectorState?, explanation?, error?)`.
+  - Heuristic/mock path: `(action, nil, explanation, nil)` — unchanged behaviour.
+  - LLM path (response has `newState` key): `(nil, newSectorState, explanation, nil)`.
+  - Error: `(nil, nil, nil, errorString)` — shown in UI before reverting.
+- `AttemptRecord` has a new `proposed_state: SectorState?` field captured before each `AttemptRunner.run`.
+- `LLMAdapter.setProvider()` now accepts `nil` as provider to clear the injection (same as `useMockProvider()`).
+
+**HUD**
+- 52px LLM control bar inserted between reasoning bar and rails (rails shifted down 62px).
+- Toggle button (left): cycles `llm_enabled` via `AutoTrack_SetLLMConfig` RemoteEvent.
+- Model prev/next arrows (right): cycles `LLMConfig.MODELS` list.
+- Attribute observer: `llm_enabled`, `llm_model`.
+
+**Slash commands**
+- `/llm on` — enable LLM
+- `/llm off` — disable (revert to heuristic)
+- `/llm model <id>` — set model by OpenRouter ID
+
+### Key invariants to preserve
+
+1. **LLM is off by default.** `LLMConfig._enabled = false` at module load. Unit tests must never accidentally call OpenRouter.
+2. **Response format determines path, not provider name.** A response with `newState` key → full-state replacement; one with `action` key → delta. This means test shims can control which path is exercised.
+3. **Errors surface to UI before revert.** `UIState.setError(...)` + `UIState.appendLog(...)` must happen before `finishRevert()` in `JobRunner`.
+4. **History is capped at `LLMConfig.MAX_HISTORY_DEPTH` (7).** The cap is applied in `LLMAdapter.repair`, not in `JobRunner`.
+5. **`proposed_state` captures working_state before `AttemptRunner.run`.** After run, `updatedState` may differ due to physics corrections; capture the intended state, not the result state.
+
+### Phase 13 post-implementation fixes
+
+#### Lever bounds and clamping
+
+`LevelMappings.LEVER_BOUNDS` now defines min/max per lever for all three mechanics. `OpenRouterProvider.normalizeState` hard-clamps every LLM-returned lever value to these bounds after rounding. The LLM can no longer create 10-story ramps.
+
+#### CrestDip curvature constraint
+
+The CrestDip defaults were wrong: `height=6, sector_length=40` gives curvature `6/1600 = 0.00375`, below the `CRESTDIP_MIN_CURVATURE = 0.006` threshold. This caused 100% integrity failures. Fixes:
+- Defaults changed to `height=8, sector_length=30` (curvature = 0.0089 ✓)
+- `sector_length` max clamped to 40 in `LEVER_BOUNDS`
+- `normalizeState` enforces curvature by bumping `height_or_depth` up if needed
+
+#### Split propose / repair system prompts
+
+`PromptBuilder` now has two separate LLM system prompts:
+- `llmProposeSystemPrompt()` — ambitious/creative; no defaults anchor; push toward challenging values
+- `llmRepairSystemPrompt()` — conservative; "car failed, back off"; move toward defaults
+
+This fixes the observed behavior where LLM proposals were boring (anchored to defaults) because the same conservative prompt was used for both proposal and repair.
+
+#### HUD restructure (Phase 13 final)
+
+- Reasoning bar removed as standalone element; its content folded into the expanded top strip (74→116px)
+- LLM controls moved from standalone mid-screen bar into the bottom dock (72→118px) as a second row
+- Rails shifted up to y=140 (was y=232); center screen now clear for sector announcements
+
+### Phase 13 post-implementation fix
+
+**`Secret:AddPrefix()` instead of string concatenation**
+
+`HttpService:GetSecret()` returns a Roblox `Secret` object, not a string. Using `..` to
+prepend `"Bearer "` throws `attempt to concatenate string with Secret`.
+
+Fix in `src/agent/OpenRouterProvider.luau`:
+```lua
+-- Wrong:
+["Authorization"] = "Bearer " .. apiKey,
+-- Correct:
+["Authorization"] = apiKey:AddPrefix("Bearer "),
+```
+
+`Secret:AddPrefix(prefix)` returns a new `Secret` with the prefix prepended. Roblox
+substitutes the secret value at the network layer when the header is sent.
+
+**E2E result with Gemma 3 4B:**
+- Attempt 0: chicane amplitude too low → `mechanic_integrity_failure`
+- Repair: LLM received failure + history, returned full revised `SectorState` (`path=llm_full_state`)
+- Attempt 1: committed. Score 7.5
+
+---
+
+## Phase 14 — LLM Orchestrator for /demo maximize
+
+### User intent
+
+The user wants `/demo maximize` driven by the LLM, not by the fixed `MaximizerAgent` heuristic plan. The LLM should act as a high-level orchestrator: decide which mechanic to place in each sector, in what order to attack sectors, and when to accept or escalate a result. The campaign should feel like watching an AI *think* about the track holistically, not just apply a fixed ladder.
+
+### Design direction
+
+Replace (or wrap) `MaximizerAgent` with an `LLMOrchestrator` that:
+
+1. **Plans the campaign**: given the 6 editable sectors, asks the LLM which mechanic to try in each sector and in what order (one LLM call at campaign start).
+2. **Runs each sector job** through the existing `JobRunner` pipeline (unchanged — LLM orchestrator drives `submit()` calls, not the inner loop).
+3. **Adapts after each commit**: feeds committed results back to the LLM ("sector 3 committed Chicane, score 8.2, budget used 12%") and asks whether to continue, re-try a sector, or stop early.
+4. **Produces a campaign summary**: final LLM call to generate a one-paragraph narrative of what the track looks like and why those choices were made — shown in the HUD log.
+
+### Key constraints to preserve
+
+- `LLMAdapter` / `OpenRouterProvider` stay unchanged — orchestrator calls are just more LLM calls through the same boundary.
+- The heuristic `MaximizerAgent` should remain as the fallback when LLM is disabled.
+- `/demo maximize` command routing stays in `JobRunner`; it dispatches to `LLMOrchestrator` if LLM is enabled, `MaximizerAgent` otherwise.
+- LLM orchestrator calls should use a separate `PromptBuilder.campaignMessages(...)` builder so campaign-level prompts stay independent of sector-level propose/repair prompts.
+
+### Secondary: per-sector memory ("what did I learn?")
+
+`LLMAdapter.summarize(job) → string?`, stored per sector in a `SectorMemory` module, injected as "Prior experience with sector N: ..." into future propose prompts. Implement as a byproduct of the campaign summary pass, not a prerequisite.

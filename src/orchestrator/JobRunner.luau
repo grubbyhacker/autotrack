@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
@@ -270,6 +271,31 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize"
 	end
 
+	if slashCommand == "llm" then
+		local subcmd, rest2 = string.match(slashArg, "^(%S+)%s*(.-)%s*$")
+		if subcmd == "on" then
+			LLMConfig.setEnabled(true)
+			local cfg = LLMConfig.get()
+			UIState.setLLMConfig(true, cfg.modelId)
+			UIState.appendLog("LLM enabled: " .. cfg.displayName)
+			return true, nil
+		elseif subcmd == "off" then
+			LLMConfig.setEnabled(false)
+			UIState.setLLMConfig(false, LLMConfig.get().modelId)
+			UIState.appendLog("LLM disabled (heuristic)")
+			return true, nil
+		elseif subcmd == "model" then
+			local modelId = rest2 or ""
+			LLMConfig.setModel(modelId)
+			local cfg = LLMConfig.get()
+			UIState.setLLMConfig(cfg.enabled, cfg.modelId)
+			UIState.appendLog("LLM model: " .. cfg.displayName)
+			return true, nil
+		end
+		UIState.rejectRequest(rawText, "usage: /llm on | /llm off | /llm model <id>")
+		return false, "usage: /llm on | /llm off | /llm model <id>"
+	end
+
 	if slashCommand == "test" then
 		if slashArg == "" then
 			UIState.rejectRequest(rawText, "test name missing; use /test <suite>")
@@ -401,6 +427,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				stateSummary(job.working_state)
 			))
 
+			local proposedState = cloneState(job.working_state)
 			local result, hints, updatedState = AttemptRunner.run({
 				workingState = job.working_state,
 				action = nextAction,
@@ -422,6 +449,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			table.insert(job.attempts, {
 				attempt_index = attemptIndex,
 				action = nextAction,
+				proposed_state = proposedState,
 				result = result,
 				hints = hints,
 			})
@@ -594,42 +622,63 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 			sm:transition("ApplyRepair")
 			UIState.setPhase("ApplyRepair", "Applying repair...")
-			local action, explanation, repairErr = LLMAdapter.repair(packet)
-			if not action then
+			local action, newState, explanation, repairErr = LLMAdapter.repair(packet, job.attempts)
+			if repairErr then
+				UIState.setError("LLM error: " .. repairErr)
+				UIState.appendLog("LLM error: " .. repairErr)
+				Tracer.log("llm_error attempt=" .. attemptIndex .. " err=" .. repairErr)
 				sm:transition("Revert")
-				finishRevert(job, targetSector, "revert reason=" .. tostring(repairErr))
+				finishRevert(job, targetSector, "revert reason=llm_error")
 				sm:transition("Idle")
 				return true, nil
 			end
 
-			local actionOk, actionErr = ActionValidator.validateAction(action, job.working_state.mechanic)
-			if not actionOk then
+			if newState then
+				-- LLM returned a full revised SectorState (no delta action)
+				job.working_state = cloneState(newState)
+				lastAction = nil
+				nextAction = nil
+				attemptIndex += 1
+				UIState.setAttempt(attemptIndex, attemptLimitForResult(result, targetSectorId))
+				UIState.setRepairAction("LLM: full state revision")
+				UIState.setExplanation(explanation or "")
+				UIState.appendLog(string.format("Attempt %d (LLM): %s", attemptIndex, explanation or "revised state"))
+				pauseForUI()
+				Tracer.log(string.format(
+					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s path=llm_full_state explanation=%s",
+					attemptIndex, targetSectorId, failureSector, failureDetail(result), explanation or "-"
+				))
+			elseif action then
+				-- Heuristic returned a delta action
+				local actionOk, actionErr = ActionValidator.validateAction(action, job.working_state.mechanic)
+				if not actionOk then
+					sm:transition("Revert")
+					finishRevert(job, targetSector, "revert reason=" .. tostring(actionErr))
+					sm:transition("Idle")
+					return true, nil
+				end
+				lastAction = action
+				nextAction = action
+				attemptIndex += 1
+				UIState.setAttempt(attemptIndex, attemptLimitForResult(result, targetSectorId))
+				UIState.setRepairAction(repairActionLabel(action))
+				UIState.setExplanation(explanation or "")
+				UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
+				pauseForUI()
+				Tracer.log(string.format(
+					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f action=%s explanation=%s",
+					attemptIndex, targetSectorId, failureSector, failureDetail(result),
+					boolString(result.metrics.target_entered == true),
+					boolString(result.metrics.target_exited == true),
+					result.metrics.target_progress or 0,
+					actionSummary(action), explanation or "repair"
+				))
+			else
 				sm:transition("Revert")
-				finishRevert(job, targetSector, "revert reason=" .. tostring(actionErr))
+				finishRevert(job, targetSector, "revert reason=empty_repair")
 				sm:transition("Idle")
 				return true, nil
 			end
-
-			lastAction = action
-			nextAction = action
-			attemptIndex += 1
-			UIState.setAttempt(attemptIndex, attemptLimitForResult(result, targetSectorId))
-			UIState.setRepairAction(repairActionLabel(action))
-			UIState.setExplanation(explanation or "")
-			UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
-			pauseForUI()
-			Tracer.log(string.format(
-				"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f action=%s explanation=%s",
-				attemptIndex,
-				targetSectorId,
-				failureSector,
-				failureDetail(result),
-				boolString(result.metrics.target_entered == true),
-				boolString(result.metrics.target_exited == true),
-				result.metrics.target_progress or 0,
-				actionSummary(action),
-				explanation or "repair"
-			))
 		end
 	end)
 

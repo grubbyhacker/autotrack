@@ -131,15 +131,15 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	gui.DisplayOrder = 10
 	gui.Parent = playerGui
 
-	-- TOP STRIP — phase label, request summary, attempt counter, status
+	-- TOP STRIP — phase label, request summary, attempt counter, status, reasoning
 	local topStrip = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 74),
+		Size = UDim2.new(1, -40, 0, 116),
 		Position = UDim2.new(0, 20, 0, 12),
 		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.72,
+		BackgroundTransparency = 0.12,
 	})
 	addCorner(topStrip, 16)
-	addStroke(topStrip, AMBER, 0.42)
+	addStroke(topStrip, AMBER, 0.25)
 
 	local phaseLabel = createLabel(topStrip, {
 		Position = UDim2.new(0, 22, 0, 12),
@@ -181,6 +181,26 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
 
+	local reasoningLabel = createLabel(topStrip, {
+		Position = UDim2.new(0, 22, 0, 70),
+		Size = UDim2.new(1, -44, 0, 18),
+		Text = "",
+		TextColor3 = MUTED,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+
+	local reasoningActionLabel = createLabel(topStrip, {
+		Position = UDim2.new(0, 22, 0, 92),
+		Size = UDim2.new(1, -44, 0, 14),
+		Text = "",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+
 	-- FAILURE BANNER — centered overlay
 	local failureBanner = createFrame(gui, {
 		Size = UDim2.new(0, 520, 0, 104),
@@ -207,55 +227,17 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		ZIndex = 31,
 	})
 
-	-- AGENT REASONING BAR — shows repair explanation and action, below top strip
-	local reasoningBar = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 60),
-		Position = UDim2.new(0, 20, 0, 98),
-		BackgroundColor3 = PANEL_SOFT,
-		BackgroundTransparency = 0.72,
-	})
-	addCorner(reasoningBar, 14)
-	addStroke(reasoningBar, AMBER, 0.48)
-
-	createLabel(reasoningBar, {
-		Position = UDim2.new(0, 16, 0, 8),
-		Size = UDim2.new(0, 160, 0, 14),
-		Text = "AGENT REASONING",
-		TextColor3 = AMBER_SOFT,
-		TextSize = 12,
-		Font = Enum.Font.Code,
-	})
-
-	local reasoningLabel = createLabel(reasoningBar, {
-		Position = UDim2.new(0, 16, 0, 24),
-		Size = UDim2.new(1, -32, 0, 18),
-		Text = "No repair explanation yet",
-		TextColor3 = MUTED,
-		TextSize = 13,
-		Font = Enum.Font.GothamMedium,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
-
-	local reasoningActionLabel = createLabel(reasoningBar, {
-		Position = UDim2.new(0, 16, 0, 43),
-		Size = UDim2.new(1, -32, 0, 14),
-		Text = "",
-		TextColor3 = AMBER_SOFT,
-		TextSize = 12,
-		Font = Enum.Font.Code,
-	})
-
 	-- LEFT RAIL — live telemetry + event log
 	local logContainer = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 170),
+		Position = UDim2.new(0, 20, 0, 140),
 		AnchorPoint = Vector2.new(0, 0),
 		Size = UDim2.new(0, 188, 0, 260),
 		BackgroundColor3 = PANEL_SOFT,
-		BackgroundTransparency = 0.74,
+		BackgroundTransparency = 0.12,
 	})
 	logContainer.ClipsDescendants = true
 	addCorner(logContainer, 18)
-	addStroke(logContainer, STEEL_LIGHT, 0.38)
+	addStroke(logContainer, STEEL_LIGHT, 0.25)
 
 	local logTitle = createLabel(logContainer, {
 		Position = UDim2.new(0, 14, 0, 8),
@@ -327,13 +309,13 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	-- RIGHT RAIL — session telemetry + set baseline + overview
 	local rightRail = createFrame(gui, {
 		Size = UDim2.new(0, 188, 0, 298),
-		Position = UDim2.new(1, -20, 0, 170),
+		Position = UDim2.new(1, -20, 0, 140),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
-		BackgroundTransparency = 0.74,
+		BackgroundTransparency = 0.12,
 	})
 	addCorner(rightRail, 18)
-	addStroke(rightRail, STEEL_LIGHT, 0.38)
+	addStroke(rightRail, STEEL_LIGHT, 0.25)
 
 	createLabel(rightRail, {
 		Position = UDim2.new(0, 14, 0, 10),
@@ -407,16 +389,16 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(overviewButton, 10)
 	addStroke(overviewButton, AMBER_SOFT, 0.48)
 
-	-- BOTTOM DOCK — command input only (shrunk)
+	-- BOTTOM DOCK — command input + LLM controls
 	local bottomDock = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 72),
+		Size = UDim2.new(1, -40, 0, 118),
 		Position = UDim2.new(0, 20, 1, -20),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.72,
+		BackgroundTransparency = 0.12,
 	})
 	addCorner(bottomDock, 20)
-	addStroke(bottomDock, STEEL_LIGHT, 0.42)
+	addStroke(bottomDock, STEEL_LIGHT, 0.25)
 
 	createLabel(bottomDock, {
 		Position = UDim2.new(0, 20, 0, 10),
@@ -448,6 +430,50 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 	addCorner(submitButton, 10)
 
+	-- LLM CONTROLS — row below the command input
+	local llmToggleButton = createButton(bottomDock, {
+		Position = UDim2.new(0, 8, 0, 74),
+		Size = UDim2.new(0, 88, 0, 34),
+		Text = "LLM OFF",
+		TextColor3 = MUTED,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(llmToggleButton, 10)
+	addStroke(llmToggleButton, STEEL_LIGHT, 0.5)
+
+	local llmModelLabel = createLabel(bottomDock, {
+		Position = UDim2.new(0, 106, 0, 74),
+		Size = UDim2.new(1, -214, 0, 34),
+		Text = "MODEL  Heuristic",
+		TextColor3 = TEXT,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	})
+
+	local llmPrevButton = createButton(bottomDock, {
+		Position = UDim2.new(1, -68, 0, 77),
+		Size = UDim2.new(0, 28, 0, 28),
+		Text = "◀",
+		TextSize = 14,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(llmPrevButton, 8)
+
+	local llmNextButton = createButton(bottomDock, {
+		Position = UDim2.new(1, -36, 0, 77),
+		Size = UDim2.new(0, 28, 0, 28),
+		Text = "▶",
+		TextSize = 14,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(llmNextButton, 8)
+
 	local function submitCurrentText()
 		local text = inputBox.Text
 		if text == "" then
@@ -465,6 +491,10 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	_refs = {
 		gui = gui,
+		llmToggleButton = llmToggleButton,
+		llmModelLabel = llmModelLabel,
+		llmPrevButton = llmPrevButton,
+		llmNextButton = llmNextButton,
 		phaseLabel = phaseLabel,
 		requestLabel = requestLabel,
 		attemptLabel = attemptLabel,

@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
@@ -20,6 +21,16 @@ local cameraLoopDemo = workspace:GetAttribute("AutoTrack_CameraLoopDemo") == tru
 -- Consume the skip flag once at boot so stale edit-time/test-bridge state
 -- does not silently leak into later Play sessions.
 workspace:SetAttribute("AutoTrack_SkipBootBaseline", false)
+
+-- LLM config: read workspace attributes set by the test harness or prior session.
+do
+	local llmEnabled = workspace:GetAttribute("AutoTrack_LLMEnabled") == true
+	local llmModel = workspace:GetAttribute("AutoTrack_LLMModel")
+	LLMConfig.setEnabled(llmEnabled)
+	if type(llmModel) == "string" and llmModel ~= "" then
+		LLMConfig.setModel(llmModel)
+	end
+end
 
 print("[AutoTrack] Booting Phase 1...")
 
@@ -62,6 +73,10 @@ setReplicationFocusForAll(car)
 local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
 
 UIState.init(-1)
+do
+	local cfg = LLMConfig.get()
+	UIState.setLLMConfig(cfg.enabled, cfg.modelId)
+end
 UIState.initTrackCamera(sectors)
 UIState.setPhase("Boot", "Initializing track...")
 UIState.setBusy(true)
@@ -214,6 +229,24 @@ setBaselineEvent.OnServerEvent:Connect(function(_player)
 			UIState.publishReady()
 		end)
 	end
+end)
+
+-- LLM config remote event: client HUD fires this to change model/enabled state.
+local setLLMConfigEvent = Instance.new("RemoteEvent")
+setLLMConfigEvent.Name = "AutoTrack_SetLLMConfig"
+setLLMConfigEvent.Parent = ReplicatedStorage
+
+setLLMConfigEvent.OnServerEvent:Connect(function(_player, config)
+	if type(config) ~= "table" then return end
+	if type(config.enabled) == "boolean" then
+		LLMConfig.setEnabled(config.enabled)
+	end
+	if type(config.model) == "string" then
+		LLMConfig.setModel(config.model)
+	end
+	local cfg = LLMConfig.get()
+	UIState.setLLMConfig(cfg.enabled, cfg.modelId)
+	UIState.appendLog(string.format("LLM %s: %s", cfg.enabled and "ON" or "OFF", cfg.displayName))
 end)
 
 -- Run Phase 1 test suite automatically after boot.

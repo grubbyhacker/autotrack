@@ -114,6 +114,8 @@ function UIState.init(baselineLapTime: number)
 		track_budget_used = 0,
 		track_budget_headroom = 1,
 		track_over_budget = false,
+		llm_enabled = false,
+		llm_model = "heuristic",
 	})
 	setLogs()
 	FailureMarker.hide()
@@ -292,6 +294,13 @@ end
 
 function UIState.resetTrackScore()
 	UIState.publishTrackScore(0, 0, 0, 1, false)
+end
+
+function UIState.setLLMConfig(enabled: boolean, modelId: string)
+	setAttributes({
+		llm_enabled = enabled == true,
+		llm_model = modelId or "heuristic",
+	})
 end
 
 function UIState.setBaselineLapTime(seconds: number)

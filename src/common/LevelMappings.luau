@@ -30,6 +30,26 @@ LevelMappings.NUMERIC_LEVERS = {
 	CrestDip = { "height_or_depth", "radius", "sector_length" },
 }
 
+-- Min/max bounds per lever. Applied as a hard clamp after LLM output.
+LevelMappings.LEVER_BOUNDS = {
+	RampJump = {
+		ramp_angle     = { min = 5,  max = 40  },
+		ramp_length    = { min = 4,  max = 28  },
+		gap_length     = { min = 2,  max = 24  },
+		landing_length = { min = 4,  max = 28  },
+	},
+	Chicane = {
+		amplitude        = { min = 2,  max = 18  },
+		transition_length = { min = 6,  max = 30  },
+		corridor_width   = { min = 8,  max = 22  },
+	},
+	CrestDip = {
+		height_or_depth = { min = 4,  max = 18  },
+		radius          = { min = 8,  max = 40  },
+		sector_length   = { min = 20, max = 40  },
+	},
+}
+
 -- Default parameter values per mechanic (initial proposal baseline before qualifier biasing)
 LevelMappings.DEFAULTS = {
 	RampJump = {
@@ -44,9 +64,9 @@ LevelMappings.DEFAULTS = {
 		corridor_width     = 14,
 	},
 	CrestDip = {
-		height_or_depth = 6,
+		height_or_depth = 8,
 		radius          = 20,
-		sector_length   = 40,
+		sector_length   = 30,
 	},
 }
 
