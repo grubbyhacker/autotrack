@@ -19,6 +19,9 @@ local STRIPE_WHITE = Color3.fromRGB(242, 239, 232)
 local SUPPORT_COLOR = Color3.fromRGB(106, 96, 83)
 local ARROW_COLOR = Color3.fromRGB(255, 196, 64)
 
+local LABEL_GREEN = Color3.fromRGB(100, 255, 160)
+local LABEL_GLOW_BG = Color3.fromRGB(8, 36, 18)
+
 local COLLISION_FOLDER = "Collision"
 local VISUAL_FOLDER = "Visual"
 local PADS_FOLDER = "Pads"
@@ -38,6 +41,72 @@ local function folderOrSector(sectorOrFolder, name)
 	local child = folder:FindFirstChild(name)
 	assert(child and child:IsA("Folder"), string.format("TrackVisuals: missing folder %s under %s", name, folder.Name))
 	return child
+end
+
+local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: string)
+	local existing = anchor:FindFirstChildWhichIsA("BillboardGui")
+	if existing then existing:Destroy() end
+	local existingParticle = anchor:FindFirstChildOfClass("ParticleEmitter")
+	if existingParticle then existingParticle:Destroy() end
+
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "SectorLabel"
+	gui.Size = UDim2.new(0, 64, 0, 30)
+	gui.StudsOffset = Vector3.new(0, 24, 0)
+	gui.AlwaysOnTop = true
+	gui.LightInfluence = 0
+	gui.Parent = anchor
+
+	local bg = Instance.new("Frame")
+	bg.BackgroundColor3 = LABEL_GLOW_BG
+	bg.BackgroundTransparency = 0.72
+	bg.BorderSizePixel = 0
+	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.Parent = gui
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 10)
+	bgCorner.Parent = bg
+	local bgStroke = Instance.new("UIStroke")
+	bgStroke.Color = LABEL_GREEN
+	bgStroke.Transparency = 0.5
+	bgStroke.Thickness = 1.5
+	bgStroke.Parent = bg
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Text = "S" .. tostring(sectorId)
+	label.TextColor3 = LABEL_GREEN
+	label.TextSize = 17
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.Parent = bg
+
+	local sparkle = Instance.new("ParticleEmitter")
+	sparkle.Name = "SectorSparkle"
+	sparkle.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, LABEL_GREEN),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 255, 220)),
+	})
+	sparkle.LightEmission = 1
+	sparkle.LightInfluence = 0
+	sparkle.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.25, 0.28),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	sparkle.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	sparkle.Speed = NumberRange.new(1, 5)
+	sparkle.Rate = 5
+	sparkle.Lifetime = NumberRange.new(0.8, 1.8)
+	sparkle.SpreadAngle = Vector2.new(35, 35)
+	sparkle.Rotation = NumberRange.new(0, 360)
+	sparkle.RotSpeed = NumberRange.new(-40, 40)
+	sparkle.Parent = anchor
 end
 
 local function ensureFolder(parent, name)
@@ -210,6 +279,8 @@ function TrackVisuals.ensureSectorStructure(sectorFolder, sectorId, sectorKind, 
 	ensureFolder(sectorFolder, COLLISION_FOLDER)
 	ensureFolder(sectorFolder, VISUAL_FOLDER)
 	ensureFolder(sectorFolder, PADS_FOLDER)
+
+	addSectorLabel(anchor, sectorId, sectorKind)
 end
 
 function TrackVisuals.clearSectorPresentation(sectorId)

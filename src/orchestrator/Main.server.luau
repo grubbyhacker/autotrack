@@ -75,8 +75,13 @@ task.spawn(function()
 		local existing = workspace:FindFirstChild("VerifierCar")
 		if existing and existing:IsA("BasePart") then
 			UIState.setCurrentSpeed(existing.AssemblyLinearVelocity.Magnitude)
+			local look = existing.CFrame.LookVector
+			local headingDeg = (math.atan2(-look.Z, look.X) * (180 / math.pi) + 360) % 360
+			local pitchDeg = math.asin(math.clamp(look.Y, -1, 1)) * (180 / math.pi)
+			UIState.setCarAttitude(headingDeg, pitchDeg)
 		else
 			UIState.setCurrentSpeed(0)
+			UIState.setCarAttitude(0, 0)
 		end
 	end
 end)
@@ -117,6 +122,7 @@ else
 		Tracer.log(string.format("lap_complete %.2f", baselineLapTime))
 		print(string.format("[AutoTrack] Baseline lap complete: %.2fs", baselineLapTime))
 		UIState.setBaselineLapTime(baselineLapTime)
+		UIState.setLastLapTime(baselineLapTime)
 		UIState.appendLog(string.format("Baseline lap complete: %.2fs", baselineLapTime))
 	else
 		print("[AutoTrack] Baseline lap FAILED: " .. tostring(result.failure and result.failure.type or "unknown"))
@@ -162,6 +168,52 @@ UIState.getSubmitEvent().OnServerEvent:Connect(function(_player, rawText)
 	task.spawn(function()
 		JobRunner.submit(tostring(rawText or ""))
 	end)
+end)
+
+local setBaselineEvent = Instance.new("RemoteEvent")
+setBaselineEvent.Name = "AutoTrack_SetBaseline"
+setBaselineEvent.Parent = ReplicatedStorage
+
+setBaselineEvent.OnServerEvent:Connect(function(_player)
+	local stateFolder = UIState.getStateFolder()
+	local lastLap = stateFolder:GetAttribute("last_lap_time") or -1
+	local bootBaseline = stateFolder:GetAttribute("baseline_lap_time") or -1
+	local lapTime = if lastLap > 0 then lastLap else bootBaseline
+	if lapTime > 0 then
+		UIState.setBaselineLapTime(lapTime)
+		RuntimeContext.setBaselineLapTime(lapTime)
+		workspace:SetAttribute("AutoTrack_BaselineLapTime", lapTime)
+		UIState.appendLog(string.format("Baseline set: %.2fs", lapTime))
+	else
+		if not JobLock.tryAcquire() then
+			UIState.appendLog("Track busy — try again")
+			return
+		end
+		UIState.setPhase("Baseline", "Recording baseline lap...")
+		UIState.appendLog("Baseline lap started")
+		UIState.setBusy(true)
+		task.spawn(function()
+			local currentCar = RuntimeContext.getCar()
+			local ok, result = pcall(function()
+				return VerifierController.runLap(currentCar, waypoints, waypointSectors, sectorKinds, function(id, entering)
+					if entering then UIState.setCurrentSector(id) end
+				end)
+			end)
+			JobLock.release()
+			UIState.setBusy(false)
+			if ok and result.success then
+				local t = result.metrics.lap_time
+				UIState.setBaselineLapTime(t)
+				UIState.setLastLapTime(t)
+				RuntimeContext.setBaselineLapTime(t)
+				workspace:SetAttribute("AutoTrack_BaselineLapTime", t)
+				UIState.appendLog(string.format("Baseline set: %.2fs", t))
+			else
+				UIState.appendLog("Baseline lap failed")
+			end
+			UIState.publishReady()
+		end)
+	end
 end)
 
 -- Run Phase 1 test suite automatically after boot.

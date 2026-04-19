@@ -101,7 +101,7 @@ local function createTextBox(parent: Instance, props)
 	box.TextSize = props.TextSize or 16
 	box.Font = props.Font or Enum.Font.Code
 	box.TextXAlignment = Enum.TextXAlignment.Left
-	box.ClearTextOnFocus = false
+	box.ClearTextOnFocus = true
 	box.Parent = parent
 	if props.ZIndex then
 		box.ZIndex = props.ZIndex
@@ -131,14 +131,15 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	gui.DisplayOrder = 10
 	gui.Parent = playerGui
 
+	-- TOP STRIP — phase label, request summary, attempt counter, status
 	local topStrip = createFrame(gui, {
 		Size = UDim2.new(1, -40, 0, 74),
 		Position = UDim2.new(0, 20, 0, 12),
 		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.08,
+		BackgroundTransparency = 0.72,
 	})
 	addCorner(topStrip, 16)
-	addStroke(topStrip, AMBER, 0.6)
+	addStroke(topStrip, AMBER, 0.42)
 
 	local phaseLabel = createLabel(topStrip, {
 		Position = UDim2.new(0, 22, 0, 12),
@@ -180,16 +181,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
 
-	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, 188, 0, 290),
-		Position = UDim2.new(1, -20, 0, 110),
-		AnchorPoint = Vector2.new(1, 0),
-		BackgroundColor3 = PANEL_SOFT,
-		BackgroundTransparency = 0.05,
-	})
-	addCorner(rightRail, 18)
-	addStroke(rightRail, STEEL_LIGHT, 0.35)
-
+	-- FAILURE BANNER — centered overlay
 	local failureBanner = createFrame(gui, {
 		Size = UDim2.new(0, 520, 0, 104),
 		Position = UDim2.new(0.5, 0, 0.5, -44),
@@ -200,7 +192,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 	failureBanner.Visible = false
 	addCorner(failureBanner, 18)
-	addStroke(failureBanner, DANGER, 0.15)
+	addStroke(failureBanner, DANGER, 0.1)
 
 	local failureBannerLabel = createLabel(failureBanner, {
 		Size = UDim2.new(1, -32, 1, -20),
@@ -215,93 +207,102 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		ZIndex = 31,
 	})
 
-	local railTitle = createLabel(rightRail, {
-		Position = UDim2.new(0, 20, 0, 14),
-		Size = UDim2.new(1, -40, 0, 22),
-		Text = "SESSION TELEMETRY",
+	-- AGENT REASONING BAR — shows repair explanation and action, below top strip
+	local reasoningBar = createFrame(gui, {
+		Size = UDim2.new(1, -40, 0, 60),
+		Position = UDim2.new(0, 20, 0, 98),
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 0.72,
+	})
+	addCorner(reasoningBar, 14)
+	addStroke(reasoningBar, AMBER, 0.48)
+
+	createLabel(reasoningBar, {
+		Position = UDim2.new(0, 16, 0, 8),
+		Size = UDim2.new(0, 160, 0, 14),
+		Text = "AGENT REASONING",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 14,
+		TextSize = 12,
 		Font = Enum.Font.Code,
 	})
 
-	local baselineLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 20, 0, 54),
-		Size = UDim2.new(1, -40, 0, 46),
-		Text = "Baseline\n--",
-		TextColor3 = TEXT,
-		TextSize = 18,
+	local reasoningLabel = createLabel(reasoningBar, {
+		Position = UDim2.new(0, 16, 0, 24),
+		Size = UDim2.new(1, -32, 0, 18),
+		Text = "No repair explanation yet",
+		TextColor3 = MUTED,
+		TextSize = 13,
 		Font = Enum.Font.GothamMedium,
-		TextYAlignment = Enum.TextYAlignment.Top,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 
-	local lastLapLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 20, 0, 110),
-		Size = UDim2.new(1, -40, 0, 46),
-		Text = "Last Lap\n--",
-		TextColor3 = TEXT,
-		TextSize = 18,
-		Font = Enum.Font.GothamMedium,
-		TextYAlignment = Enum.TextYAlignment.Top,
+	local reasoningActionLabel = createLabel(reasoningBar, {
+		Position = UDim2.new(0, 16, 0, 43),
+		Size = UDim2.new(1, -32, 0, 14),
+		Text = "",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
 	})
 
-	local slowdownLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 20, 0, 166),
-		Size = UDim2.new(1, -40, 0, 46),
-		Text = "Slowdown\n+0%",
-		TextColor3 = TEXT,
-		TextSize = 18,
-		Font = Enum.Font.GothamMedium,
-		TextYAlignment = Enum.TextYAlignment.Top,
-	})
-
-	local scoreLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 20, 0, 222),
-		Size = UDim2.new(1, -40, 0, 88),
-		Text = "Score\n--",
-		TextColor3 = TEXT,
-		TextSize = 16,
-		Font = Enum.Font.GothamMedium,
-		TextYAlignment = Enum.TextYAlignment.Top,
-	})
-
+	-- LEFT RAIL — live telemetry + event log
 	local logContainer = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 110),
+		Position = UDim2.new(0, 20, 0, 170),
 		AnchorPoint = Vector2.new(0, 0),
-		Size = UDim2.new(0, 188, 0, 252),
+		Size = UDim2.new(0, 188, 0, 260),
 		BackgroundColor3 = PANEL_SOFT,
-		BackgroundTransparency = 0.05,
+		BackgroundTransparency = 0.74,
 	})
 	logContainer.ClipsDescendants = true
 	addCorner(logContainer, 18)
-	addStroke(logContainer, STEEL_LIGHT, 0.35)
+	addStroke(logContainer, STEEL_LIGHT, 0.38)
 
 	local logTitle = createLabel(logContainer, {
-		Position = UDim2.new(0, 20, 0, 14),
-		Size = UDim2.new(1, -40, 0, 22),
+		Position = UDim2.new(0, 14, 0, 8),
+		Size = UDim2.new(1, -28, 0, 22),
 		Text = "LIVE TELEMETRY",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 14,
+		TextSize = 13,
 		Font = Enum.Font.Code,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
-	local currentSpeedLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 20, 0, 54),
-		Size = UDim2.new(1, -40, 0, 42),
-		Text = "Current Speed\n0.0",
+	local speedLabel = createLabel(logContainer, {
+		Position = UDim2.new(0, 14, 0, 38),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Speed  0.0",
 		TextColor3 = TEXT,
-		TextSize = 18,
+		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+
+	local headingLabel = createLabel(logContainer, {
+		Position = UDim2.new(0, 14, 0, 60),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Heading  N 0°",
+		TextColor3 = TEXT,
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local pitchLabel = createLabel(logContainer, {
+		Position = UDim2.new(0, 14, 0, 82),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Pitch  +0°",
+		TextColor3 = TEXT,
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
 	local recentLoopLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 20, 0, 108),
-		Size = UDim2.new(1, -40, 0, 18),
-		Text = "RECENT LOOP",
+		Position = UDim2.new(0, 14, 0, 110),
+		Size = UDim2.new(1, -28, 0, 16),
+		Text = "EVENT LOG  older↑  ↓newer",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 12,
+		TextSize = 11,
 		Font = Enum.Font.Code,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
@@ -309,8 +310,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local logLabels = {}
 	for index = 1, 4 do
 		logLabels[index] = createLabel(logContainer, {
-			Position = UDim2.new(0, 20, 0, 118 + index * 28),
-			Size = UDim2.new(1, -40, 0, 24),
+			Position = UDim2.new(0, 14, 0, 126 + (index - 1) * 30),
+			Size = UDim2.new(1, -28, 0, 26),
 			Text = "",
 			TextColor3 = MUTED,
 			TextSize = 12,
@@ -323,74 +324,129 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		})
 	end
 
-	local bottomDock = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 132),
-		Position = UDim2.new(0, 20, 1, -20),
-		AnchorPoint = Vector2.new(0, 1),
-		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.06,
+	-- RIGHT RAIL — session telemetry + set baseline + overview
+	local rightRail = createFrame(gui, {
+		Size = UDim2.new(0, 188, 0, 298),
+		Position = UDim2.new(1, -20, 0, 170),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 0.74,
 	})
-	addCorner(bottomDock, 20)
-	addStroke(bottomDock, STEEL_LIGHT, 0.3)
+	addCorner(rightRail, 18)
+	addStroke(rightRail, STEEL_LIGHT, 0.38)
 
-	local promptLabel = createLabel(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 14),
-		Size = UDim2.new(1, -170, 0, 20),
-		Text = "COMMAND INPUT",
+	createLabel(rightRail, {
+		Position = UDim2.new(0, 14, 0, 10),
+		Size = UDim2.new(1, -28, 0, 18),
+		Text = "SESSION TELEMETRY",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 14,
+		TextSize = 13,
 		Font = Enum.Font.Code,
 	})
 
-	local explanationLabel = createLabel(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 32),
-		Size = UDim2.new(1, -40, 0, 18),
-		Text = "No repair explanation yet",
-		TextColor3 = MUTED,
-		TextSize = 14,
+	local baselineLabel = createLabel(rightRail, {
+		Position = UDim2.new(0, 14, 0, 34),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Baseline  --",
+		TextColor3 = TEXT,
+		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 	})
 
-	local actionLabel = createLabel(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 50),
-		Size = UDim2.new(1, -40, 0, 18),
-		Text = "",
+	local lastLapLabel = createLabel(rightRail, {
+		Position = UDim2.new(0, 14, 0, 56),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Last Lap  --",
+		TextColor3 = TEXT,
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+	})
+
+	local slowdownLabel = createLabel(rightRail, {
+		Position = UDim2.new(0, 14, 0, 78),
+		Size = UDim2.new(1, -28, 0, 20),
+		Text = "Slowdown  +0%",
+		TextColor3 = TEXT,
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+	})
+
+	local scoreLabel = createLabel(rightRail, {
+		Position = UDim2.new(0, 14, 0, 106),
+		Size = UDim2.new(1, -28, 0, 100),
+		Text = "Score  --\nAir --  Edge --\nLat --  Cost --\nTrack --\nBudget ░░░░░░░░",
+		TextColor3 = TEXT,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+
+	local setBaselineButton = createButton(rightRail, {
+		Position = UDim2.new(0, 10, 0, 214),
+		Size = UDim2.new(1, -20, 0, 32),
+		Text = "Set Baseline Lap",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(setBaselineButton, 10)
+	addStroke(setBaselineButton, AMBER, 0.55)
+
+	local overviewButton = createButton(rightRail, {
+		Position = UDim2.new(0, 10, 0, 254),
+		Size = UDim2.new(1, -20, 0, 32),
+		Text = "Overview",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.GothamMedium,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(overviewButton, 10)
+	addStroke(overviewButton, AMBER_SOFT, 0.48)
+
+	-- BOTTOM DOCK — command input only (shrunk)
+	local bottomDock = createFrame(gui, {
+		Size = UDim2.new(1, -40, 0, 72),
+		Position = UDim2.new(0, 20, 1, -20),
+		AnchorPoint = Vector2.new(0, 1),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.72,
+	})
+	addCorner(bottomDock, 20)
+	addStroke(bottomDock, STEEL_LIGHT, 0.42)
+
+	createLabel(bottomDock, {
+		Position = UDim2.new(0, 20, 0, 10),
+		Size = UDim2.new(1, -170, 0, 16),
+		Text = "COMMAND INPUT",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
 		Font = Enum.Font.Code,
 	})
 
 	local inputBox = createTextBox(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 74),
-		Size = UDim2.new(1, -170, 0, 38),
+		Position = UDim2.new(0, 20, 0, 30),
+		Size = UDim2.new(1, -154, 0, 34),
 		PlaceholderText = "Try: Add a chicane in sector 3",
-		TextSize = 17,
+		TextSize = 16,
 	})
-	addCorner(inputBox, 12)
+	addCorner(inputBox, 10)
 	addStroke(inputBox, STEEL_LIGHT, 0.25)
 
 	local submitButton = createButton(bottomDock, {
-		Position = UDim2.new(1, -20, 0, 74),
+		Position = UDim2.new(1, -20, 0, 30),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 120, 0, 38),
+		Size = UDim2.new(0, 120, 0, 34),
 		Text = "Submit",
 		TextColor3 = PANEL,
-		TextSize = 16,
+		TextSize = 15,
 		Font = Enum.Font.GothamBold,
 		BackgroundColor3 = AMBER,
 	})
-	addCorner(submitButton, 12)
-
-	local examplesLabel = createLabel(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 102),
-		Size = UDim2.new(1, -170, 0, 20),
-		Text = "Examples: Add a jump in sector 4   |   Add a wide chicane in sector 3",
-		TextColor3 = MUTED,
-		TextSize = 12,
-		Font = Enum.Font.Code,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
+	addCorner(submitButton, 10)
 
 	local function submitCurrentText()
 		local text = inputBox.Text
@@ -413,18 +469,22 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		requestLabel = requestLabel,
 		attemptLabel = attemptLabel,
 		errorLabel = errorLabel,
-		explanationLabel = explanationLabel,
-		actionLabel = actionLabel,
+		reasoningLabel = reasoningLabel,
+		reasoningActionLabel = reasoningActionLabel,
 		inputBox = inputBox,
 		submitButton = submitButton,
 		baselineLabel = baselineLabel,
 		lastLapLabel = lastLapLabel,
 		slowdownLabel = slowdownLabel,
 		scoreLabel = scoreLabel,
-		currentSpeedLabel = currentSpeedLabel,
+		speedLabel = speedLabel,
+		headingLabel = headingLabel,
+		pitchLabel = pitchLabel,
 		recentLoopLabel = recentLoopLabel,
 		logContainer = logContainer,
 		logLabels = logLabels,
+		overviewButton = overviewButton,
+		setBaselineButton = setBaselineButton,
 		failureBanner = failureBanner,
 		failureBannerLabel = failureBannerLabel,
 		colors = {

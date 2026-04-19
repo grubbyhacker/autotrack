@@ -33,20 +33,20 @@ end
 function StatusPanel.setExplanation(text: string)
 	local hud = refs()
 	if text == "" then
-		hud.explanationLabel.Text = "No repair explanation yet"
-		hud.explanationLabel.TextColor3 = hud.colors.muted
+		hud.reasoningLabel.Text = "No repair explanation yet"
+		hud.reasoningLabel.TextColor3 = hud.colors.muted
 	else
-		hud.explanationLabel.Text = text
-		hud.explanationLabel.TextColor3 = hud.colors.text
+		hud.reasoningLabel.Text = text
+		hud.reasoningLabel.TextColor3 = hud.colors.text
 	end
 end
 
 function StatusPanel.setRepairAction(text: string)
 	local hud = refs()
 	if text == "" then
-		hud.actionLabel.Text = ""
+		hud.reasoningActionLabel.Text = ""
 	else
-		hud.actionLabel.Text = "REPAIR ACTION  " .. text
+		hud.reasoningActionLabel.Text = "→ " .. text
 	end
 end
 
@@ -97,6 +97,7 @@ end
 
 function StatusPanel.clearExplanation()
 	StatusPanel.setExplanation("")
+	StatusPanel.setRepairAction("")
 end
 
 return StatusPanel

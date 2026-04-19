@@ -7,12 +7,31 @@ local StatsPanel = require(AutoTrackUI:WaitForChild("StatsPanel"))
 
 local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState")
 local submitEvent = ReplicatedStorage:WaitForChild("AutoTrack_SubmitRequest")
+local setBaselineEvent = ReplicatedStorage:WaitForChild("AutoTrack_SetBaseline")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 StatusPanel.mount(playerGui, function(text: string)
 	submitEvent:FireServer(text)
+end)
+
+local hud = require(AutoTrackUI:WaitForChild("HUDRegistry")).get()
+
+hud.setBaselineButton.Active = true
+hud.setBaselineButton.AutoButtonColor = true
+
+hud.setBaselineButton.MouseButton1Click:Connect(function()
+	setBaselineEvent:FireServer()
+end)
+
+-- Overview button — writes overview_mode attribute; TrackCamera reads it
+local _overviewActive = false
+
+hud.overviewButton.MouseButton1Click:Connect(function()
+	_overviewActive = not _overviewActive
+	stateFolder:SetAttribute("overview_mode", _overviewActive)
+	hud.overviewButton.Text = if _overviewActive then "↩ Chase" else "Overview"
 end)
 
 local function render()
@@ -47,6 +66,8 @@ local function render()
 	StatsPanel.setLastLapTime(stateFolder:GetAttribute("last_lap_time") or -1)
 	StatsPanel.setSlowdown(stateFolder:GetAttribute("slowdown_ratio") or 1)
 	StatsPanel.setCurrentSpeed(stateFolder:GetAttribute("current_speed") or 0)
+	StatsPanel.setHeading(stateFolder:GetAttribute("current_heading_deg") or 0)
+	StatsPanel.setPitch(stateFolder:GetAttribute("current_pitch_deg") or 0)
 	StatsPanel.setScore(
 		stateFolder:GetAttribute("last_score_sector") or 0,
 		stateFolder:GetAttribute("last_score_total") or 0,
@@ -61,6 +82,7 @@ local function render()
 		stateFolder:GetAttribute("track_budget_headroom") or 1,
 		stateFolder:GetAttribute("track_over_budget") == true
 	)
+
 end
 
 local observedAttributes = {
@@ -77,6 +99,8 @@ local observedAttributes = {
 	"last_lap_time",
 	"slowdown_ratio",
 	"current_speed",
+	"current_heading_deg",
+	"current_pitch_deg",
 	"final_status",
 	"failure_banner_text",
 	"failure_banner_visible",

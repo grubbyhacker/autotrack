@@ -94,6 +94,8 @@ function UIState.init(baselineLapTime: number)
 		last_lap_time = -1,
 		slowdown_ratio = 1,
 		current_speed = 0,
+		current_heading_deg = 0,
+		current_pitch_deg = 0,
 		current_sector_id = 0,
 		final_status = "",
 		error_text = "",
@@ -298,9 +300,23 @@ function UIState.setBaselineLapTime(seconds: number)
 	})
 end
 
+function UIState.setLastLapTime(seconds: number)
+	setAttributes({
+		last_lap_time = seconds,
+		slowdown_ratio = 1,
+	})
+end
+
 function UIState.setCurrentSpeed(speed: number)
 	setAttributes({
 		current_speed = speed,
+	})
+end
+
+function UIState.setCarAttitude(headingDeg: number, pitchDeg: number)
+	setAttributes({
+		current_heading_deg = headingDeg,
+		current_pitch_deg = pitchDeg,
 	})
 end
 

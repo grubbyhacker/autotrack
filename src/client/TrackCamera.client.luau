@@ -12,6 +12,8 @@ local camera: Camera? = nil
 local car: BasePart? = nil
 local cameraBlendAlpha = 0
 local activeSideSectorId: number? = nil
+local overviewCFrame: CFrame? = nil
+local overviewBlend = 0
 
 local function sectorAttr(sectorId: number, suffix: string): string
 	return string.format("sector_%d_%s", sectorId, suffix)
@@ -99,6 +101,47 @@ local function getObstacleFocusSector(currentCar: BasePart, currentSectorId: num
 		end
 	end
 	return nil, 0
+end
+
+local function computeOverviewCFrame(): CFrame
+	local track = Workspace:FindFirstChild("Track")
+	if track and track:IsA("Folder") then
+		local minBound = nil
+		local maxBound = nil
+		for _, descendant in ipairs(track:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				local halfSize = descendant.Size * 0.5
+				local partMin = descendant.Position - halfSize
+				local partMax = descendant.Position + halfSize
+				if minBound == nil then
+					minBound = partMin
+					maxBound = partMax
+				else
+					minBound = Vector3.new(
+						math.min(minBound.X, partMin.X),
+						math.min(minBound.Y, partMin.Y),
+						math.min(minBound.Z, partMin.Z)
+					)
+					maxBound = Vector3.new(
+						math.max(maxBound.X, partMax.X),
+						math.max(maxBound.Y, partMax.Y),
+						math.max(maxBound.Z, partMax.Z)
+					)
+				end
+			end
+		end
+		if minBound ~= nil and maxBound ~= nil then
+			local center = (minBound + maxBound) * 0.5
+			local boundsSize = maxBound - minBound
+			local elevation = math.max(boundsSize.X, boundsSize.Z) * 0.75 + 100
+			local pos = Vector3.new(center.X, center.Y + elevation, center.Z)
+			-- Screen-right = +X (S1 leftmost, S5/S6 rightmost)
+			-- Screen-up = -Z (top row S1-S5 at low Z appears at top of screen)
+			-- This gives a clean top-down map orientation with S1 top-left, S6 bottom-right
+			return CFrame.fromMatrix(pos, Vector3.new(1, 0, 0), Vector3.new(0, 0, -1))
+		end
+	end
+	return CFrame.fromMatrix(Vector3.new(208, 220, 28), Vector3.new(1, 0, 0), Vector3.new(0, 0, -1))
 end
 
 local function computeFallbackView(): CFrame
@@ -251,10 +294,23 @@ RunService.RenderStepped:Connect(function(dt)
 	currentCamera.CameraType = Enum.CameraType.Scriptable
 	currentCamera.CameraSubject = nil
 
+	-- Overview mode: blend toward a high isometric view, suspend chase logic
+	local wantOverview = stateFolder:GetAttribute("overview_mode") == true
+	if wantOverview then
+		overviewCFrame = computeOverviewCFrame()
+	end
+	local desiredOverview = if wantOverview then 1 else 0
+	overviewBlend = overviewBlend + (desiredOverview - overviewBlend) * alphaFromSharpness(8, dt)
+
 	if not currentCar or not currentCar.Parent then
 		cameraBlendAlpha = 0
 		activeSideSectorId = nil
-		currentCamera.CFrame = computeFallbackView()
+		local fallback = computeFallbackView()
+		if overviewCFrame and overviewBlend > 0.01 then
+			currentCamera.CFrame = fallback:Lerp(overviewCFrame, overviewBlend)
+		else
+			currentCamera.CFrame = fallback
+		end
 		return
 	end
 
@@ -287,5 +343,11 @@ RunService.RenderStepped:Connect(function(dt)
 
 	local renderedPosition = chasePosition:Lerp(sidePosition, cameraBlendAlpha)
 	local renderedFocus = chaseFocus:Lerp(sideFocus, cameraBlendAlpha)
-	currentCamera.CFrame = CFrame.lookAt(renderedPosition, renderedFocus)
+	local chaseCFrame = CFrame.lookAt(renderedPosition, renderedFocus)
+
+	if overviewCFrame and overviewBlend > 0.001 then
+		currentCamera.CFrame = chaseCFrame:Lerp(overviewCFrame, overviewBlend)
+	else
+		currentCamera.CFrame = chaseCFrame
+	end
 end)
