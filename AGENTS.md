@@ -305,10 +305,86 @@ To test code paths that would normally be triggered by LLM output or user input,
 
 **Read these two files at the start of every session before touching any code:**
 
-1. `plans/agent-handoff.md` — phase completion status, lessons learned, and what the next phase needs to know
-2. `plans/phaseN.md` where N is the phase you are about to implement — the detailed plan
+1. `plans/agent-handoff.md` — phase completion status and current work-in-progress
+2. `plans/phaseN.md` (or the current plan file) for the phase you are about to implement
 
 If either file is missing or stale, update it before proceeding.
+
+**Declutter task (run each session):** If `plans/agent-handoff.md` has grown beyond ~100 lines, compact it — move any new durable lessons into the "Hard-won invariants" section below, and remove historical narrative that is now reflected in code.
+
+---
+
+## Hard-won invariants
+
+These were discovered during implementation and are not obvious from reading the code.
+
+### Require paths — always use ReplicatedStorage, never relative
+
+All modules in `src/integrity/`, `src/track/`, `src/verifier/`, `src/mechanics/`, `src/orchestrator/`, `src/agent/` must require `src/common/` via:
+
+```lua
+game:GetService("ReplicatedStorage"):WaitForChild("AutoTrackCommon"):WaitForChild("ModuleName")
+```
+
+Relative paths like `script.Parent.Parent.common.Types` silently resolve to the wrong container and only fail at runtime.
+
+### VerifierCar must stay a single physics root
+
+`VerifierCar` must always be a `BasePart` named `"VerifierCar"` in Workspace. Controller forces and attachments bind to that root. Visual body pieces must be welded, non-colliding, and massless. Never change the root to a Model or rename it.
+
+### Sector folder contract
+
+Every sector folder must contain exactly these children: `Anchor`, `Collision`, `Visual`, `Pads`. Visual changes go in `Visual`; collision geometry goes in `Collision`. Do not attach sector-level shell or visual concepts to individual mechanic parts.
+
+### Pad semantics
+
+Pads set the **commanded speed** when activated — they do not add a delta. The velocity snaps immediately to the new target speed. Persistence: `IngressPad` affects the current sector; `EgressPad` affects the current sector plus the next. Corner slowdown caps the target speed rather than multiplying pad-adjusted speeds.
+
+Current pad tiers: `None`, `Boost5`, `Boost10`, `Boost25`, `Boost50`, `Brake5`, `Brake10`, `Brake25`, `Brake50`.
+
+### `no_progress` is a speed-bleed failure, not a geometry failure
+
+When `FailureInfo.detail == "no_progress"` on a RampJump, the car ran out of momentum going uphill. The correct repair is **ingress Boost first, then shorten the ramp** — never lengthen the ramp. Lengthening makes it worse by bleeding more momentum uphill.
+
+Same pattern for CrestDip: boost first, then lower peak height. For Chicane: widen corridor / lengthen transitions, never reduce amplitude below the integrity floor.
+
+### `target_exited` is required for downstream failure classification
+
+A failure in a non-target sector is only a `downstream_failure` (repairable) if `RunMetrics.target_exited == true`. If the target was entered but not fully exited, treat it as a pre-target failure and revert immediately. Do not use `target_entered` alone for this classification.
+
+### RampJump "looked fine but integrity failed" = reacquire failed
+
+The RampJump has two gate conditions: (1) becomes airborne, (2) reacquires within `RAMPJUMP_REACQUIRE_MAX` studs after the gap. "Jumped cleanly but integrity failed" almost always means reacquire failed — the car overshot or landed off the landing tiles. Repair levers: shorten `gap_length` or lengthen `landing_length`.
+
+### Luau type annotation syntax
+
+Table field assignments cannot have type annotations:
+```lua
+-- INVALID:
+LevelMappings.NUMERIC_LEVERS: { [string]: { string } } = { ... }
+-- Valid:
+LevelMappings.NUMERIC_LEVERS = { ... }
+```
+
+### LapEvaluator returns two values
+
+```lua
+local result, hints = LapEvaluator.evaluate(lapFailure, state, metrics, targetSectorId)
+```
+
+Always pass `targetSectorId` (the job's intended target) as the 4th argument — not `lapFailure.sector_id` (where the car actually failed). The hints list is needed to build a meaningful `FailurePacket`.
+
+### Rojo client sync requires Play restart
+
+Local file edits are not live in a running Play session. Stop Play → edit → Start Play → wait for boot → test. If camera or client behavior appears unchanged, verify whether `PlayerScripts` is still serving a stale copy.
+
+### `/demo maximize` suppresses Stage B challenge-up
+
+`MaximizerAgent` sets `AutoTrack_MaximizeCampaignActive = true` for the full campaign. `JobRunner` skips the single-sector challenge-up loop during this flag. Do not remove this guard — Stage B inside maximize mixes escalation laps into campaign behavior and makes debugging impossible.
+
+### HttpService Secret API
+
+`HttpService:GetSecret()` returns a `Secret` object, not a string. Use `secret:AddPrefix("Bearer ")` — do not concatenate with `..`.
 
 ---
 

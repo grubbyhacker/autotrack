@@ -58,6 +58,54 @@ local function shortenExplanation(explanation): string?
 	return trimmed
 end
 
+local function cloneTableShallow(source)
+	local result = {}
+	if type(source) ~= "table" then
+		return result
+	end
+	for key, value in pairs(source) do
+		result[key] = value
+	end
+	return result
+end
+
+local function mergeRepairState(currentState: SectorState, candidate): SectorState
+	local merged = {
+		sector_id = if type(candidate) == "table" and type(candidate.sector_id) == "number"
+			then candidate.sector_id
+			else currentState.sector_id,
+		mechanic = if type(candidate) == "table" and candidate.mechanic ~= nil
+			then candidate.mechanic
+			else currentState.mechanic,
+		params = cloneTableShallow(currentState.params),
+		pads = {
+			ingress = currentState.pads.ingress,
+			egress = currentState.pads.egress,
+		},
+		version = if type(candidate) == "table" and type(candidate.version) == "number"
+			then candidate.version
+			else currentState.version,
+	}
+
+	if type(candidate) == "table" then
+		if type(candidate.params) == "table" then
+			for key, value in pairs(candidate.params) do
+				merged.params[key] = value
+			end
+		end
+		if type(candidate.pads) == "table" then
+			if candidate.pads.ingress ~= nil then
+				merged.pads.ingress = candidate.pads.ingress
+			end
+			if candidate.pads.egress ~= nil then
+				merged.pads.egress = candidate.pads.egress
+			end
+		end
+	end
+
+	return merged
+end
+
 local function mockProvider()
 	return {
 		propose = function(payload)
@@ -233,7 +281,7 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 	local decoded = decodedOrErr
 	if decoded.newState ~= nil then
 		-- LLM returned a full SectorState replacement
-		local newState = decoded.newState
+		local newState = mergeRepairState(packet.sector_state, decoded.newState)
 		local explanation = shortenExplanation(decoded.explanation)
 			or string.format("LLM revised (attempt %d)", packet.attempt_index + 1)
 

@@ -5,16 +5,18 @@ local VALUES = {
 	Boost5 = { kind = "Boost", amount = 5 },
 	Boost10 = { kind = "Boost", amount = 10 },
 	Boost25 = { kind = "Boost", amount = 25 },
+	Boost50 = { kind = "Boost", amount = 50 },
 	Brake5 = { kind = "Brake", amount = 5 },
 	Brake10 = { kind = "Brake", amount = 10 },
 	Brake25 = { kind = "Brake", amount = 25 },
+	Brake50 = { kind = "Brake", amount = 50 },
 	-- Legacy aliases retained so old tests / provider responses still decode.
 	Boost = { kind = "Boost", amount = 10 },
 	Brake = { kind = "Brake", amount = 10 },
 }
 
-local BOOST_STEPS = { "Boost5", "Boost10", "Boost25" }
-local BRAKE_STEPS = { "Brake5", "Brake10", "Brake25" }
+local BOOST_STEPS = { "Boost5", "Boost10", "Boost25", "Boost50" }
+local BRAKE_STEPS = { "Brake5", "Brake10", "Brake25", "Brake50" }
 
 function PadValueUtils.isValid(value: string): boolean
 	return VALUES[value] ~= nil
@@ -81,17 +83,21 @@ function PadValueUtils.fromKindAmount(kind: string, amount: number?): string
 	if kind == "Boost" then
 		if absAmount <= 5 then
 			return "Boost5"
-		elseif absAmount >= 25 then
+		elseif absAmount <= 10 then
+			return "Boost10"
+		elseif absAmount <= 25 then
 			return "Boost25"
 		end
-		return "Boost10"
+		return "Boost50"
 	elseif kind == "Brake" then
 		if absAmount <= 5 then
 			return "Brake5"
-		elseif absAmount >= 25 then
+		elseif absAmount <= 10 then
+			return "Brake10"
+		elseif absAmount <= 25 then
 			return "Brake25"
 		end
-		return "Brake10"
+		return "Brake50"
 	end
 
 	return "None"
@@ -151,7 +157,7 @@ function PadValueUtils.weaker(kind: string, current: string): string
 end
 
 function PadValueUtils.allowedValues(): { string }
-	return { "None", "Boost5", "Boost10", "Boost25", "Brake5", "Brake10", "Brake25" }
+	return { "None", "Boost5", "Boost10", "Boost25", "Boost50", "Brake5", "Brake10", "Brake25", "Brake50" }
 end
 
 return PadValueUtils

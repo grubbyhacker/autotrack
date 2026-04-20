@@ -29,16 +29,37 @@ function PromptBuilder.systemPrompt(): string
 		"Pad values: " .. table.concat(PadValueUtils.allowedValues(), ", ") .. ".",
 		"You may remove a pad by setting it to None, or adjust strength by changing between the allowed pad values.",
 		"Initial proposal must return a full SectorState for the requested sector and mechanic.",
-		"Repair step must return exactly one AgentAction and a short explanation.",
+		"Repair step may return either one AgentAction with a short explanation or a complete revised SectorState.",
 	}, "\n")
 end
 
 local SCHEMA_LINE = "SectorState schema: {\"sector_id\":number,\"mechanic\":\"RampJump|Chicane|CrestDip\",\"params\":{},\"pads\":{\"ingress\":\"<PadValue>\",\"egress\":\"<PadValue>\"},\"version\":number}"
+local function paramRangeLine(mechanic: string, levers: { string }): string
+	local defaults = LevelMappings.DEFAULTS[mechanic]
+	local bounds = LevelMappings.LEVER_BOUNDS[mechanic]
+	local parts = {}
+	for _, lever in ipairs(levers) do
+		local bound = bounds[lever]
+		table.insert(parts, string.format(
+			"%s %d-%d (default %d)",
+			lever,
+			bound.min,
+			bound.max,
+			defaults[lever]
+		))
+	end
+	local suffix = "."
+	if mechanic == "CrestDip" then
+		suffix = ". CONSTRAINT: height_or_depth / sector_length^2 must be >= 0.006."
+	end
+	return string.format("  %s: %s%s", mechanic, table.concat(parts, ", "), suffix)
+end
+
 local PARAM_RANGES = table.concat({
 	"Param ranges (always stay within range):",
-	"  RampJump: ramp_angle 5-40 (default 20), ramp_length 4-28 (default 12), gap_length 2-24 (default 8), landing_length 4-28 (default 12).",
-	"  Chicane:  amplitude 2-18 (default 5), transition_length 6-30 (default 15), corridor_width 8-22 (default 14).",
-	"  CrestDip: height_or_depth 4-18 (default 8), radius 8-40 (default 20), sector_length 20-40 (default 30). CONSTRAINT: height_or_depth / sector_length^2 must be >= 0.006.",
+	paramRangeLine("RampJump", LevelMappings.NUMERIC_LEVERS.RampJump),
+	paramRangeLine("Chicane", LevelMappings.NUMERIC_LEVERS.Chicane),
+	paramRangeLine("CrestDip", LevelMappings.NUMERIC_LEVERS.CrestDip),
 }, "\n")
 
 -- System prompt for initial proposals: be ambitious and creative.
@@ -99,7 +120,7 @@ function PromptBuilder.initialProposal(request: Request): string
 			"Target pad value: " .. tostring(request.parsed.pad_value),
 			"Return a full SectorState for the sector with the requested pad change applied.",
 			"Return JSON matching:",
-			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25","egress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25"},"version":number}]],
+			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
 		}, "\n")
 	end
 
@@ -115,7 +136,7 @@ function PromptBuilder.initialProposal(request: Request): string
 		"Legal numeric levers: " .. encode(levers),
 		"Default params: " .. encode(defaults),
 		"Return JSON matching:",
-		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25","egress":"None|Boost5|Boost10|Boost25|Brake5|Brake10|Brake25"},"version":number}]],
+		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
 	}, "\n")
 end
 

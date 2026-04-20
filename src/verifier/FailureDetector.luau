@@ -21,6 +21,7 @@ local _noProgressStartPosition: Vector3? = nil
 local _overturnStartTime: number? = nil
 local _invalidAttitudeStartTime: number? = nil
 local _backwardStartTime: number? = nil
+local _tumbleStartTime: number? = nil
 
 function FailureDetector.reset()
 	_stallStartTime = nil
@@ -29,6 +30,7 @@ function FailureDetector.reset()
 	_overturnStartTime = nil
 	_invalidAttitudeStartTime = nil
 	_backwardStartTime = nil
+	_tumbleStartTime = nil
 end
 
 -- Called each frame during a run.
@@ -58,6 +60,23 @@ function FailureDetector.check(
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "off_track" }
 	end
 
+	local facingDot = forwardDot or 1
+	local tumbling = angularSpeed >= Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD
+		and (
+			upDot <= Constants.TUMBLE_UP_DOT_THRESHOLD
+			or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD
+			or (isAirborne and (upDot <= 0.45 or facingDot <= 0))
+		)
+	if tumbling then
+		if _tumbleStartTime == nil then
+			_tumbleStartTime = elapsed
+		elseif elapsed - _tumbleStartTime >= Constants.TUMBLE_TIME_THRESHOLD then
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "tumble" }
+		end
+	else
+		_tumbleStartTime = nil
+	end
+
 	if upDot <= Constants.OVERTURN_UP_DOT_THRESHOLD then
 		if _overturnStartTime == nil then
 			_overturnStartTime = elapsed
@@ -83,7 +102,6 @@ function FailureDetector.check(
 		_invalidAttitudeStartTime = nil
 	end
 
-	local facingDot = forwardDot or 1
 	if not isAirborne and facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD then
 		if _backwardStartTime == nil then
 			_backwardStartTime = elapsed

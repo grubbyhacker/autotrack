@@ -143,6 +143,23 @@ local function testRampJump()
 	)
 	T.expect("rampjump_fail_no_reacquire", ok == false and #hints > 0,
 		"expected fail when reacquired=false")
+
+	-- RampJump airtime boundary: stable sector-2 jumps currently live near 5 studs,
+	-- so the integrity floor tracks that proven envelope instead of the abandoned
+	-- phase-14 tightening to 10.
+	ok, hints = RampJumpIntegrity.evaluateRuntime(
+		makeMetrics({ target_airborne = true, target_air_distance = Constants.RAMPJUMP_MIN_AIR_DISTANCE - 0.1, target_reacquired = true })
+	)
+	T.expect("rampjump_fail_air_distance_just_below_min",
+		ok == false and #hints > 0,
+		"expected fail at air_distance = MIN - epsilon (got " .. tostring(Constants.RAMPJUMP_MIN_AIR_DISTANCE - 0.1) .. ")")
+
+	ok, hints = RampJumpIntegrity.evaluateRuntime(
+		makeMetrics({ target_airborne = true, target_air_distance = Constants.RAMPJUMP_MIN_AIR_DISTANCE, target_reacquired = true })
+	)
+	T.expect("rampjump_pass_air_distance_at_min",
+		ok == true,
+		"expected pass at air_distance = MIN (" .. tostring(Constants.RAMPJUMP_MIN_AIR_DISTANCE) .. ")")
 end
 
 -- ── ChicaneIntegrity unit tests ────────────────────────────────────────────────

@@ -8,8 +8,7 @@ local StatsPanel = require(AutoTrackUI:WaitForChild("StatsPanel"))
 
 local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState")
 local submitEvent = ReplicatedStorage:WaitForChild("AutoTrack_SubmitRequest")
-local setBaselineEvent = ReplicatedStorage:WaitForChild("AutoTrack_SetBaseline")
-local setLLMConfigEvent = ReplicatedStorage:WaitForChild("AutoTrack_SetLLMConfig")
+local setLLMConfigEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SetLLMConfig")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -19,13 +18,44 @@ StatusPanel.mount(playerGui, function(text: string)
 end)
 
 local hud = require(AutoTrackUI:WaitForChild("HUDRegistry")).get()
+local setBaselineEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SetBaseline")
+local baselineClickConnection = nil
+local llmControlsReady = setLLMConfigEvent ~= nil
+local renderLLMControls
 
-hud.setBaselineButton.Active = true
-hud.setBaselineButton.AutoButtonColor = true
+local function bindBaselineButton(remoteEvent)
+	if baselineClickConnection then
+		baselineClickConnection:Disconnect()
+		baselineClickConnection = nil
+	end
 
-hud.setBaselineButton.MouseButton1Click:Connect(function()
-	setBaselineEvent:FireServer()
-end)
+	if remoteEvent and remoteEvent:IsA("RemoteEvent") then
+		hud.setBaselineButton.Active = true
+		hud.setBaselineButton.AutoButtonColor = true
+		hud.setBaselineButton.TextTransparency = 0
+		baselineClickConnection = hud.setBaselineButton.MouseButton1Click:Connect(function()
+			remoteEvent:FireServer()
+		end)
+	else
+		hud.setBaselineButton.Active = false
+		hud.setBaselineButton.AutoButtonColor = false
+		hud.setBaselineButton.TextTransparency = 0.35
+	end
+end
+
+bindBaselineButton(setBaselineEvent)
+if setBaselineEvent == nil then
+	ReplicatedStorage.ChildAdded:Connect(function(child)
+		if child.Name == "AutoTrack_SetBaseline" and child:IsA("RemoteEvent") then
+			setBaselineEvent = child
+			bindBaselineButton(setBaselineEvent)
+		elseif child.Name == "AutoTrack_SetLLMConfig" and child:IsA("RemoteEvent") then
+			setLLMConfigEvent = child
+			llmControlsReady = true
+			renderLLMControls()
+		end
+	end)
+end
 
 -- LLM controls
 local AMBER_COLOR = Color3.fromRGB(255, 191, 94)
@@ -34,7 +64,7 @@ local STEEL_COLOR = Color3.fromRGB(35, 40, 46)
 local MUTED_COLOR = Color3.fromRGB(168, 163, 154)
 local TEXT_COLOR = Color3.fromRGB(234, 231, 225)
 
-local function renderLLMControls()
+function renderLLMControls()
 	local enabled = stateFolder:GetAttribute("llm_enabled") == true
 	local modelId = stateFolder:GetAttribute("llm_model") or "heuristic"
 
@@ -47,20 +77,32 @@ local function renderLLMControls()
 		end
 	end
 
+	hud.llmToggleButton.Active = llmControlsReady
+	hud.llmToggleButton.AutoButtonColor = llmControlsReady
+	hud.llmPrevButton.Active = llmControlsReady
+	hud.llmPrevButton.AutoButtonColor = llmControlsReady
+	hud.llmNextButton.Active = llmControlsReady
+	hud.llmNextButton.AutoButtonColor = llmControlsReady
 	hud.llmToggleButton.Text = if enabled then "LLM ON" else "LLM OFF"
-	hud.llmToggleButton.TextColor3 = if enabled then AMBER_SOFT_COLOR else MUTED_COLOR
-	hud.llmToggleButton.BackgroundColor3 = if enabled then AMBER_COLOR else STEEL_COLOR
+	hud.llmToggleButton.TextColor3 = if enabled and llmControlsReady then AMBER_SOFT_COLOR else MUTED_COLOR
+	hud.llmToggleButton.BackgroundColor3 = if enabled and llmControlsReady then AMBER_COLOR else STEEL_COLOR
 	hud.llmModelLabel.Text = "MODEL  " .. displayName
-	hud.llmModelLabel.TextColor3 = if enabled then TEXT_COLOR else MUTED_COLOR
+	hud.llmModelLabel.TextColor3 = if llmControlsReady and enabled then TEXT_COLOR else MUTED_COLOR
 end
 
 hud.llmToggleButton.MouseButton1Click:Connect(function()
+	if not setLLMConfigEvent then
+		return
+	end
 	local currentEnabled = stateFolder:GetAttribute("llm_enabled") == true
 	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
 	setLLMConfigEvent:FireServer({ enabled = not currentEnabled, model = currentModel })
 end)
 
 hud.llmPrevButton.MouseButton1Click:Connect(function()
+	if not setLLMConfigEvent then
+		return
+	end
 	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
@@ -74,6 +116,9 @@ hud.llmPrevButton.MouseButton1Click:Connect(function()
 end)
 
 hud.llmNextButton.MouseButton1Click:Connect(function()
+	if not setLLMConfigEvent then
+		return
+	end
 	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
@@ -89,6 +134,15 @@ end)
 -- Overview button — writes overview_mode attribute; TrackCamera reads it
 local _overviewActive = false
 
+local function syncHotfixPresentation()
+	local hotfixActive = stateFolder:GetAttribute("endurance_hotfix_active") == true
+	local hotfixSector = stateFolder:GetAttribute("endurance_hotfix_sector") or 0
+	StatusPanel.setHotfixBanner(
+		if hotfixActive then string.format("HOTFIX MODE  |  SECTOR %d  |  LIVE TRACK ESCALATION", hotfixSector) else "",
+		hotfixActive
+	)
+end
+
 hud.overviewButton.MouseButton1Click:Connect(function()
 	_overviewActive = not _overviewActive
 	stateFolder:SetAttribute("overview_mode", _overviewActive)
@@ -96,6 +150,8 @@ hud.overviewButton.MouseButton1Click:Connect(function()
 end)
 
 local function render()
+	local hotfixActive = stateFolder:GetAttribute("endurance_hotfix_active") == true
+
 	StatusPanel.setPhase(stateFolder:GetAttribute("phase_label") or "Ready for request")
 	StatusPanel.setRequestSummary(
 		stateFolder:GetAttribute("request_summary") or "",
@@ -109,12 +165,14 @@ local function render()
 	StatusPanel.setRepairAction(stateFolder:GetAttribute("repair_action_text") or "")
 	StatusPanel.setError(
 		stateFolder:GetAttribute("error_text") or "",
-		stateFolder:GetAttribute("final_status") or ""
+		stateFolder:GetAttribute("final_status") or "",
+		hotfixActive
 	)
 	StatusPanel.setFailureBanner(
 		stateFolder:GetAttribute("failure_banner_text") or "",
 		stateFolder:GetAttribute("failure_banner_visible") == true
 	)
+	syncHotfixPresentation()
 	StatusPanel.setBusy(stateFolder:GetAttribute("busy") == true)
 	StatusPanel.setLogLines({
 		stateFolder:GetAttribute("log_1") or "",
@@ -185,10 +243,22 @@ local observedAttributes = {
 	"track_over_budget",
 	"llm_enabled",
 	"llm_model",
+	"endurance_hotfix_active",
+	"endurance_hotfix_sector",
 }
 
 for _, attributeName in ipairs(observedAttributes) do
 	stateFolder:GetAttributeChangedSignal(attributeName):Connect(render)
 end
+
+stateFolder:GetAttributeChangedSignal("endurance_hotfix_active"):Connect(syncHotfixPresentation)
+stateFolder:GetAttributeChangedSignal("endurance_hotfix_sector"):Connect(syncHotfixPresentation)
+
+task.spawn(function()
+	while true do
+		task.wait(0.2)
+		syncHotfixPresentation()
+	end
+end)
 
 render()

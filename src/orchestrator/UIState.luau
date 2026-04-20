@@ -116,6 +116,13 @@ function UIState.init(baselineLapTime: number)
 		track_over_budget = false,
 		llm_enabled = false,
 		llm_model = "heuristic",
+		endurance_mode_active = false,
+		endurance_hotfix_active = false,
+		endurance_hotfix_sector = 0,
+		endurance_terminal = false,
+		endurance_lap_count = 0,
+		endurance_attempt_budget_used = 0,
+		endurance_attempt_budget_total = 0,
 	})
 	setLogs()
 	FailureMarker.hide()
@@ -379,13 +386,51 @@ end
 
 function UIState.publishRevert()
 	UIState.setBusy(false)
-	UIState.setPhase("Revert", "Reverted")
+	if ensureStateFolder():GetAttribute("endurance_hotfix_active") ~= true then
+		UIState.setPhase("Revert", "Reverted")
+	end
 	setAttributes({
 		final_status = "reverted",
 	})
 	UIState.hideFailure()
 	UIState.hideFailureBanner()
 	SuccessMarker.clear()
+end
+
+function UIState.setEnduranceActive(active: boolean, attemptBudgetTotal: number?)
+	setAttributes({
+		endurance_mode_active = active == true,
+		endurance_attempt_budget_total = attemptBudgetTotal or 0,
+	})
+end
+
+function UIState.setEnduranceLapCount(count: number)
+	setAttributes({ endurance_lap_count = count })
+end
+
+function UIState.setEnduranceAttemptBudget(used: number, total: number)
+	setAttributes({
+		endurance_attempt_budget_used = used,
+		endurance_attempt_budget_total = total,
+	})
+end
+
+function UIState.setHotfixActive(active: boolean, sectorId: number?)
+	local values = {
+		endurance_hotfix_active = active == true,
+		endurance_hotfix_sector = sectorId or 0,
+	}
+	if active == true then
+		values.final_status = ""
+	end
+	setAttributes(values)
+end
+
+function UIState.setEnduranceTerminal()
+	setAttributes({
+		endurance_terminal = true,
+		endurance_hotfix_active = false,
+	})
 end
 
 function UIState.publishReady()

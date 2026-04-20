@@ -14,7 +14,9 @@ local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
+local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRollback = require(script.Parent.Parent.Track.SectorRollback)
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local AttemptRunner = require(script.Parent.AttemptRunner)
@@ -26,6 +28,7 @@ local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
 local MaximizerAgent = require(script.Parent.MaximizerAgent)
+local HotfixAgent = require(script.Parent.HotfixAgent)
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
@@ -34,6 +37,10 @@ type CIJob = Types.CIJob
 local JobRunner = {}
 local _lastJob: CIJob? = nil
 local _idCounter = 0
+local _pendingRequest: string? = nil
+local _extremeDemoActive = false
+local _extremePriorStates = {}
+local HOTFIX_DEMO_REQUEST = "add a chicane in sector 7"
 
 local function nextId(prefix: string): string
 	_idCounter += 1
@@ -178,6 +185,24 @@ local function finishRevert(job, targetSector, reason)
 	_lastJob = job
 end
 
+local function buildHotfixDemoState(priorVersion: number)
+	return {
+		sector_id = 3,
+		mechanic = "RampJump",
+		params = {
+			ramp_angle = 60,
+			ramp_length = 40,
+			gap_length = 40,
+			landing_length = 4,
+		},
+		pads = {
+			ingress = "Boost50",
+			egress = "None",
+		},
+		version = priorVersion + 1,
+	}
+end
+
 local function pauseForUI()
 	task.wait(Constants.UI_PHASE_DELAY)
 end
@@ -267,8 +292,153 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return true, nil
 		end
 
-		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize")
-		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize"
+		if slashArg == "extreme" then
+			if CameraDemo.isActive() then
+				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo extreme")
+				return false, "camera demo is running; toggle it off before /demo extreme"
+			end
+			-- Toggle off: restore prior states
+			if _extremeDemoActive then
+				_extremeDemoActive = false
+				if not JobLock.isHeld() then
+					assert(JobLock.tryAcquire(), "JobLock busy restoring extreme demo")
+					local extremeIds = { 2, 3, 7 }
+					for _, id in ipairs(extremeIds) do
+						local saved = _extremePriorStates[id]
+						if saved then
+							local restored = cloneState(saved)
+							restored.version = saved.version + 2
+							local sector = RuntimeContext.getSectorById(id)
+							SectorApplier.apply(restored, sector.entry, sector.exit)
+							SectorRegistry.commit(restored)
+						end
+					end
+					_extremePriorStates = {}
+					JobLock.release()
+					UIState.publishReady()
+					UIState.appendLog("Extreme demo off — prior track state restored")
+					Tracer.log("extreme_demo_restored")
+				else
+					UIState.rejectRequest(rawText, "track is busy; try again shortly")
+					_extremeDemoActive = true
+					return false, "track is busy; try again shortly"
+				end
+				return true, nil
+			end
+			-- Toggle on: apply extreme geometry for inspection
+			if JobLock.isHeld() then
+				UIState.rejectRequest(rawText, "track is busy; try again shortly")
+				return false, "track is busy; try again shortly"
+			end
+			assert(JobLock.tryAcquire(), "JobLock busy in /demo extreme")
+			local extremeIds = { 2, 3, 7 }
+			_extremePriorStates = {}
+			for _, id in ipairs(extremeIds) do
+				local committed = SectorRegistry.getCommitted(id)
+				if committed then
+					_extremePriorStates[id] = cloneState(committed)
+				end
+			end
+
+			local function applyState(state)
+				local sector = RuntimeContext.getSectorById(state.sector_id)
+				SectorApplier.apply(state, sector.entry, sector.exit)
+				SectorRegistry.commit(state)
+			end
+
+			local v2 = _extremePriorStates[2] and _extremePriorStates[2].version or 0
+			local v3 = _extremePriorStates[3] and _extremePriorStates[3].version or 0
+			local v7 = _extremePriorStates[7] and _extremePriorStates[7].version or 0
+
+			applyState({
+				sector_id = 2,
+				mechanic = nil,
+				params = {},
+				pads = { ingress = "Boost50", egress = "None" },
+				version = v2 + 1,
+			})
+			local rjDefaults = LevelMappings.DEFAULTS.RampJump
+			applyState({
+				sector_id = 3,
+				mechanic = "RampJump",
+				params = {
+					ramp_angle = LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max,
+					ramp_length = rjDefaults.ramp_length,
+					gap_length = LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max,
+					landing_length = rjDefaults.landing_length,
+				},
+				pads = { ingress = "None", egress = "None" },
+				version = v3 + 1,
+			})
+			local cdDefaults = LevelMappings.DEFAULTS.CrestDip
+			applyState({
+				sector_id = 7,
+				mechanic = "CrestDip",
+				params = {
+					height_or_depth = LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+					radius = cdDefaults.radius,
+					sector_length = cdDefaults.sector_length,
+				},
+				pads = { ingress = "None", egress = "None" },
+				version = v7 + 1,
+			})
+
+			JobLock.release()
+			_extremeDemoActive = true
+
+			UIState.setPhase("ExtremeDemo", "Extreme demo active — inspect the track")
+			UIState.appendLog(string.format(
+				"Extreme demo ON: Sector 2 Boost50 ingress | Sector 3 RampJump angle=%d gap=%d | Sector 7 CrestDip height=%d",
+				LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max,
+				LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max,
+				LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max))
+			UIState.setExplanation("Submit '/demo extreme' again to restore the track")
+			Tracer.log("extreme_demo_applied")
+			return true, nil
+		end
+
+		if slashArg == "hotfix" then
+			if CameraDemo.isActive() then
+				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo hotfix")
+				return false, "camera demo is running; toggle it off before /demo hotfix"
+			end
+			if JobLock.isHeld() then
+				UIState.rejectRequest(rawText, "track is busy; try again shortly")
+				return false, "track is busy; try again shortly"
+			end
+			task.spawn(function()
+				-- Step 1: commit a working sector 4 (chicane) as our "in-flight job" target
+				-- Step 2: sabotage sector 3 with an impossible ramp so upstream failures trigger
+				assert(JobLock.tryAcquire(), "JobLock busy in /demo hotfix setup")
+
+				local sector3 = RuntimeContext.getSectorById(3)
+				local priorSector3 = SectorRegistry.getCommitted(3)
+				local priorVersion = priorSector3 and priorSector3.version or 0
+
+				-- Force a real upstream execution failure. The earlier short-ramp
+				-- sabotage became survivable after the phase-14 controller changes.
+				local badState = buildHotfixDemoState(priorVersion)
+				SectorApplier.apply(badState, sector3.entry, sector3.exit)
+				SectorRegistry.commit(badState)
+
+				JobLock.release()
+
+				UIState.setPhase("HotfixDemo", "Hotfix demo: sector 3 sabotaged — submitting job to trigger upstream failure")
+				UIState.appendLog("Hotfix demo: planted catastrophic RampJump in sector 3 (Boost50 ingress, angle=60, ramp=40, gap=40, landing=4)")
+				UIState.appendLog("Submitting '" .. HOTFIX_DEMO_REQUEST .. "' — watch for retry → hotfix sequence...")
+				UIState.setExplanation("HotfixAgent will detect sector 3 failure and attempt emergency repair")
+				Tracer.log("hotfix_demo_sabotage sector=3")
+
+				-- Submit a later-sector job so the sector-3 crash is always treated
+				-- as an upstream failure by the retry/hotfix pipeline.
+				task.wait(0.5)
+				JobRunner.submit(HOTFIX_DEMO_REQUEST)
+			end)
+			return true, nil
+		end
+
+		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo extreme, /demo hotfix")
+		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo extreme, /demo hotfix"
 	end
 
 	if slashCommand == "llm" then
@@ -412,6 +582,8 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		local nextAction = nil
 		local attemptIndex = 0
 		local lastAction = nil
+		local upstreamFailCount = 0
+		local upstreamFailSectorId: number? = nil
 
 		while true do
 			sm:transition("ApplyWorkingSector")
@@ -583,23 +755,68 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			pauseForUI()
 
 			if shouldRevertPreTargetFailure(result, targetSectorId) then
-				sm:transition("Revert")
+				local failingSector = result.failure.sector_id
+				if failingSector == upstreamFailSectorId then
+					upstreamFailCount += 1
+				else
+					upstreamFailCount = 1
+					upstreamFailSectorId = failingSector
+				end
+
+				if upstreamFailCount == 1 then
+					-- First upstream failure: retry the same state once before deciding
+					UIState.appendLog(string.format(
+						"Upstream failure in committed sector %d — retrying lap",
+						failingSector
+					))
+					Tracer.log(string.format(
+						"upstream_retry sector=%d failure_sector=%d",
+						targetSectorId, failingSector
+					))
+					sm:transition("ApplyRepair")
+					nextAction = nil
+					continue
+				end
+
+				-- Second consecutive failure at same committed sector: revert + queue + hotfix
 				UIState.appendLog(string.format(
-					"Target sector %d was never reached; reverting instead of repairing wrong sector",
-					targetSectorId
+					"Upstream failure confirmed in sector %d — entering hotfix mode",
+					failingSector
 				))
+				UIState.setHotfixActive(true, failingSector)
+				UIState.setPhase("HotfixMode", string.format("HOTFIX MODE — Sector %d", failingSector))
+				Tracer.log(string.format(
+					"hotfix_trigger sector=%d failure_sector=%d",
+					targetSectorId, failingSector
+				))
+				_pendingRequest = rawText
 				finishRevert(
 					job,
 					targetSector,
 					string.format(
-						"revert sector=%d reason=pre_target_failure failure_sector=%d",
+						"revert sector=%d reason=upstream_hotfix failure_sector=%d",
 						targetSectorId,
-						result.failure.sector_id
+						failingSector
 					)
 				)
+				local capturedFailResult = result
+				local capturedFailSector = failingSector
+				task.spawn(function()
+					HotfixAgent.run(
+						capturedFailSector,
+						capturedFailResult,
+						function() return _pendingRequest end,
+						function() _pendingRequest = nil end,
+						function(text) JobRunner.submit(text) end
+					)
+				end)
+				sm:transition("Revert")
 				sm:transition("Idle")
 				return true, nil
 			end
+
+			upstreamFailCount = 0
+			upstreamFailSectorId = nil
 
 			local attemptLimit = attemptLimitForResult(result, targetSectorId)
 			if attemptIndex >= attemptLimit then
@@ -705,6 +922,14 @@ end
 -- Returns true if a job is currently running.
 function JobRunner.isBusy(): boolean
 	return JobLock.isHeld()
+end
+
+function JobRunner.getPendingRequest(): string?
+	return _pendingRequest
+end
+
+function JobRunner.clearPendingRequest()
+	_pendingRequest = nil
 end
 
 function JobRunner.getLastJob(): CIJob?

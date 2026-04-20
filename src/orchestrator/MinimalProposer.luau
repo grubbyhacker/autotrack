@@ -217,7 +217,7 @@ function MinimalProposer.initial(request: Request): (SectorState?, string?)
 		params = params,
 		pads = {
 			ingress = "None",
-			egress = "None",
+			egress = if mechanic == "RampJump" then "Brake10" else "None",
 		},
 		version = committed.version,
 	}, nil
@@ -256,6 +256,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 		local unstableOnTakeoff = failureDetail == "invalid_attitude"
 			or failureDetail == "overturn"
 			or failureDetail == "backward_facing"
+			or failureDetail == "tumble"
 		if failure.type == "local_execution_failure" then
 			if stalledOnTakeoff then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
@@ -267,11 +268,12 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				explanation = "jump bogged down on takeoff; boosted entry and shortened the launch"
 			elseif unstableOnTakeoff and progress < 0.30 then
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
-				explanation = "jump takeoff attitude was unstable; softened the ramp while preserving launch speed"
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 4) })
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				explanation = "jump takeoff attitude was unstable; slowed entry and widened the landing window"
 			elseif progress >= 0.30 then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
@@ -305,10 +307,10 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			or string.find(hintsText, "reacquisition", 1, true) then
 			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 4) })
 			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
-			explanation = "landing was unstable; softened the exit"
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+			explanation = "landing was unstable; trimmed speed and lengthened the landing"
 		else
 			if progress >= 0.30 then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })

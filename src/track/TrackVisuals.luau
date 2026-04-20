@@ -82,31 +82,6 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.TextYAlignment = Enum.TextYAlignment.Center
 	label.Parent = bg
-
-	local sparkle = Instance.new("ParticleEmitter")
-	sparkle.Name = "SectorSparkle"
-	sparkle.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, LABEL_GREEN),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 255, 220)),
-	})
-	sparkle.LightEmission = 1
-	sparkle.LightInfluence = 0
-	sparkle.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.25, 0.28),
-		NumberSequenceKeypoint.new(1, 0),
-	})
-	sparkle.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.1),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	sparkle.Speed = NumberRange.new(1, 5)
-	sparkle.Rate = 5
-	sparkle.Lifetime = NumberRange.new(0.8, 1.8)
-	sparkle.SpreadAngle = Vector2.new(35, 35)
-	sparkle.Rotation = NumberRange.new(0, 360)
-	sparkle.RotSpeed = NumberRange.new(-40, 40)
-	sparkle.Parent = anchor
 end
 
 local function ensureFolder(parent, name)

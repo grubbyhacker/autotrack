@@ -130,7 +130,110 @@ function TestPhase13.runUnit()
 	T.expect("llm_repair_no_error", err == nil)
 	LLMAdapter.useMockProvider()
 
-	-- 9: error shim → error string returned, no crash
+	-- 9: sector_id mismatch on propose → rejected (moved from TestPhase7)
+	LLMAdapter.setProvider("bad-sector", {
+		propose = function()
+			return HttpService:JSONEncode({
+				sector_id = 2,
+				mechanic = "Chicane",
+				params = { amplitude = 8, transition_length = 15, corridor_width = 14 },
+				pads = { ingress = "None", egress = "None" },
+				version = 0,
+			})
+		end,
+		repair = function()
+			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
+		end,
+	})
+	local _, sectorMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
+	T.expect("llmadapter_rejects_sector_mismatch",
+		sectorMismatchErr == "invalid proposal: sector_id mismatch",
+		tostring(sectorMismatchErr))
+	LLMAdapter.useMockProvider()
+
+	-- 10: mechanic mismatch on propose → rejected
+	LLMAdapter.setProvider("bad-mechanic", {
+		propose = function()
+			return HttpService:JSONEncode({
+				sector_id = 3,
+				mechanic = "RampJump",
+				params = { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+				pads = { ingress = "None", egress = "None" },
+				version = 0,
+			})
+		end,
+		repair = function()
+			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
+		end,
+	})
+	local _, mechanicMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
+	T.expect("llmadapter_rejects_mechanic_mismatch",
+		mechanicMismatchErr == "invalid proposal: mechanic mismatch",
+		tostring(mechanicMismatchErr))
+	LLMAdapter.useMockProvider()
+
+	-- 11: invalid repair action lever for mechanic → rejected
+	local validChicaneState = makeState(3, "Chicane", { amplitude = 8, transition_length = 15, corridor_width = 14 })
+	local validChicanePropose = {
+		propose = function()
+			return HttpService:JSONEncode(validChicaneState)
+		end,
+		repair = function()
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "ramp_angle", value = 10 },
+				explanation = "wrong lever",
+			})
+		end,
+	}
+	LLMAdapter.setProvider("bad-repair", validChicanePropose)
+	local repairRequest = makeRequest(3, "Chicane")
+	local repairPacket = fakePacket(repairRequest, validChicaneState, 0)
+	repairPacket.legal_actions.numeric_levers = { "amplitude", "transition_length", "corridor_width" }
+	local _, _, _, invalidRepairErr = LLMAdapter.repair(repairPacket, {})
+	T.expect("llmadapter_rejects_invalid_repair_action",
+		string.find(tostring(invalidRepairErr), "invalid repair", 1, true) ~= nil,
+		tostring(invalidRepairErr))
+	LLMAdapter.useMockProvider()
+
+	-- 12: last exchange is recorded after propose
+	LLMAdapter.setProvider("exchange-recorder", {
+		propose = function()
+			return HttpService:JSONEncode(makeState(3, "Chicane", { amplitude = 9, transition_length = 15, corridor_width = 16 }))
+		end,
+		repair = function()
+			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 11 }, explanation = "x" })
+		end,
+	})
+	LLMAdapter.propose(makeRequest(3, "Chicane"))
+	local exchange = LLMAdapter.getLastExchange()
+	T.expect("llmadapter_records_last_exchange",
+		exchange ~= nil and exchange.provider == "exchange-recorder" and exchange.kind == "propose",
+		tostring(exchange and exchange.provider))
+	LLMAdapter.useMockProvider()
+
+	-- 13: Boost50 is a valid pad value (phase 14 wiring check)
+	do
+		local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
+		local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
+		T.expect("boost50_is_valid_pad_value",
+			PadValueUtils.isValid("Boost50") and PadValueUtils.isValid("Brake50"),
+			"expected Boost50 and Brake50 to be valid pad values")
+
+		local boost50Action = { type = "SetPad", pad = "ingress", value = "Boost50" }
+		local actionOk, actionErr = ActionValidator.validateAction(boost50Action, "RampJump")
+		T.expect("boost50_passes_action_validator",
+			actionOk == true,
+			"expected Boost50 to pass ActionValidator: " .. tostring(actionErr))
+
+		local stateWithBoost50 = makeState(3, "RampJump", { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 })
+		stateWithBoost50.pads.ingress = "Boost50"
+		local stateOk, stateErr = ActionValidator.validateSectorState(stateWithBoost50)
+		T.expect("boost50_passes_state_validator",
+			stateOk == true,
+			"expected Boost50 state to pass validateSectorState: " .. tostring(stateErr))
+	end
+
+	-- 14: error shim → error string returned, no crash
 	local errorShim = {
 		propose = function(_) error("simulated API failure") end,
 		repair = function(_) error("simulated API failure") end,

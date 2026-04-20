@@ -37,44 +37,30 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase6).runUnit()
 	elseif cmd == "phase6_integration" then
 		require(script.Parent.TestPhase6).runIntegration()
-	elseif cmd == "phase7" then
-		require(script.Parent.TestPhase7).run()
-	elseif cmd == "phase7_unit" then
-		require(script.Parent.TestPhase7).runUnit()
-	elseif cmd == "phase7_integration" then
-		require(script.Parent.TestPhase7).runIntegration()
-	elseif cmd == "phase8" then
-		require(script.Parent.TestPhase8).run()
-	elseif cmd == "phase8_unit" then
-		require(script.Parent.TestPhase8).runUnit()
-	elseif cmd == "phase8_integration" then
-		require(script.Parent.TestPhase8).runIntegration()
 	elseif cmd == "phase9" then
 		require(script.Parent.TestPhase9).run()
 	elseif cmd == "phase9_unit" then
 		require(script.Parent.TestPhase9).runUnit()
 	elseif cmd == "phase9_integration" then
 		require(script.Parent.TestPhase9).runIntegration()
-	elseif cmd == "phase10" then
-		require(script.Parent.TestPhase10).run()
-	elseif cmd == "phase10_unit" then
-		require(script.Parent.TestPhase10).runUnit()
-	elseif cmd == "phase10_integration" then
-		require(script.Parent.TestPhase10).runIntegration()
 	elseif cmd == "phase11" then
 		require(script.Parent.TestPhase11).run()
 	elseif cmd == "phase11_unit" then
 		require(script.Parent.TestPhase11).runUnit()
 	elseif cmd == "phase11_integration" then
 		require(script.Parent.TestPhase11).runIntegration()
-	elseif cmd == "phase12" then
-		require(script.Parent.TestPhase12).run()
 	elseif cmd == "phase13" then
 		require(script.Parent.TestPhase13).run()
 	elseif cmd == "phase13_unit" then
 		require(script.Parent.TestPhase13).runUnit()
 	elseif cmd == "phase13_integration" then
 		require(script.Parent.TestPhase13).runIntegration()
+	elseif cmd == "phase14" then
+		require(script.Parent.TestPhase14).run()
+	elseif cmd == "phase14_unit" then
+		require(script.Parent.TestPhase14).runUnit()
+	elseif cmd == "phase14_integration" then
+		require(script.Parent.TestPhase14).runIntegration()
 	else
 		local unknownLine = "[TEST FAIL: unknown_suite] " .. tostring(cmd)
 		print(unknownLine)

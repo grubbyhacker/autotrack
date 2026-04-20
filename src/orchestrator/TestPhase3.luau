@@ -152,6 +152,30 @@ function TestPhase3.run()
 	)
 
 	FailureDetector.reset()
+	local tumbleFailure = nil
+	for _, elapsed in ipairs({ 0, 0.1, 0.22, 0.35 }) do
+		tumbleFailure = FailureDetector.check(
+			elapsed,
+			3,
+			Vector3.new(elapsed * 20, 12, 0),
+			Vector3.new(elapsed * 20, 12, 0),
+			true,
+			Constants.CAR_TARGET_SPEED,
+			Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD + 2,
+			0.6,
+			0.8
+		)
+		if tumbleFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_tumble_detected",
+		tumbleFailure ~= nil and tumbleFailure.detail == "tumble",
+		tostring(tumbleFailure and tumbleFailure.detail)
+	)
+
+	FailureDetector.reset()
 	local sideRolledFailure = nil
 	for _, elapsed in ipairs({ 0, 0.2, 0.4, 0.6 }) do
 		sideRolledFailure = FailureDetector.check(

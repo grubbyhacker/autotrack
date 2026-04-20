@@ -123,6 +123,10 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	if existing then
 		existing:Destroy()
 	end
+	local existingOverlay = playerGui:FindFirstChild("AutoTrackHUDOverlay")
+	if existingOverlay then
+		existingOverlay:Destroy()
+	end
 
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "AutoTrackHUD"
@@ -131,28 +135,38 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	gui.DisplayOrder = 10
 	gui.Parent = playerGui
 
-	-- TOP STRIP — phase label, request summary, attempt counter, status, reasoning
-	local topStrip = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 116),
+	local overlayGui = Instance.new("ScreenGui")
+	overlayGui.Name = "AutoTrackHUDOverlay"
+	overlayGui.IgnoreGuiInset = true
+	overlayGui.ResetOnSpawn = false
+	overlayGui.DisplayOrder = 11
+	overlayGui.Parent = playerGui
+
+	-- TOP LEFT — phase label, request summary, reasoning
+	local topLeft = createFrame(gui, {
+		Size = UDim2.new(0, 400, 0, 116),
 		Position = UDim2.new(0, 20, 0, 12),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.12,
 	})
-	addCorner(topStrip, 16)
-	addStroke(topStrip, AMBER, 0.25)
+	addCorner(topLeft, 16)
+	local topLeftStroke = Instance.new("UIStroke")
+	topLeftStroke.Color = AMBER
+	topLeftStroke.Transparency = 0.25
+	topLeftStroke.Parent = topLeft
 
-	local phaseLabel = createLabel(topStrip, {
+	local phaseLabel = createLabel(topLeft, {
 		Position = UDim2.new(0, 22, 0, 12),
-		Size = UDim2.new(0.55, 0, 0, 26),
+		Size = UDim2.new(1, -44, 0, 26),
 		Text = "Ready for request",
 		TextColor3 = TEXT,
 		TextSize = 24,
 		Font = Enum.Font.GothamBold,
 	})
 
-	local requestLabel = createLabel(topStrip, {
+	local requestLabel = createLabel(topLeft, {
 		Position = UDim2.new(0, 22, 0, 42),
-		Size = UDim2.new(1, -236, 0, 18),
+		Size = UDim2.new(1, -44, 0, 18),
 		Text = "Awaiting command",
 		TextColor3 = MUTED,
 		TextSize = 14,
@@ -160,28 +174,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 
-	local attemptLabel = createLabel(topStrip, {
-		Position = UDim2.new(1, -178, 0, 14),
-		AnchorPoint = Vector2.new(0, 0),
-		Size = UDim2.new(0, 156, 0, 18),
-		Text = "ATTEMPT 0/5",
-		TextColor3 = AMBER_SOFT,
-		TextSize = 14,
-		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Right,
-	})
-
-	local errorLabel = createLabel(topStrip, {
-		Position = UDim2.new(1, -178, 0, 38),
-		Size = UDim2.new(0, 156, 0, 22),
-		Text = "",
-		TextColor3 = DANGER,
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		TextXAlignment = Enum.TextXAlignment.Right,
-	})
-
-	local reasoningLabel = createLabel(topStrip, {
+	local reasoningLabel = createLabel(topLeft, {
 		Position = UDim2.new(0, 22, 0, 70),
 		Size = UDim2.new(1, -44, 0, 18),
 		Text = "",
@@ -191,7 +184,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 
-	local reasoningActionLabel = createLabel(topStrip, {
+	local reasoningActionLabel = createLabel(topLeft, {
 		Position = UDim2.new(0, 22, 0, 92),
 		Size = UDim2.new(1, -44, 0, 14),
 		Text = "",
@@ -199,6 +192,37 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextSize = 12,
 		Font = Enum.Font.Code,
 		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+
+	-- TOP RIGHT — attempt counter, error status
+	local topRight = createFrame(gui, {
+		Size = UDim2.new(0, 210, 0, 116),
+		Position = UDim2.new(1, -20, 0, 12),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.12,
+	})
+	addCorner(topRight, 16)
+	addStroke(topRight, AMBER, 0.25)
+
+	local attemptLabel = createLabel(topRight, {
+		Position = UDim2.new(0, 18, 0, 14),
+		Size = UDim2.new(1, -36, 0, 18),
+		Text = "ATTEMPT 0/5",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 14,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local errorLabel = createLabel(topRight, {
+		Position = UDim2.new(0, 18, 0, 38),
+		Size = UDim2.new(1, -36, 0, 22),
+		Text = "",
+		TextColor3 = DANGER,
+		TextSize = 14,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
 	-- FAILURE BANNER — centered overlay
@@ -225,6 +249,31 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextYAlignment = Enum.TextYAlignment.Center,
 		TextWrapped = true,
 		ZIndex = 31,
+	})
+
+	local hotfixBanner = createFrame(overlayGui, {
+		Size = UDim2.new(0, 620, 0, 74),
+		Position = UDim2.new(0.5, 0, 0, 0),
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = DANGER,
+		BackgroundTransparency = 0.12,
+		ZIndex = 40,
+	})
+	hotfixBanner.Visible = false
+	addCorner(hotfixBanner, 20)
+	addStroke(hotfixBanner, AMBER_SOFT, 0.05)
+
+	local hotfixBannerLabel = createLabel(hotfixBanner, {
+		Size = UDim2.new(1, -28, 1, -12),
+		Position = UDim2.new(0, 14, 0, 6),
+		Text = "",
+		TextColor3 = TEXT,
+		TextSize = 28,
+		Font = Enum.Font.GothamBlack,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextWrapped = true,
+		ZIndex = 41,
 	})
 
 	-- LEFT RAIL — live telemetry + event log
@@ -491,6 +540,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	_refs = {
 		gui = gui,
+		overlayGui = overlayGui,
 		llmToggleButton = llmToggleButton,
 		llmModelLabel = llmModelLabel,
 		llmPrevButton = llmPrevButton,
@@ -515,8 +565,11 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		logLabels = logLabels,
 		overviewButton = overviewButton,
 		setBaselineButton = setBaselineButton,
+		topLeftStroke = topLeftStroke,
 		failureBanner = failureBanner,
 		failureBannerLabel = failureBannerLabel,
+		hotfixBanner = hotfixBanner,
+		hotfixBannerLabel = hotfixBannerLabel,
 		colors = {
 			amber = AMBER,
 			amberSoft = AMBER_SOFT,

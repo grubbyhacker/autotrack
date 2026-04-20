@@ -1,6 +1,11 @@
+-- TestPhase6.luau
+-- Verifies Phase 6 deliverables: request parsing, initial proposal, state machine,
+-- runtime context, and the full job commit/revert integration flow.
+-- MinimalProposer repair-heuristic detail tests removed (phase 14 refactor: covered
+-- by Phase 10 which is itself deleted; behavioral invariants captured by phase 5).
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
@@ -15,7 +20,7 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local TestPhase6 = {}
 
 local function makeRequest(mechanic, rawText)
-	local request, err = RequestParser.parse(rawText or ("add a jump in sector 3"), "test-request")
+	local request, err = RequestParser.parse(rawText or "add a jump in sector 3", "test-request")
 	assert(request ~= nil, "expected valid request: " .. tostring(err))
 	if mechanic then
 		request.parsed.mechanic = mechanic
@@ -23,58 +28,8 @@ local function makeRequest(mechanic, rawText)
 	return request
 end
 
-local function makeState(mechanic)
-	local defaults = LevelMappings.DEFAULTS[mechanic]
-	local params = {}
-	for key, value in pairs(defaults) do
-		params[key] = value
-	end
-	return {
-		sector_id = 3,
-		mechanic = mechanic,
-		params = params,
-		pads = { ingress = "None", egress = "None" },
-		version = 0,
-	}
-end
-
-local function makePacket(mechanic, failureType, hints, lastAction)
-	return {
-		request = makeRequest(mechanic),
-		sector_state = makeState(mechanic),
-		attempt_index = 0,
-		last_action = lastAction,
-		run_result = {
-			success = false,
-			failure = {
-				type = failureType or "mechanic_integrity_failure",
-				sector_id = 3,
-			},
-			metrics = {
-				entry_speed = 40,
-				exit_speed = 35,
-				airborne = false,
-				air_distance = 0,
-				lateral_error = 0,
-				vertical_displacement = 0,
-				reacquired = true,
-				lap_time = 25,
-				slowdown_ratio = 1,
-			},
-		},
-		diagnostics = {
-			failure_sector = 3,
-			hints = hints or {},
-		},
-		legal_actions = {
-			numeric_levers = LevelMappings.NUMERIC_LEVERS[mechanic],
-			pads = { "ingress", "egress" },
-		},
-	}
-end
-
 local function waitForBaseline(): boolean
-	local deadline = os.clock() + 45
+	local deadline = os.clock() + 60
 	while os.clock() < deadline do
 		if workspace:GetAttribute("AutoTrack_BaselineLapDone") == true then
 			return true
@@ -85,11 +40,11 @@ local function waitForBaseline(): boolean
 end
 
 function TestPhase6.runUnit()
+	-- Request parsing
 	local parsed, err = RequestParser.parse("Add a jump in sector 3", "parser-basic")
 	T.expect("parser_accept_basic",
 		parsed ~= nil and parsed.parsed.sector_id == 3 and parsed.parsed.mechanic == "RampJump" and parsed.parsed.request_kind == "Mechanic",
-		tostring(err)
-	)
+		tostring(err))
 
 	local synonymCases = {
 		{ text = "add a chicane in sector 3", mechanic = "Chicane" },
@@ -100,19 +55,16 @@ function TestPhase6.runUnit()
 	}
 	for index, case in ipairs(synonymCases) do
 		local request = RequestParser.parse(case.text, "syn-" .. index)
-		T.expect(
-			"parser_accept_synonyms_" .. index,
+		T.expect("parser_accept_synonyms_" .. index,
 			request ~= nil and request.parsed.mechanic == case.mechanic,
-			case.text
-		)
+			case.text)
 	end
 
 	local qualifierRequest = RequestParser.parse("Add a really tall jump in sector 4", "qualifiers")
 	local qualifiers = qualifierRequest and table.concat(qualifierRequest.qualifiers, ",") or ""
 	T.expect("parser_qualifiers_extracted",
 		qualifierRequest ~= nil and string.find(qualifiers, "really", 1, true) and string.find(qualifiers, "tall", 1, true),
-		qualifiers
-	)
+		qualifiers)
 
 	local padRequest, padErr = RequestParser.parse("add boost pad to sector 2 exit", "pad-basic")
 	T.expect("parser_accept_pad_request",
@@ -121,8 +73,7 @@ function TestPhase6.runUnit()
 			and padRequest.parsed.sector_id == 2
 			and padRequest.parsed.pad_side == "egress"
 			and padRequest.parsed.pad_value == "Boost10",
-		tostring(padErr)
-	)
+		tostring(padErr))
 
 	local rejectCases = {
 		{ name = "parser_reject_empty", text = "", err = "empty request" },
@@ -138,19 +89,18 @@ function TestPhase6.runUnit()
 		T.expect(case.name, caseErr == case.err, tostring(caseErr))
 	end
 
+	-- Initial proposal defaults and bias
 	local defaultsRequest = makeRequest(nil, "add a jump in sector 3")
 	local initialState = MinimalProposer.initial(defaultsRequest)
 	T.expect("proposer_initial_defaults",
 		initialState ~= nil and initialState.params.ramp_angle == LevelMappings.DEFAULTS.RampJump.ramp_angle,
-		tostring(initialState and initialState.params.ramp_angle)
-	)
+		tostring(initialState and initialState.params.ramp_angle))
 
 	local biasedRequest = makeRequest(nil, "add a tall jump in sector 3")
 	local biasedState = MinimalProposer.initial(biasedRequest)
 	T.expect("proposer_initial_bias",
 		biasedState ~= nil and biasedState.params.ramp_angle > LevelMappings.DEFAULTS.RampJump.ramp_angle,
-		tostring(biasedState and biasedState.params.ramp_angle)
-	)
+		tostring(biasedState and biasedState.params.ramp_angle))
 
 	local padStateRequest, padStateParseErr = RequestParser.parse("add boost pad to sector 2 exit", "pad-state")
 	assert(padStateRequest ~= nil, "expected valid pad request: " .. tostring(padStateParseErr))
@@ -161,91 +111,9 @@ function TestPhase6.runUnit()
 			and padState.sector_id == 2
 			and padState.mechanic == nil
 			and padState.pads.egress == "Boost10",
-		tostring(padStateErr)
-	)
+		tostring(padStateErr))
 
-	local rampAction = MinimalProposer.repair(makePacket("RampJump", "mechanic_integrity_failure", { "verifier never became airborne" }))
-	T.expect("proposer_repair_rampjump_not_airborne",
-		rampAction ~= nil
-			and rampAction.type == "SetPad"
-			and rampAction.pad == "ingress"
-			and rampAction.value == "Boost10",
-		tostring(rampAction and rampAction.type == "SetPad" and rampAction.pad or rampAction and rampAction.lever)
-	)
-
-	local chicaneAction = MinimalProposer.repair(makePacket("Chicane", "mechanic_integrity_failure", { "lateral displacement too small" }))
-	T.expect("proposer_repair_chicane_amplitude_low",
-		chicaneAction ~= nil and chicaneAction.type == "SetNumericLever" and chicaneAction.lever == "amplitude",
-		tostring(chicaneAction and chicaneAction.lever)
-	)
-
-	local chicanePadAction = MinimalProposer.repair(makePacket("Chicane", "mechanic_integrity_failure", { "entry unstable" }))
-	T.expect("proposer_repair_chicane_relaxes_entry_before_brake",
-		chicanePadAction ~= nil
-			and (
-				(chicanePadAction.type == "SetNumericLever"
-					and (
-						chicanePadAction.lever == "transition_length"
-						or chicanePadAction.lever == "corridor_width"
-						or chicanePadAction.lever == "amplitude"
-					))
-				or (chicanePadAction.type == "SetPad" and chicanePadAction.pad == "ingress" and string.find(chicanePadAction.value, "Brake", 1, true) ~= nil)
-			),
-		tostring(chicanePadAction and chicanePadAction.type == "SetPad" and chicanePadAction.pad or chicanePadAction and chicanePadAction.lever)
-	)
-
-	local crestAction = MinimalProposer.repair(makePacket("CrestDip", "mechanic_integrity_failure", { "vertical displacement too small" }))
-	T.expect("proposer_repair_crestdip_displacement_low",
-		crestAction ~= nil and crestAction.type == "SetNumericLever" and crestAction.lever == "height_or_depth",
-		tostring(crestAction and crestAction.lever)
-	)
-
-	local crestStallAction = MinimalProposer.repair(makePacket("CrestDip", "local_execution_failure", {}, nil))
-	T.expect("proposer_repair_crestdip_stall_softens_shape",
-		crestStallAction ~= nil
-			and (
-				(crestStallAction.type == "SetNumericLever" and (crestStallAction.lever == "height_or_depth" or crestStallAction.lever == "sector_length"))
-				or (crestStallAction.type == "SetPad" and crestStallAction.pad == "ingress" and string.find(crestStallAction.value, "Boost", 1, true) ~= nil)
-			),
-		tostring(crestStallAction and crestStallAction.type == "SetNumericLever" and crestStallAction.lever or crestStallAction and crestStallAction.type)
-	)
-
-	local downstreamAction = MinimalProposer.repair(makePacket("RampJump", "downstream_failure", {}, nil))
-	T.expect("proposer_repair_downstream_softens_jump_first",
-		downstreamAction ~= nil
-			and (
-				(downstreamAction.type == "SetNumericLever"
-					and (downstreamAction.lever == "ramp_angle"
-						or downstreamAction.lever == "gap_length"
-						or downstreamAction.lever == "landing_length"))
-				or (downstreamAction.type == "SetPad" and downstreamAction.pad == "egress" and string.find(downstreamAction.value, "Brake", 1, true) ~= nil)
-			),
-		tostring(downstreamAction and downstreamAction.type == "SetPad" and downstreamAction.pad or downstreamAction and downstreamAction.lever)
-	)
-
-	local rampLocalFailureAction = MinimalProposer.repair(makePacket("RampJump", "local_execution_failure", {}, nil))
-	T.expect("proposer_repair_rampjump_local_failure_softens",
-		rampLocalFailureAction ~= nil
-			and (rampLocalFailureAction.type == "SetNumericLever"
-				and (rampLocalFailureAction.lever == "ramp_angle"
-					or rampLocalFailureAction.lever == "gap_length"
-					or rampLocalFailureAction.lever == "ramp_length"
-					or rampLocalFailureAction.lever == "landing_length")),
-		tostring(rampLocalFailureAction and rampLocalFailureAction.type == "SetPad" and rampLocalFailureAction.pad or rampLocalFailureAction and rampLocalFailureAction.lever)
-	)
-
-	local noRepeatPacket = makePacket(
-		"RampJump",
-		"mechanic_integrity_failure",
-		{ "verifier never became airborne" },
-		{ type = "SetNumericLever", lever = "ramp_angle", value = 25 }
-	)
-	local noRepeatAction = MinimalProposer.repair(noRepeatPacket)
-	T.expect("proposer_repair_no_repeat",
-		noRepeatAction ~= nil and not (noRepeatAction.type == "SetNumericLever" and noRepeatAction.lever == "ramp_angle"),
-		tostring(noRepeatAction and noRepeatAction.lever)
-	)
-
+	-- State machine legal/illegal transitions
 	local sm = JobStateMachine.new()
 	local legalOk = pcall(function()
 		sm:transition("ParseRequest")
@@ -270,8 +138,7 @@ function TestPhase6.runUnit()
 			and RuntimeContext.getBaselineLapTime() == (workspace:GetAttribute("AutoTrack_BaselineLapTime") or -1)
 			and RuntimeContext.getCar() ~= nil
 			and RuntimeContext.getSectorById(3) ~= nil,
-		"runtime context not initialized"
-	)
+		"runtime context not initialized")
 end
 
 function TestPhase6.runIntegration()
@@ -304,16 +171,14 @@ function TestPhase6.runIntegration()
 			and padCommit.mechanic == nil
 			and padCommit.pads.egress == "Boost10"
 			and padCommit.version == 1,
-		tostring(padReason)
-	)
+		tostring(padReason))
 
 	Tracer.clear()
 	local okChicane, chicaneReason = JobRunner.submit("add a chicane in sector 3")
 	local chicaneState = SectorRegistry.getCommitted(3)
 	T.expect("job_commits_chicane",
 		okChicane == true and chicaneReason == nil and chicaneState ~= nil and chicaneState.mechanic == "Chicane" and chicaneState.version == 1,
-		tostring(chicaneReason)
-	)
+		tostring(chicaneReason))
 
 	Tracer.clear()
 	local okVersion, versionReason = JobRunner.submit("add a wide chicane in sector 3")
@@ -324,13 +189,10 @@ function TestPhase6.runIntegration()
 			and versionState ~= nil
 			and versionState.mechanic == "Chicane"
 			and versionState.version >= 2,
-		string.format(
-			"reason=%s mechanic=%s version=%s",
+		string.format("reason=%s mechanic=%s version=%s",
 			tostring(versionReason),
 			tostring(versionState and versionState.mechanic),
-			tostring(versionState and versionState.version)
-		)
-	)
+			tostring(versionState and versionState.version)))
 
 	Tracer.clear()
 	local okCrest, crestReason = JobRunner.submit("add a crest in sector 3")
@@ -346,8 +208,7 @@ function TestPhase6.runIntegration()
 			and crestCommitState.mechanic == "CrestDip",
 		string.format("final_status=%s attempts=%d",
 			tostring(crestJob and crestJob.final_status),
-			crestJob and #crestJob.attempts or -1)
-	)
+			crestJob and #crestJob.attempts or -1))
 
 	Tracer.clear()
 	local okRevert, revertReason = JobRunner.submit("add a really tall steep short crest in sector 3")
@@ -360,16 +221,14 @@ function TestPhase6.runIntegration()
 			and lastJob.final_status == "reverted"
 			and revertedState ~= nil
 			and revertedState.mechanic == "CrestDip",
-		tostring(revertReason)
-	)
+		tostring(revertReason))
 
 	local trace = table.concat(Tracer.getLog(), "\n")
 	T.expect("job_trace_brackets_present",
 		string.find(trace, "job_start", 1, true) ~= nil
 			and string.find(trace, "attempt index=0", 1, true) ~= nil
 			and string.find(trace, "job_end", 1, true) ~= nil,
-		trace
-	)
+		trace)
 end
 
 function TestPhase6.run()

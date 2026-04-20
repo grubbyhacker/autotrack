@@ -15,10 +15,10 @@ Constants.TRACK_THICKNESS = 2
 -- Corner geometry
 Constants.CORNER_RADIUS = 20        -- centerline radius for 90-degree corners
 Constants.CORNER_ARC_SAMPLES = 5    -- waypoints per corner arc (includes endpoints)
-Constants.CORNER_SPEED_FACTOR = 0.33 -- speed multiplier in corner sectors (80*0.33=26.4 studs/s)
+Constants.CORNER_SPEED_FACTOR = 0.26      -- speed multiplier in corner sectors (~26 studs/s at 100, close to pre-phase14 feel)
 
 -- Physics / boost pads
-Constants.BASELINE_SPEED = 80
+Constants.BASELINE_SPEED = 100
 Constants.PAD_BOOST_FORCE = 6000
 Constants.PAD_BRAKE_FORCE = -4000
 
@@ -31,21 +31,26 @@ Constants.CAR_LENGTH = 8
 Constants.WAYPOINT_LOOKAHEAD = 1
 Constants.ORIENTATION_LOOKAHEAD = 2
 Constants.ORIENTATION_BLEND = 0.7
+Constants.WAYPOINT_STALL_TIME_THRESHOLD = 3.0
 
 -- Verifier car
-Constants.CAR_TARGET_SPEED = 80     -- studs/s baseline forward speed
+Constants.CAR_TARGET_SPEED = 100    -- studs/s baseline forward speed (walked back from 130 for obstacle reliability)
 Constants.CAR_MAX_LATERAL_CORRECTION = 20   -- studs/s lateral impulse cap
 Constants.CAR_MAX_ORIENT_CORRECTION = 10    -- deg/s heading correction cap
 Constants.CAR_ORIENTATION_RESPONSIVENESS = 12
 Constants.CAR_ORIENTATION_MAX_TORQUE = 25000
+Constants.CAR_AIRBORNE_ORIENTATION_MAX_TORQUE = 7000
 
 -- Lap timing
-Constants.LAP_TIMEOUT = 45          -- seconds before a run is declared system_failure
+Constants.LAP_TIMEOUT = 60          -- seconds before a run is declared system_failure (phase 14: more headroom at extreme difficulty)
 Constants.STALL_SPEED_THRESHOLD = 4
 Constants.STALL_TIME_THRESHOLD = 1.5
 Constants.NO_PROGRESS_DISTANCE_THRESHOLD = 2
 Constants.NO_PROGRESS_TIME_THRESHOLD = 1.25
 Constants.CRASH_ANGULAR_SPEED_THRESHOLD = 1.5
+Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD = 4
+Constants.TUMBLE_TIME_THRESHOLD = 0.1
+Constants.TUMBLE_UP_DOT_THRESHOLD = 0.92
 Constants.OVERTURN_UP_DOT_THRESHOLD = -0.25
 Constants.OVERTURN_TIME_THRESHOLD = 0.75
 Constants.AIRBORNE_OVERTURN_TIME_THRESHOLD = 0.3
@@ -64,8 +69,8 @@ Constants.BRAKE_SPEED_DELTA = -10   -- legacy medium-brake alias
 
 -- RampJump integrity thresholds
 Constants.RAMPJUMP_MIN_GAP = 2              -- studs
-Constants.RAMPJUMP_MIN_AIR_DISTANCE = 5     -- studs
-Constants.RAMPJUMP_REACQUIRE_MAX = 20       -- studs after landing
+Constants.RAMPJUMP_MIN_AIR_DISTANCE = 4.5   -- stable sector-2 jumps land around ~5 studs of clean airtime with the current verifier
+Constants.RAMPJUMP_REACQUIRE_MAX = 12       -- studs after landing (phase 14: tightened from 20)
 
 -- Chicane integrity thresholds
 Constants.CHICANE_MIN_LATERAL_DISPLACEMENT = 4  -- studs
@@ -101,6 +106,11 @@ Constants.MAXIMIZER_MIN_RETAINED_SECTORS = 2 -- do not evict below this many sco
 Constants.UI_PHASE_DELAY = 0.75
 Constants.UI_FAILURE_DWELL = 1.25
 Constants.UI_SUCCESS_DWELL = 2.0
+
+-- Endurance / Hotfix Mode (phase 14)
+Constants.ENDURANCE_ATTEMPT_BUDGET = 12         -- total orchestrator sector placements
+Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO = 0.40 -- max allowed slowdown fraction vs baseline
+Constants.HOTFIX_MAX_ATTEMPTS = 5               -- repair attempts before hotfix declares failure
 
 -- Camera tuning
 Constants.CAMERA_CHASE_HEIGHT = 20

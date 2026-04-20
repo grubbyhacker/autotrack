@@ -50,10 +50,13 @@ function StatusPanel.setRepairAction(text: string)
 	end
 end
 
-function StatusPanel.setError(text: string, finalStatus: string)
+function StatusPanel.setError(text: string, finalStatus: string, hotfixActive: boolean?)
 	local hud = refs()
 	if text ~= "" then
 		hud.errorLabel.Text = text
+		hud.errorLabel.TextColor3 = hud.colors.danger
+	elseif hotfixActive == true then
+		hud.errorLabel.Text = "Hotfix escalation in progress"
 		hud.errorLabel.TextColor3 = hud.colors.danger
 	elseif finalStatus == "committed" then
 		hud.errorLabel.Text = "Commit locked in"
@@ -81,10 +84,22 @@ function StatusPanel.setFailureBanner(text: string, isVisible: boolean)
 	hud.failureBanner.Visible = isVisible
 	hud.failureBannerLabel.Text = if isVisible then text else ""
 	if isVisible then
-		hud.failureBanner.BackgroundTransparency = 0.18
-		hud.failureBannerLabel.TextTransparency = 0
-		hud.tweenFlash(hud.failureBanner, { BackgroundTransparency = 0.08 })
-		hud.tweenFlash(hud.failureBannerLabel, { TextTransparency = 0 })
+		hud.failureBanner.BackgroundTransparency = 0.58
+		hud.failureBannerLabel.TextTransparency = 0.05
+		hud.tweenFlash(hud.failureBanner, { BackgroundTransparency = 0.46 })
+		hud.tweenFlash(hud.failureBannerLabel, { TextTransparency = 0.02 })
+	end
+end
+
+function StatusPanel.setHotfixBanner(text: string, isVisible: boolean)
+	local hud = refs()
+	hud.hotfixBanner.Visible = isVisible
+	hud.hotfixBannerLabel.Text = if isVisible then text else ""
+	if isVisible then
+		hud.hotfixBanner.BackgroundTransparency = 0.16
+		hud.hotfixBannerLabel.TextTransparency = 0
+		hud.tweenFlash(hud.hotfixBanner, { BackgroundTransparency = 0.04 })
+		hud.tweenFlash(hud.hotfixBannerLabel, { TextTransparency = 0 })
 	end
 end
 

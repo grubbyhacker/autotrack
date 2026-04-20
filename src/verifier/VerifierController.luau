@@ -135,7 +135,7 @@ function VerifierController.runLap(
 	linearVelocity.Attachment0 = attachment
 	linearVelocity.ForceLimitsEnabled = true
 	linearVelocity.ForceLimitMode = Enum.ForceLimitMode.Magnitude
-	linearVelocity.MaxForce = 10000
+	linearVelocity.MaxForce = math.huge
 	linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
 	linearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
 	linearVelocity.VectorVelocity = Vector3.zero
@@ -162,6 +162,7 @@ function VerifierController.runLap(
 	local completed = false
 	local recentTrail = { car.Position }
 	local lastTrailPoint = car.Position
+	local lastWaypointAdvanceTime = startTime
 	local persistentTargetSpeed = Constants.CAR_TARGET_SPEED
 	local activePadToken = nil
 	local padEffectSectorHopsRemaining = 0
@@ -237,6 +238,7 @@ function VerifierController.runLap(
 
 		if distanceToTarget <= 10 then
 			waypointIndex += 1
+			lastWaypointAdvanceTime = now
 			if waypointIndex > #waypoints then
 				if waypointSectors and handleSectorChange and currentSectorId then
 					handleSectorChange(currentSectorId, false)
@@ -310,6 +312,19 @@ function VerifierController.runLap(
 		recordTrail(carPosition)
 		MetricCollector.record(speed, carPosition, isAirborne, lateralError, targetLocalX, targetLocalZ)
 
+		if now - lastWaypointAdvanceTime >= Constants.WAYPOINT_STALL_TIME_THRESHOLD then
+			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+			return finishFailure(
+				attachment,
+				linearVelocity,
+				alignOrientation,
+				{ type = "local_execution_failure", sector_id = currentSectorId or 1, detail = "no_progress" },
+				metrics,
+				carPosition,
+				recentTrail
+			)
+		end
+
 		if currentSectorId == targetSectorId and targetState and targetState.mechanic == "CrestDip" then
 			local targetMetrics = MetricCollector.getTargetMetrics()
 			if targetMetrics.in_target_sector
@@ -361,7 +376,8 @@ function VerifierController.runLap(
 		linearVelocity.VectorVelocity = vectorVelocity
 
 		if isAirborne then
-			alignOrientation.MaxTorque = 0
+			alignOrientation.MaxTorque = Constants.CAR_AIRBORNE_ORIENTATION_MAX_TORQUE
+			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)
 		else
 			alignOrientation.MaxTorque = Constants.CAR_ORIENTATION_MAX_TORQUE
 			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)

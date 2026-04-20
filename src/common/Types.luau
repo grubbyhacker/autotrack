@@ -6,7 +6,7 @@ export type SectorKind = "Straight" | "Corner"
 export type SectorMeta = { id: number, kind: SectorKind, entry: CFrame, exit: CFrame, partGroup: Folder? }
 
 export type Mechanic = "RampJump" | "Chicane" | "CrestDip"
-export type PadValue = "None" | "Boost5" | "Boost10" | "Boost25" | "Brake5" | "Brake10" | "Brake25"
+export type PadValue = "None" | "Boost5" | "Boost10" | "Boost25" | "Boost50" | "Brake5" | "Brake10" | "Brake25" | "Brake50"
 export type PadSide = "ingress" | "egress"
 
 export type ParsedRequest = {

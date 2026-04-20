@@ -609,6 +609,17 @@ local function runUnit()
 			JobRunner._attemptLimitForResult(result, 3) == Constants.MAX_REPAIR_ATTEMPTS + Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS,
 			"expected extra repair attempts after halfway progress")
 	end
+
+	-- 35–36. Endurance lap-time budget gate (phase 14): 0.40 ratio.
+	do
+		local ratio = Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO
+		T.expect("phase11_endurance_budget_not_over_at_1_39",
+			1.39 <= 1 + ratio,
+			"expected 1.39 to be within endurance budget (ratio=" .. tostring(ratio) .. ")")
+		T.expect("phase11_endurance_budget_over_at_1_41",
+			1.41 > 1 + ratio,
+			"expected 1.41 to exceed endurance budget (ratio=" .. tostring(ratio) .. ")")
+	end
 end
 
 function TestPhase11.runUnit()
