@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local ChicanePath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath"))
 local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
+local RampJumpPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("RampJumpPath"))
 local CornerPath = require(script.Parent.CornerPath)
 local TrackVisuals = require(script.Parent.TrackVisuals)
 
@@ -200,7 +201,29 @@ local function buildStraightWaypoints(
 		end
 	end
 
-	if overrideState and overrideState.mechanic == "Chicane" then
+	if overrideState and overrideState.mechanic == "RampJump" then
+		local params = overrideState.params
+		assert(params.ramp_angle, "TrackGenerator.buildStraightWaypoints: rampjump ramp_angle missing")
+		assert(params.ramp_length, "TrackGenerator.buildStraightWaypoints: rampjump ramp_length missing")
+		assert(params.gap_length, "TrackGenerator.buildStraightWaypoints: rampjump gap_length missing")
+		assert(params.landing_length, "TrackGenerator.buildStraightWaypoints: rampjump landing_length missing")
+
+		local profile = RampJumpPath.buildProfile(
+			params.ramp_angle,
+			params.ramp_length,
+			params.gap_length,
+			params.landing_length
+		)
+		for index = 2, #profile.guidePoints do
+			local currentLocal = profile.guidePoints[index]
+			local previousLocal = profile.guidePoints[index - 1]
+			local current = worldPoint(sector.entry, currentLocal)
+			local previous = worldPoint(sector.entry, previousLocal)
+			local forward = (current - previous).Magnitude > 0 and (current - previous).Unit or sector.exit.LookVector
+			table.insert(waypoints, buildLapWaypoint(ridePosY(current, currentLocal.Y), forward))
+			table.insert(waypointSectorIds, sector.id)
+		end
+	elseif overrideState and overrideState.mechanic == "Chicane" then
 		local params = overrideState.params
 		assert(params.amplitude, "TrackGenerator.buildStraightWaypoints: chicane amplitude missing")
 		assert(params.transition_length, "TrackGenerator.buildStraightWaypoints: chicane transition_length missing")

@@ -50,6 +50,9 @@
     "phase14_integration": { "boot_mode": "baseline" },
     "phase14_crestdip_pair": { "boot_mode": "baseline" },
     "phase14_crestdip_search": { "boot_mode": "baseline" },
-    "phase14_sector2_debug": { "boot_mode": "baseline" }
+    "phase14_sector2_debug": { "boot_mode": "baseline" },
+    "phase14_5": { "boot_mode": "skip_baseline" },
+    "phase15": { "boot_mode": "skip_baseline" },
+    "phase16": { "boot_mode": "baseline" }
   }
 }

@@ -67,6 +67,12 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase14).runCrestDipSearch()
 	elseif cmd == "phase14_sector2_debug" then
 		require(script.Parent.TestPhase14).runSector2Debug()
+	elseif cmd == "phase14_5" then
+		require(script.Parent.TestPhase14_5).run()
+	elseif cmd == "phase15" then
+		require(script.Parent.TestPhase15).run()
+	elseif cmd == "phase16" then
+		require(script.Parent.TestPhase16).run()
 	else
 		local unknownLine = "[TEST FAIL: unknown_suite] " .. tostring(cmd)
 		print(unknownLine)

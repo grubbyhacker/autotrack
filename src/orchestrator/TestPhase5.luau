@@ -108,7 +108,7 @@ local function testRampJump()
 	-- pass: valid geometry + airborne + reacquired
 	ok, hints = RampJumpIntegrity.evaluate(
 		makeRampJumpState(),
-		makeMetrics({ airborne = true, air_distance = 10, reacquired = true })
+		makeMetrics({ airborne = false, air_distance = 0, vertical_displacement = 2, reacquired = true })
 	)
 	T.expect("rampjump_pass", ok == true, "expected pass, got hints: " .. table.concat(hints, "; "))
 
@@ -120,46 +120,63 @@ local function testRampJump()
 	T.expect("rampjump_fail_gap", ok == false and #hints > 0,
 		"expected fail on gap_length < " .. Constants.RAMPJUMP_MIN_GAP)
 
-	-- fail: never airborne
+	-- fail: vertical displacement too small
 	ok, hints = RampJumpIntegrity.evaluate(
 		makeRampJumpState(),
-		makeMetrics({ airborne = false, air_distance = 0 })
+		makeMetrics({ airborne = false, air_distance = 0, vertical_displacement = 0.2 })
 	)
-	T.expect("rampjump_fail_not_airborne", ok == false and #hints > 0,
-		"expected fail when airborne=false")
+	T.expect("rampjump_fail_vertical_displacement", ok == false and #hints > 0,
+		"expected fail when vertical displacement is too small")
 
-	-- fail: air_distance too short
+	-- pass: short airtime is okay when the landing stays controlled
 	ok, hints = RampJumpIntegrity.evaluate(
 		makeRampJumpState(),
-		makeMetrics({ airborne = true, air_distance = 1 })
+		makeMetrics({ airborne = true, air_distance = 1, vertical_displacement = 2, reacquired = true })
 	)
-	T.expect("rampjump_fail_air_distance", ok == false and #hints > 0,
-		"expected fail when air_distance < " .. Constants.RAMPJUMP_MIN_AIR_DISTANCE)
+	T.expect("rampjump_short_airtime_still_passes", ok == true,
+		"expected controlled short airtime to pass")
 
 	-- fail: no reacquisition
 	ok, hints = RampJumpIntegrity.evaluate(
 		makeRampJumpState(),
-		makeMetrics({ airborne = true, air_distance = 10, reacquired = false })
+		makeMetrics({ airborne = true, air_distance = 3, vertical_displacement = 2, reacquired = false })
 	)
 	T.expect("rampjump_fail_no_reacquire", ok == false and #hints > 0,
 		"expected fail when reacquired=false")
 
-	-- RampJump airtime boundary: stable sector-2 jumps currently live near 5 studs,
-	-- so the integrity floor tracks that proven envelope instead of the abandoned
-	-- phase-14 tightening to 10.
+	-- RampJump should still demand a readable lift, even when it does not become a dramatic jump.
 	ok, hints = RampJumpIntegrity.evaluateRuntime(
-		makeMetrics({ target_airborne = true, target_air_distance = Constants.RAMPJUMP_MIN_AIR_DISTANCE - 0.1, target_reacquired = true })
+		makeMetrics({
+			target_airborne = false,
+			target_air_distance = 0,
+			target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT - 0.1,
+			target_reacquired = true,
+		})
 	)
-	T.expect("rampjump_fail_air_distance_just_below_min",
+	T.expect("rampjump_fail_vertical_displacement_just_below_min",
 		ok == false and #hints > 0,
-		"expected fail at air_distance = MIN - epsilon (got " .. tostring(Constants.RAMPJUMP_MIN_AIR_DISTANCE - 0.1) .. ")")
+		"expected fail at vertical displacement = MIN - epsilon")
 
 	ok, hints = RampJumpIntegrity.evaluateRuntime(
-		makeMetrics({ target_airborne = true, target_air_distance = Constants.RAMPJUMP_MIN_AIR_DISTANCE, target_reacquired = true })
+		makeMetrics({
+			target_airborne = false,
+			target_air_distance = 0,
+			target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
+			target_reacquired = true,
+		})
 	)
-	T.expect("rampjump_pass_air_distance_at_min",
+	T.expect("rampjump_pass_vertical_displacement_at_min",
 		ok == true,
-		"expected pass at air_distance = MIN (" .. tostring(Constants.RAMPJUMP_MIN_AIR_DISTANCE) .. ")")
+		"expected pass at vertical displacement = MIN (" .. tostring(Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT) .. ")")
+
+	ok, hints = RampJumpIntegrity.evaluateRuntime({
+		target_airborne = false,
+		target_air_distance = 0,
+		target_reacquired = true,
+	})
+	T.expect("rampjump_fail_runtime_missing_vertical_displacement",
+		ok == false and #hints > 0,
+		"expected missing vertical displacement to fail instead of silently passing")
 end
 
 -- ── ChicaneIntegrity unit tests ────────────────────────────────────────────────
@@ -254,7 +271,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		{ type = "local_execution_failure", sector_id = 2 },
 		makeRampJumpState(),
-		makeMetrics({ airborne = true, air_distance = 10, reacquired = true }),
+		makeMetrics({ airborne = true, air_distance = 10, vertical_displacement = 2, reacquired = true }),
 		2
 	)
 	T.expect("evaluator_lap_failure_takes_precedence",
@@ -290,7 +307,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		nil,
 		makeRampJumpState({ gap_length = 1 }),
-		makeMetrics({ airborne = true, air_distance = 10, reacquired = true }),
+		makeMetrics({ airborne = true, air_distance = 10, vertical_displacement = 2, reacquired = true }),
 		2
 	)
 	T.expect("evaluator_integrity_fail_hints_returned",
@@ -305,7 +322,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		nil,
 		makeRampJumpState(),
-		makeMetrics({ airborne = true, air_distance = 10, reacquired = true }),
+		makeMetrics({ airborne = true, air_distance = 10, vertical_displacement = 2, reacquired = true }),
 		2
 	)
 	T.expect("evaluator_success",
@@ -317,7 +334,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		{ type = "local_execution_failure", sector_id = 5 },
 		makeRampJumpState(),
-		makeMetrics({ target_airborne = true, target_air_distance = 10, target_reacquired = true }),
+		makeMetrics({ target_airborne = true, target_air_distance = 10, target_vertical_displacement = 2, target_reacquired = true }),
 		2
 	)
 	T.expect("evaluator_downstream_reclassify",
@@ -334,7 +351,7 @@ local function testEvaluator()
 	result, hints = LapEvaluator.evaluate(
 		{ type = "local_execution_failure", sector_id = 5 },
 		makeRampJumpState(),
-		makeMetrics({ target_airborne = false, target_air_distance = 0, target_reacquired = true }),
+		makeMetrics({ target_airborne = false, target_air_distance = 0, target_vertical_displacement = 0, target_reacquired = true }),
 		2
 	)
 	T.expect("evaluator_target_runtime_overrides_downstream",
@@ -351,6 +368,7 @@ local function testEvaluator()
 		makeMetrics({
 			airborne = true,
 			air_distance = 10,
+			vertical_displacement = 2,
 			reacquired = true,
 			target_entered = false,
 			target_exited = false,

@@ -20,7 +20,10 @@
 | 12 | Complete — visual readability pass: sector shells, corner roads, F1 verifier shell, ramp supports |
 | 13 | Complete — real LLM via OpenRouter, LLMConfig, multi-turn repair history, HUD model selector |
 | 14 | Complete — endurance mode orchestration, continuous loop, hotfix terminal HUD |
+| 14.5 | Complete — orchestrator memory, formal endurance objective, HUD decision telemetry, dedicated test gate |
 | 14 Retune | Complete — straight-entry recovery plus denser flat guidance restored golden obstacle stability and paired CrestDip reliability |
+| 15 | Complete — RampJump continuous entry arc, shared ramp profile, dedicated `phase15` gate |
+| 16 | Complete — RampJump playability retune: safer defaults, stronger base smoothing, post-exit recovery assist, dedicated `phase16` gate |
 
 ## Current retune status
 
@@ -52,10 +55,16 @@ Endurance chunks A through E are complete. The straight-entry retune that follow
 
 ## Verification snapshot
 
+- `make test TEST=phase15` passes
+- `make test TEST=phase16` passes
+- `make test TEST=phase4_rampjump` passes
+- `make test TEST=phase5_unit` passes
+- `make test TEST=phase14_unit` passes
+- `make test TEST=phase14_sector2_debug` passes
+- `make test TEST=phase14_5` passes
 - `make test TEST=phase3` passes
 - `make test TEST=phase4_5` passes
 - `make test TEST=phase9_unit` passes
-- `make test TEST=phase14_unit` passes
 - `make test TEST=phase14_crestdip_pair` passes
 - `make test TEST=phase14_integration` passes
 
@@ -75,6 +84,21 @@ Latest retune behavior:
   - the current data path now measures those excursions directly instead of relying on camera judgment
 - live-session debugging previously had ambiguity because Studio Output is cumulative across sessions; the new runtime build/profile stamp is intended to make stale-session diagnosis immediate on the next restart
 - when checked during this pass, only one active Studio instance was visible, so the bad live behavior was not explained by an obvious multi-Studio mismatch
+- the decisive RampJump regression in sector 3 was not only geometry: late landings were leaving the target sector with no remaining stabilization, so downstream sectors inherited a half-recovered car state
+- the current RampJump fix is therefore three-part:
+  - calmer default and normalized states (`Brake25`/`Brake10`, smaller gap, longer landing)
+  - a more gradual full-height entry blend in `RampJumpPath`
+  - a short post-exit recovery cap on speed/angular/vertical state so recoverable landings do not immediately turn into downstream map escapes
+- the later `/demo rampitup` failures exposed a different gap than the single-sector gates:
+  - the original RampJump assist path mostly helped the targeted obstacle case
+  - committed ramp sectors inside a full lap still needed calmer entry handling and a stable airborne heading reference
+- the current full-lap RampJump stabilization is therefore four-part:
+  - `/demo rampitup` now uses conservative ramps in sectors `3` and `8`
+  - committed RampJump sectors get the same style of entry normalization and recovery help as target-sector runs
+  - airborne RampJump guidance freezes to ramp/path heading instead of chasing downstream waypoints
+  - straight sectors now aggressively damp yaw/roll and pin to forward heading, so brake-pad contact, takeoff, and landing impulses do not keep spinning the car on non-corner track
+- the important lesson from this slice is that a green target-sector ramp gate is not enough for playable demos:
+  - any future ramp/verifier retune should be checked against the actual preset demo lap, not only the isolated target-sector suite
 - direct unit coverage now exists for the endurance orchestrator path itself:
   - `phase14_unit` exercises `OrchestratorAgent.run()` through one orchestrate → submit → begin-loop cycle
   - it also asserts last-result context carry-forward, attempt-budget publication, continuous-loop handoff, and camera-demo rejection
@@ -95,6 +119,7 @@ Latest retune behavior:
 
 ## Recommended next focus
 
+- keep `make test TEST=phase14_5` in the default fast gate set whenever endurance-policy work changes
 - keep the maintained fast gates green whenever verifier tuning changes:
   - `make test TEST=phase3`
   - `make test TEST=phase4_5`
@@ -106,6 +131,16 @@ Latest retune behavior:
 
 ## Continuity checkpoint (latest session)
 
+- Phase 14.5 landed as a policy-only slice:
+  - bounded orchestrator memory is now carried in `OrchestratorContext`
+  - repeat pressure is tracked by normalized sector+mechanic+hint signature
+  - objective scoring is explicit via `EnduranceObjective.evaluateCandidate(...)`
+  - endurance HUD now exposes objective, reliability, memory depth, and a 3-step decision ledger
+  - dedicated suite wiring exists at `make test TEST=phase14_5`
+- Closeout validation is complete:
+  - `phase14_5` initially failed on a hardcoded budget expectation and blank begin-loop failure telemetry
+  - both issues were fixed in code and the suite was rerun to green
+  - `phase14_unit` and `phase14_integration` both passed afterward, so 14.5 is closed against the maintained endurance gates
 - Working objective shifted from pure-physics fidelity to **demo reliability** for agent workflows.
 - Reliability levers currently active:
   - post-corner RampJump proposals start calmer and repairs are brake-first on unstable takeoff
@@ -120,3 +155,4 @@ Latest retune behavior:
   - user-reported live LLM crest torture test passed in-session (checkpoint accepted for branch handoff)
 - Immediate next recommended step:
   - continue adding **opt-in verifier stabilization assists** (runtime-attr controlled) in target sectors to further reduce spin/tumble nondeterminism while preserving visible failure modes
+  - keep the full `/demo rampitup` lap in the maintained fast gate set whenever RampJump geometry, pads, or straight-sector verifier stabilization changes

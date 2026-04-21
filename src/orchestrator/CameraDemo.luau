@@ -1,6 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
@@ -17,6 +16,76 @@ local _active = false
 local _token = 0
 local _priorStates = nil
 local _restorePending = false
+local _activePreset = "camera"
+
+local DEMO_PRESETS = {
+	camera = {
+		label = "Camera demo",
+		description = "Playable RampJump in sectors 3 and 7",
+		stop_hint = "Submit '/demo camera' again to stop the demo",
+		sectors = {
+			[3] = {
+				mechanic = "RampJump",
+				params = {
+					ramp_angle = 4,
+					ramp_length = 24,
+					gap_length = 2,
+					landing_length = 34,
+				},
+				pads = {
+					ingress = "Brake25",
+					egress = "Brake10",
+				},
+			},
+			[7] = {
+				mechanic = "RampJump",
+				params = {
+					ramp_angle = 4,
+					ramp_length = 24,
+					gap_length = 2,
+					landing_length = 34,
+				},
+				pads = {
+					ingress = "Brake50",
+					egress = "Brake25",
+				},
+			},
+		},
+	},
+	rampitup = {
+		label = "Ramp It Up demo",
+		description = "Playable RampJump in sectors 3 and 8",
+		stop_hint = "Submit '/demo rampitup' again to stop the demo",
+		sectors = {
+			[3] = {
+				mechanic = "RampJump",
+				params = {
+					ramp_angle = 4,
+					ramp_length = 24,
+					gap_length = 2,
+					landing_length = 36,
+				},
+				pads = {
+					ingress = "Brake50",
+					egress = "Brake25",
+				},
+			},
+			[8] = {
+				mechanic = "RampJump",
+				params = {
+					ramp_angle = 3,
+					ramp_length = 26,
+					gap_length = 2,
+					landing_length = 40,
+				},
+				pads = {
+					ingress = "Brake50",
+					egress = "Brake25",
+				},
+			},
+		},
+	},
+}
 
 local function cloneParams(params)
 	local copy = {}
@@ -68,44 +137,61 @@ function CameraDemo.isActive(): boolean
 	return _active
 end
 
+function CameraDemo.activePreset(): string
+	return _activePreset
+end
+
+function CameraDemo.supportedPresets(): { string }
+	local names = {}
+	for name, _ in pairs(DEMO_PRESETS) do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	return names
+end
+
 function CameraDemo.start(options): (boolean, string?)
 	options = options or {}
 	if _active then
 		return false, "camera demo already running"
 	end
 	assert(RuntimeContext.isReady(), "CameraDemo.start: runtime context not ready")
+	local presetName = tostring(options.preset or "camera")
+	local preset = DEMO_PRESETS[presetName]
+	assert(preset ~= nil, "CameraDemo.start: unsupported preset " .. presetName)
 
 	_active = true
 	_token += 1
 	local token = _token
 	local loop = options.loop ~= false
+	local runVerifier = options.runVerifier ~= false
 	_restorePending = false
+	_activePreset = presetName
 
 	_priorStates = {}
-	for _, sectorId in ipairs({ 3, 7 }) do
+	for sectorId, _ in pairs(preset.sectors) do
 		local committed = SectorRegistry.getCommitted(sectorId)
 		assert(committed ~= nil, "CameraDemo.start: missing committed state for sector " .. tostring(sectorId))
 		_priorStates[sectorId] = cloneState(committed)
 	end
 
-	local jumpDefaults = LevelMappings.DEFAULTS.RampJump
-	for _, sectorId in ipairs({ 3, 7 }) do
+	for sectorId, demoState in pairs(preset.sectors) do
 		applyCommittedState({
 			sector_id = sectorId,
-			mechanic = "RampJump",
-			params = cloneParams(jumpDefaults),
+			mechanic = demoState.mechanic,
+			params = cloneParams(demoState.params),
 			pads = {
-				ingress = "None",
-				egress = "None",
+				ingress = demoState.pads.ingress,
+				egress = demoState.pads.egress,
 			},
 			version = (_priorStates[sectorId] and _priorStates[sectorId].version or 0) + 1,
 		})
 	end
 
 	UIState.setPhase("CameraDemo", "Camera demo loop running")
-	UIState.appendLog("Camera demo enabled: RampJump in sectors 3 and 7")
-	UIState.setExplanation("Submit '/demo camera' again to stop the demo")
-	Tracer.log("camera_demo_start")
+	UIState.appendLog(string.format("%s enabled: %s", preset.label, preset.description))
+	UIState.setExplanation(preset.stop_hint)
+	Tracer.log("camera_demo_start " .. presetName)
 
 	task.spawn(function()
 		local lapIndex = 0
@@ -115,11 +201,14 @@ function CameraDemo.start(options): (boolean, string?)
 		local startCF = RuntimeContext.getCanonicalStart()
 
 		repeat
+			if not runVerifier then
+				break
+			end
 			if JobLock.isHeld() then
 				task.wait(0.25)
 			else
 				assert(JobLock.tryAcquire(), "JobLock busy during camera demo")
-				Tracer.log("camera_demo_lap_start")
+				Tracer.log("camera_demo_lap_start " .. presetName)
 				VerifierCar.reset(startCF)
 				UIState.setPhase("CameraDemoLap", "Running camera demo lap...")
 				local ok, result = pcall(function()
@@ -138,19 +227,19 @@ function CameraDemo.start(options): (boolean, string?)
 				if not ok then
 					UIState.setPhase("CameraDemoFailure", "Camera demo lap failed")
 					UIState.appendLog("Camera demo failed: " .. tostring(result))
-					Tracer.log("camera_demo_lap_error")
+					Tracer.log("camera_demo_lap_error " .. presetName)
 					task.wait(0.5)
 				elseif result.success then
 					lapIndex += 1
 					UIState.publishAttemptResult(result)
 					UIState.setPhase("CameraDemo", "Camera demo loop running")
-					UIState.appendLog(string.format("Camera demo lap %d complete: %.2fs", lapIndex, result.metrics.lap_time))
-					Tracer.log(string.format("camera_demo_lap_complete %.2f", result.metrics.lap_time))
+					UIState.appendLog(string.format("%s lap %d complete: %.2fs", preset.label, lapIndex, result.metrics.lap_time))
+					Tracer.log(string.format("camera_demo_lap_complete %s %.2f", presetName, result.metrics.lap_time))
 					task.wait(0.5)
 				else
 					UIState.setPhase("CameraDemoFailure", "Camera demo lap failed")
 					UIState.appendLog("Camera demo failure: " .. tostring(result.failure and result.failure.type or "unknown"))
-					Tracer.log("camera_demo_lap_failed")
+					Tracer.log("camera_demo_lap_failed " .. presetName)
 					task.wait(0.5)
 				end
 			end
@@ -176,9 +265,11 @@ function CameraDemo.stop(): (boolean, string?)
 	else
 		restorePriorStates()
 	end
+	local stoppedPreset = _activePreset
+	_activePreset = "camera"
 	UIState.publishReady()
-	UIState.appendLog("Camera demo stopped")
-	Tracer.log("camera_demo_stop")
+	UIState.appendLog(string.format("%s stopped", DEMO_PRESETS[stoppedPreset] and DEMO_PRESETS[stoppedPreset].label or "Camera demo"))
+	Tracer.log("camera_demo_stop " .. stoppedPreset)
 	return true, nil
 end
 

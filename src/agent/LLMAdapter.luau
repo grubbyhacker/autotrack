@@ -22,6 +22,7 @@ local ActionValidator = require(script.Parent.ActionValidator)
 local MinimalProposer = require(script.Parent.Parent.Orchestrator.MinimalProposer)
 local MinimalOrchestrator = require(script.Parent.Parent.Orchestrator.MinimalOrchestrator)
 local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
+local RampJumpTuner = require(script.Parent.Parent.Mechanics.RampJumpTuner)
 
 type Request = Types.Request
 type SectorState = Types.SectorState
@@ -117,11 +118,34 @@ local function isPlainCrestRequest(request: Request): boolean
 		and #request.qualifiers == 0
 end
 
+local function isPlainRampRequest(request: Request): boolean
+	return request.parsed.request_kind == "Mechanic"
+		and request.parsed.mechanic == "RampJump"
+		and #request.qualifiers == 0
+end
+
 local function isPostCornerEditableSector(sectorId: number): boolean
 	return sectorId == 2 or sectorId == 7
 end
 
 local function normalizeInitialProposalForRequest(request: Request, state: SectorState): SectorState
+	if state.mechanic == "RampJump" then
+		local postCornerRamp = isPostCornerEditableSector(request.parsed.sector_id)
+		local plainRamp = isPlainRampRequest(request)
+		state.params = RampJumpTuner.tune(state.params, {
+			postCorner = postCornerRamp,
+			preferGentle = plainRamp,
+		})
+		if postCornerRamp then
+			state.pads.ingress = "Brake50"
+			state.pads.egress = "Brake25"
+		elseif plainRamp then
+			state.pads.ingress = "Brake25"
+			state.pads.egress = "Brake10"
+		end
+		return state
+	end
+
 	if state.mechanic ~= "CrestDip" then
 		return state
 	end
@@ -268,6 +292,11 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 			state.params.height_or_depth or 0,
 			state.params.sector_length or 0
 		)
+	elseif state.mechanic == "RampJump" then
+		state.params = RampJumpTuner.tune(state.params, {
+			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
+			preferGentle = isPlainRampRequest(request),
+		})
 	end
 	local valid, err = ActionValidator.validateSectorState(state)
 	if not valid then
@@ -345,6 +374,10 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 				newState.params.height_or_depth or 0,
 				newState.params.sector_length or 0
 			)
+		elseif newState.mechanic == "RampJump" then
+			newState.params = RampJumpTuner.tune(newState.params, {
+				postCorner = isPostCornerEditableSector(newState.sector_id),
+			})
 		end
 		local explanation = shortenExplanation(decoded.explanation)
 			or string.format("LLM revised (attempt %d)", packet.attempt_index + 1)
@@ -406,6 +439,7 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 		sector_id = decoded.sector_id,
 		mechanic = decoded.mechanic,
 		params_hint = if type(decoded.params_hint) == "string" then decoded.params_hint else "",
+		rationale = if type(decoded.rationale) == "string" then shortenExplanation(decoded.rationale) else nil,
 	}, nil
 end
 

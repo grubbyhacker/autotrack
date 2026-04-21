@@ -21,6 +21,7 @@ local AttemptRunner = require(script.Parent.AttemptRunner)
 local ContinuousLapRunner = require(script.Parent.ContinuousLapRunner)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local RuntimeContext = require(script.Parent.RuntimeContext)
+local CameraDemo = require(script.Parent.CameraDemo)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
@@ -345,9 +346,9 @@ function TestPhase14.runUnit()
 	local request = makeRequest("add a jump to sector 2")
 	local currentState = makeState(2, "RampJump", {
 		ramp_angle = 10,
-		ramp_length = 16,
+		ramp_length = 22,
 		gap_length = 6,
-		landing_length = 24,
+		landing_length = 30,
 	}, "None", "None")
 
 	LLMAdapter.setProvider("partial-repair-state", {
@@ -377,8 +378,10 @@ function TestPhase14.runUnit()
 		newState ~= nil
 			and newState.sector_id == 2
 			and newState.mechanic == "RampJump"
-			and newState.params.gap_length == 6
-			and newState.params.ramp_angle == 8
+			and newState.params.gap_length <= 2
+			and newState.params.ramp_angle <= 4
+			and newState.params.ramp_length >= 22
+			and newState.params.landing_length >= 36
 			and newState.pads.ingress == "Brake10"
 			and newState.pads.egress == "None",
 		HttpService:JSONEncode(newState or {}))
@@ -664,6 +667,61 @@ function TestPhase14.runUnit()
 	T.expect("phase14_continuous_hotfix_sector_helper_prefers_retry",
 		ContinuousLapRunner._resolveHotfixSector(fakeResult(false, 3, "a"), fakeResult(false, 9, "b")) == 9,
 		tostring(ContinuousLapRunner._resolveHotfixSector(fakeResult(false, 3, "a"), fakeResult(false, 9, "b"))))
+
+	resetEditableSectors()
+	local rampitupStartOk, rampitupStartErr = CameraDemo.start({
+		preset = "rampitup",
+		loop = true,
+		runVerifier = false,
+	})
+	T.expect("phase14_rampitup_demo_starts",
+		rampitupStartOk == true and rampitupStartErr == nil and CameraDemo.isActive() and CameraDemo.activePreset() == "rampitup",
+		tostring(rampitupStartErr))
+
+	local demoSector3 = SectorRegistry.getCommitted(3)
+	local demoSector8 = SectorRegistry.getCommitted(8)
+	T.expect("phase14_rampitup_demo_applies_ramps",
+		demoSector3 ~= nil
+			and demoSector8 ~= nil
+			and demoSector3.mechanic == "RampJump"
+			and demoSector8.mechanic == "RampJump"
+			and demoSector3.params.ramp_angle == 4
+			and demoSector8.params.ramp_angle == 3
+			and demoSector3.params.ramp_length == 24
+			and demoSector8.params.ramp_length == 26
+			and demoSector3.params.gap_length == 2
+			and demoSector8.params.gap_length == 2
+			and demoSector3.params.landing_length == 36
+			and demoSector8.params.landing_length == 40
+			and demoSector3.pads.ingress == "Brake50"
+			and demoSector3.pads.egress == "Brake25"
+			and demoSector8.pads.ingress == "Brake50"
+			and demoSector8.pads.egress == "Brake25",
+		HttpService:JSONEncode({
+			sector3 = demoSector3,
+			sector8 = demoSector8,
+		}))
+
+	local rampitupStopOk, rampitupStopErr = CameraDemo.stop()
+	T.expect("phase14_rampitup_demo_stops",
+		rampitupStopOk == true and rampitupStopErr == nil and not CameraDemo.isActive(),
+		tostring(rampitupStopErr))
+
+	local restoredSector3 = SectorRegistry.getCommitted(3)
+	local restoredSector8 = SectorRegistry.getCommitted(8)
+	T.expect("phase14_rampitup_demo_restores_track",
+		restoredSector3 ~= nil
+			and restoredSector8 ~= nil
+			and restoredSector3.mechanic == nil
+			and restoredSector8.mechanic == nil
+			and restoredSector3.pads.ingress == "None"
+			and restoredSector3.pads.egress == "None"
+			and restoredSector8.pads.ingress == "None"
+			and restoredSector8.pads.egress == "None",
+		HttpService:JSONEncode({
+			sector3 = restoredSector3,
+			sector8 = restoredSector8,
+		}))
 
 	local orchestratorSubmits = {}
 	local orchestratorContexts = {}

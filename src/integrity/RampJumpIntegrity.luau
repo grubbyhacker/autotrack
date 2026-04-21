@@ -27,16 +27,15 @@ function RampJumpIntegrity.evaluateRuntime(
 	metrics: RunMetrics
 ): (boolean, { string })
 	local hints: { string } = {}
-	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
-	local airDistance = metrics.target_air_distance or metrics.air_distance
 	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
+	local verticalDisplacement = if metrics.target_vertical_displacement ~= nil
+		then metrics.target_vertical_displacement
+		else metrics.vertical_displacement
 
-	if not airborne then
-		table.insert(hints, "verifier never became airborne")
-	end
-
-	if airDistance < Constants.RAMPJUMP_MIN_AIR_DISTANCE then
-		table.insert(hints, "air distance too short (got " .. airDistance .. ")")
+	if type(verticalDisplacement) ~= "number" then
+		table.insert(hints, "vertical displacement missing")
+	elseif verticalDisplacement < Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT then
+		table.insert(hints, "vertical displacement too small (got " .. verticalDisplacement .. ")")
 	end
 
 	if not reacquired then

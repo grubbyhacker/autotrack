@@ -31,6 +31,9 @@ Constants.CORNER_ORIENTATION_BLEND = 0.45  -- blend current segment with anticip
 Constants.STRAIGHT_GUIDE_SPACING = 20      -- add intermediate straight waypoints so entry recovery has nearby guidance, not just a distant midpoint
 Constants.MECHANIC_ENTRY_SPEED_FACTOR = 0.62 -- default cap for non-boost mechanic lead-ins before the authored feature begins
 Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR = 0.34 -- generic post-corner cap for sectors 2/7 so mechanics inherit a stabilized entry state
+Constants.RAMPJUMP_ENTRY_SPEED_FACTOR = 0.34 -- plain ramps should enter slower so sector-3 defaults stay low-risk and recoverable
+Constants.POST_CORNER_RAMPJUMP_ENTRY_SPEED_FACTOR = 0.22 -- post-corner ramps need a very calm approach to avoid late-landing chaos
+Constants.RAMPJUMP_ENTRY_BLEND_POWER = 2.4 -- hold the lower RampJump lead-in cap longer so speed does not spike right before takeoff
 Constants.CRESTDIP_ENTRY_SPEED_FACTOR = 0.48 -- CrestDip lead-ins need a calmer pre-feature settle than RampJump to avoid flat-entry tumbles
 Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR = 0.30 -- sector-2/7 crest lead-ins need extra recovery after fixed-corner exits
 Constants.POST_CORNER_ENTRY_BLEND_POWER = 2.2 -- keep the post-corner recovery cap active much longer before blending back to full speed
@@ -65,6 +68,9 @@ Constants.CAR_AIRBORNE_YAW_DAMPING = 0         -- default off; airborne yaw resi
 Constants.CAR_LANDING_MIN_DOWN_SPEED = 12      -- only treat touchdown as a landing event above this downward speed
 Constants.CAR_LANDING_VERTICAL_MULTIPLIER = 0.35 -- immediate touchdown damping on vertical speed
 Constants.CAR_LANDING_ANGULAR_MULTIPLIER = 0.45 -- immediate touchdown damping on pitch/roll angular velocity
+Constants.RAMPJUMP_LANDING_MIN_DOWN_SPEED = 8
+Constants.RAMPJUMP_LANDING_VERTICAL_MULTIPLIER = 0.18
+Constants.RAMPJUMP_LANDING_ANGULAR_MULTIPLIER = 0.25
 Constants.CAR_MAX_LATERAL_CORRECTION = 20   -- studs/s lateral impulse cap
 Constants.CAR_MAX_ORIENT_CORRECTION = 10    -- deg/s heading correction cap
 Constants.CAR_ORIENTATION_RESPONSIVENESS = 12
@@ -74,15 +80,31 @@ Constants.CAR_CORNER_ORIENTATION_RESPONSIVENESS = 12   -- corners retain the old
 Constants.CAR_STRAIGHT_ORIENTATION_MAX_TORQUE = 35000  -- extra straight-line heading authority helps post-corner stabilization
 Constants.CAR_CORNER_ORIENTATION_MAX_TORQUE = 25000    -- preserve established corner behavior by default
 Constants.CAR_AIRBORNE_ORIENTATION_MAX_TORQUE = 7000
+Constants.STRAIGHT_ORIENTATION_PIN_ENABLED = true      -- for demo reliability, non-corner sectors pin yaw/roll strongly toward track-forward
+Constants.STRAIGHT_PIN_YAW_DAMPING = 40               -- aggressively kill yaw rotation on straights
+Constants.STRAIGHT_PIN_ROLL_DAMPING = 40              -- aggressively kill roll rotation on straights
+Constants.STRAIGHT_PIN_MAX_YAW_RATE = 0.75            -- cap residual yaw rate on straights
+Constants.STRAIGHT_PIN_MAX_ROLL_RATE = 0.75           -- cap residual roll rate on straights
+Constants.STRAIGHT_PIN_ORIENTATION_RESPONSIVENESS = 30
+Constants.STRAIGHT_PIN_ORIENTATION_MAX_TORQUE = 70000
+Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED = true -- once airborne on a ramp, hold takeoff heading instead of steering toward future waypoints
+Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING = 12            -- resist spin/yaw while airborne on a RampJump
+Constants.RAMPJUMP_AIRBORNE_ORIENTATION_MAX_TORQUE = 3500 -- lower airborne torque in ramp context so the verifier does not twist itself mid-flight
 Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED = true   -- optional deterministic assist: normalize state at target-sector entry
 Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR = 0.34   -- normalized entry speed as a fraction of CAR_TARGET_SPEED
-Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP = 0.34
+Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP = 0.22
 Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CRESTDIP = 0.28
 Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CHICANE = 0.32
 Constants.TARGET_ENTRY_ORIENTATION_SNAP_ENABLED = true  -- snap yaw upright toward local path direction when normalizing entry state
 Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED = true -- clamp extreme angular/vertical spikes inside target sector to reduce physics-only flake
 Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED = 16
 Constants.TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED = 60
+Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED = 7
+Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED = 28
+Constants.RAMPJUMP_RECOVERY_TIME = 1.25 -- keep post-landing stabilization alive briefly after target-sector exit
+Constants.RAMPJUMP_RECOVERY_SPEED_FACTOR = 0.24 -- cap recovery-speed in the first downstream straight after a ramp landing
+Constants.RAMPJUMP_RECOVERY_MAX_ANGULAR_SPEED = 4.5
+Constants.RAMPJUMP_RECOVERY_MAX_VERTICAL_SPEED = 18
 
 -- Lap timing
 Constants.LAP_TIMEOUT = 60          -- seconds before a run is declared system_failure (phase 14: more headroom at extreme difficulty)
@@ -117,7 +139,8 @@ Constants.BRAKE_SPEED_DELTA = -10   -- legacy medium-brake alias
 
 -- RampJump integrity thresholds
 Constants.RAMPJUMP_MIN_GAP = 2              -- studs
-Constants.RAMPJUMP_MIN_AIR_DISTANCE = 4.5   -- stable sector-2 jumps land around ~5 studs of clean airtime with the current verifier
+Constants.RAMPJUMP_MIN_AIR_DISTANCE = 2.0   -- retained as telemetry guidance only; Phase 16 no longer requires dramatic airtime for a playable ramp
+Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT = 1.5 -- low-risk ramps should still visibly lift the car above the flat road
 Constants.RAMPJUMP_REACQUIRE_MAX = 12       -- studs after landing (phase 14: tightened from 20)
 
 -- Chicane integrity thresholds

@@ -33,10 +33,10 @@ LevelMappings.NUMERIC_LEVERS = {
 -- Min/max bounds per lever. Applied as a hard clamp after LLM output.
 LevelMappings.LEVER_BOUNDS = {
 	RampJump = {
-		ramp_angle     = { min = 5,  max = 60  },
-		ramp_length    = { min = 4,  max = 40  },
-		gap_length     = { min = 2,  max = 40  },
-		landing_length = { min = 4,  max = 40  },
+		ramp_angle     = { min = 3,  max = 14  },
+		ramp_length    = { min = 18, max = 32  },
+		gap_length     = { min = 2,  max = 6   },
+		landing_length = { min = 24, max = 48  },
 	},
 	Chicane = {
 		amplitude        = { min = 2,  max = 24  },
@@ -53,10 +53,10 @@ LevelMappings.LEVER_BOUNDS = {
 -- Default parameter values per mechanic (initial proposal baseline before qualifier biasing)
 LevelMappings.DEFAULTS = {
 	RampJump = {
-		ramp_angle      = 9,
-		ramp_length     = 18,
-		gap_length      = 6,
-		landing_length  = 26,
+		ramp_angle      = 4,
+		ramp_length     = 24,
+		gap_length      = 2,
+		landing_length  = 34,
 	},
 	Chicane = {
 		amplitude          = 5,

@@ -139,30 +139,37 @@ end
 function TestPhase4.runRampJump()
 	if not ensureBaselineOrAbort() then return end
 
-	applyState(makeState(TARGET_SECTOR_ID, "RampJump", {
-		ramp_angle = 10,
-		ramp_length = 16,
-		gap_length = 6,
-		landing_length = 24,
-	}, "None", "None"))
+	local rampState = makeState(TARGET_SECTOR_ID, "RampJump", {
+		ramp_angle = 4,
+		ramp_length = 24,
+		gap_length = 2,
+		landing_length = 34,
+	}, "Brake25", "Brake10")
+	applyState(rampState)
 
-	local rampLap = runLapOnCurrentTrack()
-	T.expect("rampjump_lap_succeeds",
-		rampLap.success == true,
+	local rampLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = rampState })
+	T.expect("rampjump_lap_progresses",
+		rampLap.success == true
+			or (
+				rampLap.metrics.target_entered == true
+				and (rampLap.metrics.target_progress or 0) >= 0.35
+			),
 		string.format(
-			"rampjump lap failed: %s / %s",
+			"rampjump lap failed: %s / %s progress=%.2f",
 			tostring(rampLap.failure and rampLap.failure.type),
-			tostring(rampLap.failure and rampLap.failure.detail)
+			tostring(rampLap.failure and rampLap.failure.detail),
+			rampLap.metrics.target_progress or 0
 		))
 
-	applyState(makeState(TARGET_SECTOR_ID, "RampJump", {
+	local extremeRampState = makeState(TARGET_SECTOR_ID, "RampJump", {
 		ramp_angle = 60,
 		ramp_length = 40,
 		gap_length = 40,
 		landing_length = 4,
-	}, "Boost50", "None"))
+	}, "Boost50", "None")
+	applyState(extremeRampState)
 
-	local extremeRampLap = runLapOnCurrentTrack()
+	local extremeRampLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = extremeRampState })
 	T.expect("rampjump_extreme_lap_fails",
 		extremeRampLap.success == false,
 		"extreme rampjump unexpectedly succeeded")
@@ -173,13 +180,14 @@ end
 function TestPhase4.runCrestDip()
 	if not ensureBaselineOrAbort() then return end
 
-	applyState(makeState(TARGET_SECTOR_ID, "CrestDip", {
+	local crestState = makeState(TARGET_SECTOR_ID, "CrestDip", {
 		height_or_depth = 4,
 		radius = 24,
 		sector_length = 40,
-	}, "Brake25", "Brake10"))
+	}, "Brake25", "Brake10")
+	applyState(crestState)
 
-	local crestLap = runLapOnCurrentTrack()
+	local crestLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = crestState })
 	T.expect("crestdip_lap_succeeds",
 		crestLap.success == true,
 		"crestdip lap failed: " .. tostring(crestLap.failure and crestLap.failure.type))

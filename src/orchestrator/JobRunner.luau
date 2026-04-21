@@ -285,6 +285,14 @@ local function parseSlashCommand(normalized: string): (string?, string?)
 	return command, rest
 end
 
+local function activeDemoReason(targetCommand: string?): string
+	local preset = CameraDemo.activePreset()
+	if targetCommand and targetCommand ~= "" then
+		return string.format("demo '%s' is running; stop it before %s", preset, targetCommand)
+	end
+	return string.format("demo '%s' is running; use /demo %s to toggle it off", preset, preset)
+end
+
 -- Submit a plain-text request.  Returns false + reason if rejected without running.
 function JobRunner.submit(rawText: string): (boolean, string?)
 	local sm = JobStateMachine.new()
@@ -294,21 +302,28 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	local slashCommand, slashArg = parseSlashCommand(lowered)
 
 	if slashCommand == "demo" then
-		if slashArg == "camera" then
+		if slashArg == "camera" or slashArg == "rampitup" then
 			if CameraDemo.isActive() then
-				return CameraDemo.stop()
+				if CameraDemo.activePreset() == slashArg then
+					return CameraDemo.stop()
+				end
+				local activePreset = CameraDemo.activePreset()
+				local reason = string.format("demo '%s' is running; stop it before /demo %s", activePreset, slashArg)
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			if JobLock.isHeld() then
 				UIState.rejectRequest(rawText, "track is busy; try again shortly")
 				return false, "track is busy; try again shortly"
 			end
-			return CameraDemo.start()
+			return CameraDemo.start({ preset = slashArg })
 		end
 
 		if slashArg == "crest" then
 			if CameraDemo.isActive() then
-				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo crest")
-				return false, "camera demo is running; toggle it off before /demo crest"
+				local reason = activeDemoReason("/demo crest")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			if JobLock.isHeld() then
 				UIState.rejectRequest(rawText, "track is busy; try again shortly")
@@ -319,8 +334,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		if slashArg == "maximize" then
 			if CameraDemo.isActive() then
-				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo maximize")
-				return false, "camera demo is running; toggle it off before /demo maximize"
+				local reason = activeDemoReason("/demo maximize")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			if MaximizerAgent.isActive() then
 				UIState.rejectRequest(rawText, "maximizer already running")
@@ -338,8 +354,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		if slashArg == "endurance" then
 			if CameraDemo.isActive() then
-				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo endurance")
-				return false, "camera demo is running; toggle it off before /demo endurance"
+				local reason = activeDemoReason("/demo endurance")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			if OrchestratorAgent.isActive() then
 				UIState.rejectRequest(rawText, "endurance mode already running")
@@ -365,8 +382,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		if slashArg == "extreme" then
 			if CameraDemo.isActive() then
-				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo extreme")
-				return false, "camera demo is running; toggle it off before /demo extreme"
+				local reason = activeDemoReason("/demo extreme")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			-- Toggle off: restore prior states
 			if _extremeDemoActive then
@@ -470,8 +488,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		if slashArg == "hotfix" then
 			if CameraDemo.isActive() then
-				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo hotfix")
-				return false, "camera demo is running; toggle it off before /demo hotfix"
+				local reason = activeDemoReason("/demo hotfix")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
 			end
 			if JobLock.isHeld() then
 				UIState.rejectRequest(rawText, "track is busy; try again shortly")
@@ -508,8 +527,8 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return true, nil
 		end
 
-		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix")
-		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix"
+		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo rampitup, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix")
+		return false, "unknown demo; supported: /demo camera, /demo rampitup, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix"
 	end
 
 	if slashCommand == "llm" then
@@ -543,8 +562,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return false, "test name missing; use /test <suite>"
 		end
 		if CameraDemo.isActive() then
-			UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /test")
-			return false, "camera demo is running; toggle it off before /test"
+			local reason = activeDemoReason("/test")
+			UIState.rejectRequest(rawText, reason)
+			return false, reason
 		end
 		if JobLock.isHeld() then
 			UIState.rejectRequest(rawText, "track is busy; try again shortly")
@@ -574,8 +594,9 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	end
 
 	if CameraDemo.isActive() then
-		UIState.rejectRequest(rawText, "camera demo is running; use /demo camera to toggle it off")
-		return false, "camera demo is running; use /demo camera to toggle it off"
+		local reason = activeDemoReason(nil)
+		UIState.rejectRequest(rawText, reason)
+		return false, reason
 	end
 
 	if OrchestratorAgent.isActive() and not _allowEnduranceInternalSubmit then

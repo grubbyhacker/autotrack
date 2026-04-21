@@ -207,8 +207,11 @@ The in-experience HUD command bar supports a small slash-command surface for con
 Current supported demo commands:
 
 - `/demo camera`
+- `/demo rampitup`
 
-`/demo camera` toggles the camera demo on and off. It exists to help evaluate spectator-camera behavior without changing the normal boot workflow. The current camera demo loops repeated `RampJump` obstacles in sectors `3` and `7`.
+`/demo camera` toggles the default camera demo on and off. It exists to help evaluate spectator-camera behavior without changing the normal boot workflow. The default camera demo loops playable `RampJump` obstacles in sectors `3` and `7`.
+
+`/demo rampitup` toggles a dedicated ramp demo on and off. It applies playable `RampJump` obstacles in sectors `3` and `8` so two working ramps can be observed in the same loop.
 
 `/test <suite>` is allowed as a **session-local convenience shortcut** into the existing server-side suite dispatcher. It must reuse the same suite names handled by `src/orchestrator/TestDispatcher.luau`.
 
