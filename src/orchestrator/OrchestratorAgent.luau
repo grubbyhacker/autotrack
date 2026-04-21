@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
+local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
@@ -346,6 +347,10 @@ function OrchestratorAgent.run(args): (boolean, string?)
 	local deps = (args and args.deps) or defaultDeps()
 
 	_active = true
+	local traceRunId = LLMTraceJournal.beginRun({
+		owner = "orchestrator_agent",
+		mode = "endurance",
+	})
 	UIState.setEnduranceActive(true, Constants.ENDURANCE_ATTEMPT_BUDGET)
 	UIState.setEnduranceAttemptBudget(0, Constants.ENDURANCE_ATTEMPT_BUDGET)
 	UIState.setEnduranceLapCount(0)
@@ -519,11 +524,21 @@ function OrchestratorAgent.run(args): (boolean, string?)
 	_active = false
 
 	if not ok then
+		LLMTraceJournal.finishRun({
+			outcome = "system_failure",
+			run_id = traceRunId,
+			error = tostring(runOk),
+		})
 		UIState.setError("endurance failure: " .. tostring(runOk))
 		Tracer.log("endurance_error " .. tostring(runOk))
 		return false, tostring(runOk)
 	end
 
+	LLMTraceJournal.finishRun({
+		outcome = if runOk == true then "completed" else "failed",
+		run_id = traceRunId,
+		error = if runOk == true then nil else tostring(runReason),
+	})
 	if runOk ~= true then
 		UIState.setError("endurance failure: " .. tostring(runReason))
 		Tracer.log("endurance_error " .. tostring(runReason))

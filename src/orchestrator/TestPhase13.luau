@@ -9,10 +9,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local T = require(script.Parent.TestUtils)
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
+local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local JobRunner = require(script.Parent.JobRunner)
+local TestSession = require(script.Parent.TestSession)
+local TestPhase17 = require(script.Parent.TestPhase17)
 local UIState = require(script.Parent.UIState)
 
 local TestPhase13 = {}
@@ -57,6 +60,31 @@ local function fakePacket(request, state, attemptIndex)
 		},
 		diagnostics = { failure_sector = state.sector_id, hints = {} },
 		legal_actions = { numeric_levers = { "amplitude" }, pads = {} },
+	}
+end
+
+local function makeOrchestratorContext()
+	return {
+		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+		sector_states = {
+			[2] = { mechanic = nil, params = {}, score = 0 },
+			[3] = { mechanic = nil, params = {}, score = 0 },
+			[4] = { mechanic = nil, params = {}, score = 0 },
+			[7] = { mechanic = nil, params = {}, score = 0 },
+			[8] = { mechanic = nil, params = {}, score = 0 },
+			[9] = { mechanic = nil, params = {}, score = 0 },
+		},
+		budget = { used = 0.1, over_budget = false },
+		attempt_budget = { used = 0, total = 8 },
+		last_result = nil,
+		attempt_history = {},
+		sector_attempt_counts = {},
+		mechanic_repeat_pressure = {},
+		track_intent = {
+			target_total_score = 0,
+			target_budget_used = 0.1,
+			diversity_pressure = {},
+		},
 	}
 end
 
@@ -271,6 +299,149 @@ function TestPhase13.runUnit()
 	T.expect("llm_propose_error_string", type(propErr) == "string" and propErr ~= "")
 	local _, _, _, repErr = LLMAdapter.repair(fakePacket(request, state, 0), {})
 	T.expect("llm_repair_error_string", type(repErr) == "string" and repErr ~= "")
+	LLMAdapter.useMockProvider()
+
+	-- 15: trace journal captures mixed calls in one ordered run and exports via /test suite
+	LLMTraceJournal.clearForTests()
+	LLMTraceJournal.beginRun({
+		owner = "phase13_test",
+		mode = "unit",
+	})
+	LLMAdapter.setProvider("trace-shim", {
+		propose = function()
+			return HttpService:JSONEncode(makeState(3, "Chicane", { amplitude = 7, transition_length = 15, corridor_width = 16 }))
+		end,
+		repair = function()
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 9 },
+				explanation = "widen path",
+			})
+		end,
+		orchestrate = function()
+			return HttpService:JSONEncode({
+				sector_id = 3,
+				mechanic = "Chicane",
+				params_hint = "gentle wide",
+				rationale = "spread risk",
+			})
+		end,
+	})
+	local traceRequest = makeRequest(3, "Chicane")
+	local traceState = makeState(3, "Chicane", { amplitude = 6, transition_length = 15, corridor_width = 14 })
+	local tracePacket = fakePacket(traceRequest, traceState, 0)
+	local _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local _, proposeTraceErr = LLMAdapter.propose(traceRequest)
+	local _, _, _, repairTraceErr = LLMAdapter.repair(tracePacket, {})
+	T.expect("llm_trace_seed_calls_succeeded",
+		orchestrateErr == nil and proposeTraceErr == nil and repairTraceErr == nil,
+		tostring(orchestrateErr or proposeTraceErr or repairTraceErr))
+
+	LLMAdapter.setProvider("trace-error-shim", {
+		propose = function()
+			error("trace export backend failure")
+		end,
+		repair = function()
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 8 },
+				explanation = "noop",
+			})
+		end,
+		orchestrate = function()
+			return HttpService:JSONEncode({ action = "begin_loop" })
+		end,
+	})
+	local _, traceError = LLMAdapter.propose(traceRequest)
+	T.expect("llm_trace_error_string_present", type(traceError) == "string" and traceError ~= "")
+	LLMTraceJournal.finishRun({
+		outcome = "phase13_unit_trace_seed",
+	})
+
+	TestPhase17.runExport()
+	local exportSnapshot = TestSession.snapshot()
+	local exportPayload = exportSnapshot.payload and exportSnapshot.payload.llm_trace_export or nil
+	local exportEvents = exportPayload and exportPayload.events or {}
+	local ordered = true
+	local sharedRun = exportPayload ~= nil
+	local sawRawResponse = false
+	local sawDecodedResponse = false
+	local sawErrorEvent = false
+	local lastSeq = 0
+
+	for _, event in ipairs(exportEvents) do
+		if event.run_id ~= exportPayload.run_id then
+			sharedRun = false
+		end
+		if type(event.seq) ~= "number" or event.seq <= lastSeq then
+			ordered = false
+		end
+		lastSeq = event.seq or lastSeq
+		if event.direction == "response" and event.payload and event.payload.stage == "raw" then
+			sawRawResponse = true
+		end
+		if event.direction == "response"
+			and event.payload
+			and event.payload.stage == "decoded"
+			and event.payload.raw_response ~= nil
+			and event.payload.decoded_response ~= nil then
+			sawDecodedResponse = true
+		end
+		if event.direction == "error"
+			and event.kind == "propose"
+			and type(event.provider) == "string"
+			and type(event.model) == "string" then
+			sawErrorEvent = true
+		end
+	end
+
+	T.expect("llm_trace_export_has_required_top_level_fields",
+		exportPayload ~= nil
+			and type(exportPayload.run_id) == "string"
+			and type(exportPayload.started_at_ms) == "number"
+			and type(exportPayload.finished_at_ms) == "number"
+			and type(exportPayload.event_count) == "number"
+			and type(exportPayload.events) == "table",
+		HttpService:JSONEncode(exportPayload or {}))
+	T.expect("llm_trace_export_events_monotonic_and_shared_run",
+		ordered and sharedRun and #exportEvents == exportPayload.event_count,
+		HttpService:JSONEncode(exportPayload or {}))
+	T.expect("llm_trace_export_includes_raw_and_decoded_response_payloads",
+		sawRawResponse and sawDecodedResponse,
+		HttpService:JSONEncode(exportPayload or {}))
+	T.expect("llm_trace_export_includes_error_metadata",
+		sawErrorEvent,
+		HttpService:JSONEncode(exportPayload or {}))
+
+	-- 16: retention keeps most recent completed runs only
+	LLMTraceJournal.clearForTests()
+	for runIndex = 1, 4 do
+		LLMTraceJournal.beginRun({
+			owner = "retention_test",
+			mode = "unit",
+			job_id = "job-" .. tostring(runIndex),
+		})
+		LLMTraceJournal.append({
+			role = "proposal",
+			direction = "prompt",
+			provider = "retention",
+			model = "retention",
+			kind = "propose",
+			payload = {
+				run_index = runIndex,
+			},
+		})
+		LLMTraceJournal.finishRun({
+			run_index = runIndex,
+		})
+	end
+
+	local recentRuns = LLMTraceJournal.getRecentRuns()
+	T.expect("llm_trace_retention_keeps_recent_completed_runs",
+		#recentRuns == 3
+			and recentRuns[1].meta.job_id == "job-4"
+			and recentRuns[2].meta.job_id == "job-3"
+			and recentRuns[3].meta.job_id == "job-2",
+		HttpService:JSONEncode(LLMTraceJournal.exportLatestRun() or {}))
+	LLMTraceJournal.clearForTests()
 	LLMAdapter.useMockProvider()
 
 	restoreConfig(saved)

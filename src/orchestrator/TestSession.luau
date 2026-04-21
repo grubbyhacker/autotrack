@@ -1,9 +1,12 @@
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local STATUS_FOLDER_NAME = "AutoTrackTestStatus"
 local LINES_FOLDER_NAME = "Lines"
+local PAYLOAD_VALUE_NAME = "PayloadJson"
 
 local TestSession = {}
+local _payload = nil
 
 local function ensureFolder(name: string, parent: Instance): Folder
 	local existing = parent:FindFirstChild(name)
@@ -33,6 +36,20 @@ local function getLinesFolder(): Folder
 	return ensureFolder(LINES_FOLDER_NAME, getStatusFolder())
 end
 
+local function getPayloadValue(): StringValue
+	local folder = getStatusFolder()
+	local existing = folder:FindFirstChild(PAYLOAD_VALUE_NAME)
+	if existing and existing:IsA("StringValue") then
+		return existing
+	end
+
+	local created = Instance.new("StringValue")
+	created.Name = PAYLOAD_VALUE_NAME
+	created.Value = ""
+	created.Parent = folder
+	return created
+end
+
 local function clearLines()
 	local linesFolder = getLinesFolder()
 	for _, child in ipairs(linesFolder:GetChildren()) do
@@ -51,6 +68,8 @@ end
 function TestSession.beginSuite(suiteName: string)
 	local folder = getStatusFolder()
 	clearLines()
+	_payload = nil
+	getPayloadValue().Value = ""
 
 	folder:SetAttribute("suite", suiteName)
 	folder:SetAttribute("started", true)
@@ -85,6 +104,15 @@ function TestSession.finishSuite(status: string, message: string?)
 	folder:SetAttribute("finished_at", DateTime.now().UnixTimestampMillis)
 end
 
+function TestSession.setPayload(payload)
+	_payload = payload
+	local encoded = ""
+	if payload ~= nil then
+		encoded = HttpService:JSONEncode(payload)
+	end
+	getPayloadValue().Value = encoded
+end
+
 function TestSession.snapshot()
 	local folder = getStatusFolder()
 	local lines = {}
@@ -110,6 +138,7 @@ function TestSession.snapshot()
 		started_at = folder:GetAttribute("started_at") or 0,
 		finished_at = folder:GetAttribute("finished_at") or 0,
 		lines = lines,
+		payload = _payload,
 	}
 end
 

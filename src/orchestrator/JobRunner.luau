@@ -12,6 +12,7 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
+local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
@@ -450,6 +451,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
 	local lowered = string.lower(trimmed)
 	local slashCommand, slashArg = parseSlashCommand(lowered)
+	local traceOwnedByThisJob = false
 
 		if slashCommand == "demo" then
 			if slashArg == "repair" or slashArg == "llmerror" or slashArg == "ui-hotfix" then
@@ -789,6 +791,20 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		sm:transition("Idle")
 		UIState.rejectRequest(rawText, "track is busy; try again shortly")
 		return false, "track is busy; try again shortly"
+	end
+
+	if not _allowEnduranceInternalSubmit then
+		LLMTraceJournal.beginRun({
+			owner = "job_runner",
+			mode = "single_job",
+			job_id = request.request_id,
+			request_id = request.request_id,
+			raw_text = rawText,
+			target_sector_id = request.parsed.sector_id,
+			request_kind = request.parsed.request_kind,
+			mechanic = request.parsed.mechanic,
+		})
+		traceOwnedByThisJob = true
 	end
 
 	local ok, resultOrErr, reason = pcall(function()
@@ -1180,6 +1196,27 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	end)
 
 	JobLock.release()
+	if traceOwnedByThisJob then
+		local latestJob = _lastJob
+		local summary = {
+			outcome = if ok then if resultOrErr then "handled" else "rejected" else "system_failure",
+			request_id = request.request_id,
+			job_id = request.request_id,
+			target_sector_id = request.parsed.sector_id,
+			message = if ok and resultOrErr == false then tostring(reason or resultOrErr) else nil,
+		}
+		if ok and latestJob ~= nil and latestJob.job_id == request.request_id then
+			summary.outcome = latestJob.final_status
+			summary.final_status = latestJob.final_status
+			summary.attempt_count = #latestJob.attempts
+			summary.mechanic = latestJob.working_state and latestJob.working_state.mechanic or nil
+		elseif not ok then
+			summary.message = tostring(resultOrErr)
+		elseif resultOrErr == false then
+			summary.message = tostring(reason)
+		end
+		LLMTraceJournal.finishRun(summary)
+	end
 	if not ok then
 		local err = tostring(resultOrErr)
 		UIState.setBusy(false)

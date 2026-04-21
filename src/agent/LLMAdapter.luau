@@ -19,6 +19,7 @@ local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local OrchestratorPromptBuilder = require(script.Parent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.PromptBuilder)
 local ActionValidator = require(script.Parent.ActionValidator)
+local LLMTraceJournal = require(script.Parent.LLMTraceJournal)
 local MinimalProposer = require(script.Parent.Parent.Orchestrator.MinimalProposer)
 local MinimalOrchestrator = require(script.Parent.Parent.Orchestrator.MinimalOrchestrator)
 local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
@@ -31,6 +32,8 @@ type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
+type LLMTraceRole = Types.LLMTraceRole
+type LLMTraceKind = Types.LLMTraceKind
 
 local LLMAdapter = {}
 
@@ -40,6 +43,76 @@ local _lastExchange = nil
 -- Optional injected provider used by tests (overrides LLMConfig routing).
 local _injectedProvider = nil
 local _injectedProviderName = nil
+
+local function traceRoleForKind(kind: LLMTraceKind): LLMTraceRole
+	if kind == "orchestrate" then
+		return "orchestrator"
+	elseif kind == "repair" then
+		return "repair"
+	end
+	return "proposal"
+end
+
+local function tracePrompt(kind: LLMTraceKind, providerName: string, modelName: string, payload)
+	LLMTraceJournal.append({
+		role = traceRoleForKind(kind),
+		direction = "prompt",
+		provider = providerName,
+		model = modelName,
+		kind = kind,
+		payload = payload,
+	})
+end
+
+local function traceRawResponse(kind: LLMTraceKind, providerName: string, modelName: string, rawResponse)
+	LLMTraceJournal.append({
+		role = traceRoleForKind(kind),
+		direction = "response",
+		provider = providerName,
+		model = modelName,
+		kind = kind,
+		payload = {
+			stage = "raw",
+			raw_response = rawResponse,
+		},
+	})
+end
+
+local function traceDecodedResponse(kind: LLMTraceKind, providerName: string, modelName: string, rawResponse, decodedResponse)
+	LLMTraceJournal.append({
+		role = traceRoleForKind(kind),
+		direction = "response",
+		provider = providerName,
+		model = modelName,
+		kind = kind,
+		payload = {
+			stage = "decoded",
+			raw_response = rawResponse,
+			decoded_response = decodedResponse,
+		},
+	})
+end
+
+local function traceError(kind: LLMTraceKind, providerName: string, modelName: string, stage: string, errorText: string, extraPayload)
+	local payload = {
+		stage = stage,
+		error = errorText,
+	}
+	if type(extraPayload) == "table" then
+		for key, value in pairs(extraPayload) do
+			payload[key] = value
+		end
+	end
+
+	LLMTraceJournal.append({
+		role = traceRoleForKind(kind),
+		direction = "error",
+		provider = providerName,
+		model = modelName,
+		kind = kind,
+		payload = payload,
+	})
+end
 
 local function decodeResponse(raw, kind: string)
 	if type(raw) == "table" then
@@ -186,15 +259,16 @@ end
 
 -- Select the active provider based on current LLMConfig (or injected test provider).
 local function activeProvider()
-	if _injectedProvider then
-		return _injectedProvider, _injectedProviderName or "injected"
-	end
 	local cfg = LLMConfig.get()
+	if _injectedProvider then
+		local injectedName = _injectedProviderName or "injected"
+		return _injectedProvider, injectedName, injectedName, cfg.modelId
+	end
 	if not cfg.enabled or cfg.isHeuristic then
-		return mockProvider(), "mock"
+		return mockProvider(), "mock", "mock", "heuristic"
 	end
 	local OpenRouterProvider = require(script.Parent.OpenRouterProvider)
-	return OpenRouterProvider(cfg.modelId), cfg.modelId
+	return OpenRouterProvider(cfg.modelId), cfg.modelId, "openrouter", cfg.modelId
 end
 
 -- ── Test injection API ───────────────────────────────────────────────────────
@@ -238,9 +312,15 @@ end
 -- ── propose ─────────────────────────────────────────────────────────────────
 
 function LLMAdapter.propose(request: Request): (SectorState?, string?)
-	local provider, providerName = activeProvider()
+	local provider, providerName, traceProvider, traceModel = activeProvider()
 	local systemPrompt = PromptBuilder.systemPrompt()
 	local userPrompt = PromptBuilder.initialProposal(request)
+
+	tracePrompt("propose", traceProvider, traceModel, {
+		system_prompt = systemPrompt,
+		user_prompt = userPrompt,
+		request = request,
+	})
 
 	local ok, rawOrErr = pcall(function()
 		return provider.propose({
@@ -250,39 +330,64 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 		})
 	end)
 	if not ok then
-		return nil, "proposal backend failure: " .. tostring(rawOrErr)
+		local errText = "proposal backend failure: " .. tostring(rawOrErr)
+		traceError("propose", traceProvider, traceModel, "backend", errText)
+		return nil, errText
 	end
+	traceRawResponse("propose", traceProvider, traceModel, rawOrErr)
 
 	local decodeOk, decodedOrErr = pcall(function()
 		return decodeResponse(rawOrErr, "proposal")
 	end)
 	if not decodeOk then
-		return nil, tostring(decodedOrErr)
+		local errText = tostring(decodedOrErr)
+		traceError("propose", traceProvider, traceModel, "decode", errText, {
+			raw_response = rawOrErr,
+		})
+		return nil, errText
 	end
+	traceDecodedResponse("propose", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
 	_lastExchange = {
 		kind = "propose",
 		provider = providerName,
+		model = traceModel,
 		raw_response = rawOrErr,
 		decoded_response = decodedOrErr,
 	}
 
 	local templateState, templateErr = MinimalProposer.initial(request)
 	if not templateState then
-		return nil, "invalid proposal template: " .. tostring(templateErr)
+		local errText = "invalid proposal template: " .. tostring(templateErr)
+		traceError("propose", traceProvider, traceModel, "template_validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, errText
 	end
 
 	local candidate = decodedOrErr
 	if type(candidate) ~= "table" then
-		return nil, "invalid proposal: sector state must be a table"
+		local errText = "invalid proposal: sector state must be a table"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, errText
 	end
 	if candidate.sector_id ~= nil and candidate.sector_id ~= request.parsed.sector_id then
-		return nil, "invalid proposal: sector_id mismatch"
+		local errText = "invalid proposal: sector_id mismatch"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, errText
 	end
 	if request.parsed.request_kind == "Mechanic"
 		and candidate.mechanic ~= nil
 		and candidate.mechanic ~= request.parsed.mechanic then
-		return nil, "invalid proposal: mechanic mismatch"
+		local errText = "invalid proposal: mechanic mismatch"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, errText
 	end
 
 	local state = mergeRepairState(templateState, candidate)
@@ -300,16 +405,30 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 	end
 	local valid, err = ActionValidator.validateSectorState(state)
 	if not valid then
-		return nil, "invalid proposal: " .. tostring(err)
+		local errText = "invalid proposal: " .. tostring(err)
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+			normalized_state = state,
+		})
+		return nil, errText
 	end
 	if request.parsed.request_kind == "Pad" then
 		local side = request.parsed.pad_side
 		local value = request.parsed.pad_value
 		if side == nil or value == nil then
-			return nil, "invalid proposal: pad request missing target"
+			local errText = "invalid proposal: pad request missing target"
+			traceError("propose", traceProvider, traceModel, "validation", errText, {
+				decoded_response = decodedOrErr,
+			})
+			return nil, errText
 		end
 		if state.pads[side] ~= value then
-			return nil, "invalid proposal: pad target mismatch"
+			local errText = "invalid proposal: pad target mismatch"
+			traceError("propose", traceProvider, traceModel, "validation", errText, {
+				decoded_response = decodedOrErr,
+				normalized_state = state,
+			})
+			return nil, errText
 		end
 	end
 
@@ -323,7 +442,7 @@ end
 --   LLM full-state path: (nil, newSectorState, explanation, nil)
 --   error: (nil, nil, nil, errorString)
 function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): (AgentAction?, SectorState?, string?, string?)
-	local provider, providerName = activeProvider()
+	local provider, providerName, traceProvider, traceModel = activeProvider()
 
 	-- Cap history to MAX_HISTORY_DEPTH
 	local cappedHistory = {}
@@ -338,6 +457,13 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 	local systemPrompt = PromptBuilder.systemPrompt()
 	local userPrompt = PromptBuilder.repairStep(packet)
 
+	tracePrompt("repair", traceProvider, traceModel, {
+		system_prompt = systemPrompt,
+		user_prompt = userPrompt,
+		packet = packet,
+		history = cappedHistory,
+	})
+
 	local ok, rawOrErr = pcall(function()
 		return provider.repair({
 			system_prompt = systemPrompt,
@@ -347,19 +473,28 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 		})
 	end)
 	if not ok then
-		return nil, nil, nil, "repair backend failure: " .. tostring(rawOrErr)
+		local errText = "repair backend failure: " .. tostring(rawOrErr)
+		traceError("repair", traceProvider, traceModel, "backend", errText)
+		return nil, nil, nil, errText
 	end
+	traceRawResponse("repair", traceProvider, traceModel, rawOrErr)
 
 	local decodeOk, decodedOrErr = pcall(function()
 		return decodeResponse(rawOrErr, "repair")
 	end)
 	if not decodeOk then
-		return nil, nil, nil, tostring(decodedOrErr)
+		local errText = tostring(decodedOrErr)
+		traceError("repair", traceProvider, traceModel, "decode", errText, {
+			raw_response = rawOrErr,
+		})
+		return nil, nil, nil, errText
 	end
+	traceDecodedResponse("repair", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
 	_lastExchange = {
 		kind = "repair",
 		provider = providerName,
+		model = traceModel,
 		raw_response = rawOrErr,
 		decoded_response = decodedOrErr,
 	}
@@ -384,13 +519,28 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 
 		local valid, verr = ActionValidator.validateSectorState(newState)
 		if not valid then
-			return nil, nil, nil, "invalid LLM repair state: " .. tostring(verr)
+			local errText = "invalid LLM repair state: " .. tostring(verr)
+			traceError("repair", traceProvider, traceModel, "validation", errText, {
+				decoded_response = decodedOrErr,
+				normalized_state = newState,
+			})
+			return nil, nil, nil, errText
 		end
 		if newState.sector_id ~= packet.sector_state.sector_id then
-			return nil, nil, nil, "LLM repair: sector_id mismatch"
+			local errText = "LLM repair: sector_id mismatch"
+			traceError("repair", traceProvider, traceModel, "validation", errText, {
+				decoded_response = decodedOrErr,
+				normalized_state = newState,
+			})
+			return nil, nil, nil, errText
 		end
 		if newState.mechanic ~= packet.sector_state.mechanic then
-			return nil, nil, nil, "LLM repair: mechanic mismatch"
+			local errText = "LLM repair: mechanic mismatch"
+			traceError("repair", traceProvider, traceModel, "validation", errText, {
+				decoded_response = decodedOrErr,
+				normalized_state = newState,
+			})
+			return nil, nil, nil, errText
 		end
 		return nil, newState, explanation, nil
 	end
@@ -399,15 +549,27 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 	local action = decoded.action
 	local explanation = shortenExplanation(decoded.explanation)
 	if action == nil then
-		return nil, nil, nil, "invalid repair: missing action"
+		local errText = "invalid repair: missing action"
+		traceError("repair", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, nil, errText
 	end
 	if explanation == nil then
-		return nil, nil, nil, "invalid repair: explanation must be short non-empty text"
+		local errText = "invalid repair: explanation must be short non-empty text"
+		traceError("repair", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, nil, errText
 	end
 
 	local valid, err = ActionValidator.validateAction(action, packet.sector_state.mechanic)
 	if not valid then
-		return nil, nil, nil, "invalid repair: " .. tostring(err)
+		local errText = "invalid repair: " .. tostring(err)
+		traceError("repair", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, nil, errText
 	end
 
 	return action, nil, explanation, nil
@@ -444,36 +606,60 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 end
 
 function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDecision?, string?)
-	local provider, providerName = activeProvider()
+	local provider, providerName, traceProvider, traceModel = activeProvider()
 	if type(provider.orchestrate) ~= "function" then
-		return nil, "orchestrate backend missing"
+		local errText = "orchestrate backend missing"
+		traceError("orchestrate", traceProvider, traceModel, "backend", errText)
+		return nil, errText
 	end
+
+	local messages = OrchestratorPromptBuilder.messages(context)
+	tracePrompt("orchestrate", traceProvider, traceModel, {
+		context = context,
+		messages = messages,
+	})
 
 	local ok, rawOrErr = pcall(function()
 		return provider.orchestrate({
 			context = context,
-			messages = OrchestratorPromptBuilder.messages(context),
+			messages = messages,
 		})
 	end)
 	if not ok then
-		return nil, "orchestrate backend failure: " .. tostring(rawOrErr)
+		local errText = "orchestrate backend failure: " .. tostring(rawOrErr)
+		traceError("orchestrate", traceProvider, traceModel, "backend", errText)
+		return nil, errText
 	end
+	traceRawResponse("orchestrate", traceProvider, traceModel, rawOrErr)
 
 	local decodeOk, decodedOrErr = pcall(function()
 		return decodeResponse(rawOrErr, "orchestrate")
 	end)
 	if not decodeOk then
-		return nil, tostring(decodedOrErr)
+		local errText = tostring(decodedOrErr)
+		traceError("orchestrate", traceProvider, traceModel, "decode", errText, {
+			raw_response = rawOrErr,
+		})
+		return nil, errText
 	end
+	traceDecodedResponse("orchestrate", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
 	_lastExchange = {
 		kind = "orchestrate",
 		provider = providerName,
+		model = traceModel,
 		raw_response = rawOrErr,
 		decoded_response = decodedOrErr,
 	}
 
-	return validateOrchestratorDecision(decodedOrErr)
+	local decision, err = validateOrchestratorDecision(decodedOrErr)
+	if not decision then
+		traceError("orchestrate", traceProvider, traceModel, "validation", tostring(err), {
+			decoded_response = decodedOrErr,
+		})
+		return nil, err
+	end
+	return decision, nil
 end
 
 return LLMAdapter

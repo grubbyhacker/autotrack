@@ -9,6 +9,7 @@
 bin/
 .wally/
 vendor/
+traces/
 
 # System / OS
 .DS_Store

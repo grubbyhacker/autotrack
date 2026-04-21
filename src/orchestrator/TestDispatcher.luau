@@ -73,6 +73,8 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase15).run()
 	elseif cmd == "phase16" then
 		require(script.Parent.TestPhase16).run()
+	elseif cmd == "llm_trace_export" then
+		require(script.Parent.TestPhase17).runExport()
 	else
 		local unknownLine = "[TEST FAIL: unknown_suite] " .. tostring(cmd)
 		print(unknownLine)

@@ -1,10 +1,17 @@
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
 local PLUGIN_NAME = "AutoTrackTestBridge"
 local SETTINGS_KEY_ENABLED = "bridge_enabled"
 local DEFAULT_BASE_URL = "http://127.0.0.1:8765"
 local DEFAULT_POLL_SECONDS = 1
+local BRIDGE_EXPORT_REQUEST_ATTR = "AutoTrack_BridgeExportLLMTraceRequestId"
+local BRIDGE_EXPORT_RESULT_ATTR = "AutoTrack_BridgeExportLLMTraceResultId"
+local BRIDGE_EXPORT_ERROR_ATTR = "AutoTrack_BridgeExportLLMTraceError"
+local TEST_STATUS_FOLDER_NAME = "AutoTrackTestStatus"
+local TEST_STATUS_PAYLOAD_NAME = "PayloadJson"
 
 local toolbar = plugin:CreateToolbar("AutoTrack")
 local toggleButton = toolbar:CreateButton(
@@ -53,6 +60,7 @@ local function buildFallbackResult(command, errText: string)
 		id = command.id,
 		suite = command.suite,
 		boot_mode = command.boot_mode,
+		command_type = command.command_type,
 		status = "error",
 		message = errText,
 		pass_count = 0,
@@ -76,6 +84,7 @@ local function normaliseResult(command, ok: boolean, result)
 	result.id = command.id
 	result.suite = result.suite or command.suite
 	result.boot_mode = result.boot_mode or command.boot_mode
+	result.command_type = result.command_type or command.command_type
 	result.lines = result.lines or {}
 	result.pass_count = result.pass_count or 0
 	result.fail_count = result.fail_count or 0
@@ -85,18 +94,127 @@ local function normaliseResult(command, ok: boolean, result)
 	return result
 end
 
+local function buildExportResult(command, exportPayload, summaryLine: string?)
+	return {
+		id = command.id,
+		suite = command.suite,
+		boot_mode = command.boot_mode,
+		command_type = command.command_type,
+		status = "passed",
+		message = "",
+		pass_count = 1,
+		fail_count = 0,
+		error_count = 0,
+		lines = {
+			summaryLine or "[TRACE EXPORT] live session export complete",
+		},
+		payload = {
+			llm_trace_export = exportPayload,
+		},
+	}
+end
+
+local function readLiveExportPayload()
+	local statusFolder = ReplicatedStorage:FindFirstChild(TEST_STATUS_FOLDER_NAME)
+	if not statusFolder or not statusFolder:IsA("Folder") then
+		return nil, "test status folder missing"
+	end
+
+	local payloadValue = statusFolder:FindFirstChild(TEST_STATUS_PAYLOAD_NAME)
+	if not payloadValue or not payloadValue:IsA("StringValue") then
+		return nil, "trace payload missing"
+	end
+	if payloadValue.Value == "" then
+		return nil, "trace payload empty"
+	end
+
+	local ok, decoded = pcall(function()
+		return HttpService:JSONDecode(payloadValue.Value)
+	end)
+	if not ok then
+		return nil, "trace payload invalid json"
+	end
+
+	local exportPayload = decoded and decoded.llm_trace_export
+	if type(exportPayload) ~= "table" then
+		return nil, "llm_trace_export missing from payload"
+	end
+
+	return exportPayload, nil
+end
+
+local function runLiveLLMTraceExport(command)
+	if not RunService:IsRunning() then
+		return buildFallbackResult(command, "no active Play session for LLM trace export")
+	end
+
+	workspace:SetAttribute(BRIDGE_EXPORT_ERROR_ATTR, "")
+	workspace:SetAttribute(BRIDGE_EXPORT_REQUEST_ATTR, command.id)
+
+	local timeoutSeconds = tonumber(command.suite_seconds) or 30
+	local deadline = os.clock() + timeoutSeconds
+	while os.clock() < deadline do
+		if workspace:GetAttribute(BRIDGE_EXPORT_RESULT_ATTR) == command.id then
+			local errText = workspace:GetAttribute(BRIDGE_EXPORT_ERROR_ATTR)
+			if type(errText) == "string" and errText ~= "" then
+				return buildFallbackResult(command, errText)
+			end
+
+			local exportPayload, payloadErr = readLiveExportPayload()
+			if exportPayload == nil then
+				return buildFallbackResult(command, payloadErr or "llm trace export missing payload")
+			end
+
+			return buildExportResult(
+				command,
+				exportPayload,
+				string.format(
+					"[TRACE EXPORT] run=%s events=%d live_session=true",
+					tostring(exportPayload.run_id),
+					tonumber(exportPayload.event_count) or 0
+				)
+			)
+		end
+
+		task.wait(0.2)
+	end
+
+	return buildFallbackResult(command, "timed out waiting for active-session LLM trace export")
+end
+
+local function isLiveTraceExportCommand(command): boolean
+	return command.command_type == "export_llm_trace"
+		or command.suite == "llm_trace_export"
+		or command.boot_mode == "live_session"
+end
+
 local busy = false
 
 local function executeCommand(command)
 	busy = true
-	local priorSkipBootBaseline = workspace:GetAttribute("AutoTrack_SkipBootBaseline")
-
-	local ok, result = pcall(function()
-		workspace:SetAttribute("AutoTrack_SkipBootBaseline", command.boot_mode == "skip_baseline")
-		return StudioTestService:ExecutePlayModeAsync(command)
-	end)
-
-	workspace:SetAttribute("AutoTrack_SkipBootBaseline", priorSkipBootBaseline)
+	local ok, result
+	if isLiveTraceExportCommand(command) then
+		ok, result = pcall(function()
+			return runLiveLLMTraceExport(command)
+		end)
+	else
+		local priorSkipBootBaseline = workspace:GetAttribute("AutoTrack_SkipBootBaseline")
+		local priorLLMEnabled = workspace:GetAttribute("AutoTrack_LLMEnabled")
+		local priorLLMModel = workspace:GetAttribute("AutoTrack_LLMModel")
+		ok, result = pcall(function()
+			workspace:SetAttribute("AutoTrack_SkipBootBaseline", command.boot_mode == "skip_baseline")
+			if command.command_type == "endurance_trace" then
+				workspace:SetAttribute("AutoTrack_LLMEnabled", command.llm_enabled == true)
+				if type(command.llm_model) == "string" and command.llm_model ~= "" then
+					workspace:SetAttribute("AutoTrack_LLMModel", command.llm_model)
+				end
+			end
+			return StudioTestService:ExecutePlayModeAsync(command)
+		end)
+		workspace:SetAttribute("AutoTrack_SkipBootBaseline", priorSkipBootBaseline)
+		workspace:SetAttribute("AutoTrack_LLMEnabled", priorLLMEnabled)
+		workspace:SetAttribute("AutoTrack_LLMModel", priorLLMModel)
+	end
 
 	local payload = normaliseResult(command, ok, result)
 	local postOk, postErr = pcall(function()

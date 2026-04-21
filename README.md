@@ -24,7 +24,7 @@ Supported v1 mechanics:
 
 ## Project Status
 
-Phase 11 is complete locally. Current implementation includes:
+Phase 17 is complete locally. Current implementation includes:
 
 - track generation and sector state management
 - rollback and full-lap verification
@@ -32,8 +32,10 @@ Phase 11 is complete locally. Current implementation includes:
 - narrow LLM adapter boundary
 - replicated HUD and scoring display
 - local Studio-backed test workflow through `make`
+- server-side LLM trace capture and JSON export
+- automated endurance trace capture for model comparison
 
-See [plans/agent-handoff.md](plans/agent-handoff.md) for the current session history and [plans/phase11.md](plans/phase11.md) for the detailed Phase 11 plan and final scope.
+See [plans/agent-handoff.md](plans/agent-handoff.md) for the current session history and [plans/phase17.md](plans/phase17.md) for the Phase 17 trace/export plan and final scope.
 
 ## Repository Layout
 
@@ -77,14 +79,14 @@ make test-list
 Run a specific suite:
 
 ```sh
-make test TEST=phase11_unit
+make test TEST=phase13_unit
 ```
 
 Direct targets also exist:
 
 ```sh
-make phase11_unit
-make phase11_integration
+make phase13_unit
+make phase13_integration
 ```
 
 Notes:
@@ -92,6 +94,73 @@ Notes:
 - Studio-backed suites run sequentially against one live Studio session
 - Unit-style suites automatically choose `skip_baseline` when configured
 - Integration suites run against the normal baseline boot flow
+
+## LLM Trace Capture
+
+The maintained local workflow for LLM transcript capture is the CLI plus Studio bridge. Full transcripts stay server-side during Play and are exported as JSON on demand.
+
+Export the latest trace from an already running Play session:
+
+```sh
+make export-llm-trace
+```
+
+That command prints raw JSON to stdout, so it is easy to redirect to a file:
+
+```sh
+make export-llm-trace > traces/manual-session.json
+```
+
+For repeatable endurance runs, use the automated one-command workflow:
+
+```sh
+make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma.json
+```
+
+This command:
+
+- starts Play through the maintained Studio bridge
+- enables the LLM backend
+- sets the requested model
+- starts endurance mode automatically
+- waits for the requested duration in seconds
+- exports the latest server-side LLM trace to `OUT`
+- stops the Play session
+
+No HUD interaction is required for `make endurance-trace ...`. You do not need to run `/llm on`, `/llm model ...`, or `/demo endurance` manually.
+
+Recommended usage:
+
+- run one Play session per model to keep traces clean
+- export before stopping Play when using `make export-llm-trace`
+- keep local captures under `traces/` (already gitignored)
+
+Examples:
+
+```sh
+make endurance-trace MODEL=google/gemma-3-4b-it DURATION=90 OUT=traces/endurance-gemma.json
+make endurance-trace MODEL=qwen/qwen-turbo DURATION=90 OUT=traces/endurance-qwen.json
+make endurance-trace MODEL=google/gemini-2.5-flash-lite:nitro DURATION=90 OUT=traces/endurance-gemini-flash-lite.json
+```
+
+The default `DURATION` is `60` seconds if omitted.
+
+To inspect an exported trace as logical LLM calls instead of raw event triples:
+
+```sh
+make inspect-llm-trace TRACE=traces/endurance-gemma.json
+```
+
+That view includes the traced prompt content sent to the model:
+
+- `system` / `user` prompt bodies for proposal and repair calls
+- role-tagged orchestrator message entries for endurance decisions
+
+To include raw response snippets as well:
+
+```sh
+make inspect-llm-trace TRACE=traces/endurance-gemma.json RAW=1
+```
 
 ## Scoring
 
@@ -109,7 +178,7 @@ The canonical explanation of those terms lives in [plans/adr-phase11-scoring-rep
 - [prd_plan.md](prd_plan.md): product requirements, schemas, and architecture
 - [AGENTS.md](AGENTS.md): project rules for coding agents
 - [plans/agent-handoff.md](plans/agent-handoff.md): phase status and lessons learned
-- [plans/phase11.md](plans/phase11.md): current milestone plan and completion notes
+- [plans/phase17.md](plans/phase17.md): current LLM trace/export milestone plan and completion notes
 
 ## License
 

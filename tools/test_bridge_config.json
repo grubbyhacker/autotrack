@@ -53,6 +53,7 @@
     "phase14_sector2_debug": { "boot_mode": "baseline" },
     "phase14_5": { "boot_mode": "skip_baseline" },
     "phase15": { "boot_mode": "skip_baseline" },
-    "phase16": { "boot_mode": "baseline" }
+    "phase16": { "boot_mode": "baseline" },
+    "llm_trace_export": { "boot_mode": "skip_baseline" }
   }
 }

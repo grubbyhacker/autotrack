@@ -237,6 +237,36 @@ export type OrchestratorDecision = {
 	rationale: string?,
 }
 
+export type LLMTraceDirection = "prompt" | "response" | "error"
+export type LLMTraceRole = "orchestrator" | "repair" | "proposal"
+export type LLMTraceKind = "propose" | "repair" | "orchestrate"
+
+export type LLMTraceEvent = {
+	run_id: string,
+	seq: number,
+	timestamp_ms: number,
+	role: LLMTraceRole,
+	direction: LLMTraceDirection,
+	provider: string?,
+	model: string?,
+	kind: LLMTraceKind,
+	payload: { [string]: any },
+}
+
+export type LLMTraceRun = {
+	run_id: string,
+	started_at_ms: number,
+	finished_at_ms: number?,
+	event_count: number,
+	owner: string?,
+	mode: string?,
+	job_id: string?,
+	request_id: string?,
+	meta: { [string]: any }?,
+	summary: { [string]: any }?,
+	events: { LLMTraceEvent },
+}
+
 export type FinalStatus = "committed" | "reverted"
 
 export type CIJob = {

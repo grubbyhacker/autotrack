@@ -24,10 +24,23 @@
 | 14 Retune | Complete — straight-entry recovery plus denser flat guidance restored CrestDip/endurance reliability |
 | 15 | Complete — RampJump continuous entry arc, shared ramp profile, dedicated `phase15` gate |
 | 16 | Complete — RampJump playability retune, `/demo rampitup`, full-lap ramp stabilization, dedicated `phase16` gate |
+| 17 | Complete — server-side LLM trace journal, `llm_trace_export` snapshot export, CLI bridge export command |
 
 ## Current state
 
 - `phase14.5`, `phase15`, and `phase16` are landed and committed.
+- Phase 17 trace observability now lives entirely server-side:
+  - `src/agent/LLMTraceJournal.luau` owns append-only in-memory runs
+  - `src/agent/LLMAdapter.luau` is the only canonical emission point for prompt/response/error events
+  - single jobs begin/end trace runs in `JobRunner.submit`
+  - endurance sessions begin/end one shared run in `OrchestratorAgent.run`
+  - export paths are `/test llm_trace_export` inside a running session and `python tools/autotrack_test_cli.py export-llm-trace` through the localhost bridge
+  - local one-shot endurance capture now exists: `make endurance-trace MODEL=<id> DURATION=<seconds> OUT=traces/<name>.json`
+  - this command sets the model, boots Play, starts endurance automatically, waits, exports the trace, and stops Play without HUD interaction
+  - local inspection now exists: `make inspect-llm-trace TRACE=traces/<name>.json [RAW=1]`
+  - the inspector groups raw journal events into logical LLM calls and shows the model-facing prompt content:
+    - `system` / `user` prompt bodies for proposal and repair calls
+    - role-tagged `messages` content for orchestrator decisions
 - Recent UI cleanup changed HUD semantics materially:
   - repair attempts now live in a dedicated top-edge `REPAIR MODE | ATTEMPT x/y` banner and should only show when `attempt_current > 0`
   - endurance and hotfix are independent left-side badges above `Live`, not overloaded into repair UI
@@ -77,6 +90,11 @@
 - `make test TEST=phase14_sector2_debug`
 - `make test TEST=phase15`
 - `make test TEST=phase16`
+- `make test TEST=phase13_unit`
+- `make test TEST=llm_trace_export`
+- `make export-llm-trace`
+- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/sample.json`
+- `make inspect-llm-trace TRACE=traces/sample.json`
 - `make test TEST=phase4_rampjump`
 - `make test TEST=phase4_5`
 - `make phase4_5_geometry`
@@ -93,6 +111,11 @@
 - When corner-exit feel changes, recheck `phase4_5_speed`; if the car starts sliding again, inspect heading-gated acceleration before retuning raw accel rates.
 - If CrestDip reliability regresses again, inspect straight lead-in speed and waypoint density before expanding mechanic-specific repair logic.
 - For future track-visual work, avoid mixing collision/verifier path, smooth visual overlay, and edge piping in one tweak; visual-only fixes are safer when those stay separate.
+- LLM transcript ownership is intentionally narrow:
+  - do not emit duplicate trace events from `OpenRouterProvider`, UI, or job/orchestrator code
+  - if a future trace feature needs more detail, extend `LLMAdapter` payloads or run metadata first
+  - keep full transcripts off replicated gameplay state; only export through the maintained test/bridge path
+  - apparent duplication inside a trace is usually expected `prompt` + `response(raw)` + `response(decoded)` structure for one call, not duplicate backend requests
 - Two failed visual approaches from this session should not be repeated casually:
   - trimming corner visual shoulders to zero produced V-shaped corners
   - forcing aggressive endpoint trimming/overlap on visible top ribbons exposed spoke-like seams or z-fighting
