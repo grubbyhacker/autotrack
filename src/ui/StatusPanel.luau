@@ -30,13 +30,24 @@ function StatusPanel.setAttempt(current: number, max: number)
 	hud.attemptLabel.Text = ("ATTEMPT %d/%d"):format(current, max)
 end
 
-function StatusPanel.setEndurance(active: boolean, terminal: boolean, lapCount: number, used: number, total: number, hotfixActive: boolean?)
+function StatusPanel.setEndurance(
+	active: boolean,
+	terminal: boolean,
+	lapCount: number,
+	used: number,
+	total: number,
+	hotfixActive: boolean?,
+	objectiveText: string?
+)
 	local hud = refs()
 	if terminal then
 		hud.enduranceLabel.Text = "ENDURANCE TERMINAL"
 		hud.enduranceLabel.TextColor3 = hud.colors.danger
 	elseif active then
 		hud.enduranceLabel.Text = ("ENDURANCE %d/%d  |  LAP %d"):format(used or 0, total or 0, lapCount or 0)
+		if objectiveText ~= nil and objectiveText ~= "" then
+			hud.enduranceLabel.Text ..= "  |  " .. objectiveText
+		end
 		hud.enduranceLabel.TextColor3 = if hotfixActive then hud.colors.danger else hud.colors.amberSoft
 	else
 		hud.enduranceLabel.Text = ""

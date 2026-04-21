@@ -163,6 +163,37 @@ export type AttemptRecord = {
 	hints: { string }?,
 }
 
+export type OrchestratorAttempt = {
+	sector_id: number,
+	mechanic: Mechanic?,
+	params_hint: string?,
+	normalized_signature: string?,
+	outcome: string,
+	score: number?,
+	slowdown_ratio: number?,
+	failure_signature: string?,
+	repair_iterations: number,
+	decision_index: number,
+	timestamp: number,
+}
+
+export type CandidateScore = {
+	base_score_gain: number,
+	track_sustainability: number,
+	novelty_bonus: number,
+	repeat_penalty: number,
+	budget_risk_penalty: number,
+	repair_complexity_penalty: number,
+	total: number,
+	reliability_index: number,
+}
+
+export type OrchestratorTrackIntent = {
+	target_total_score: number,
+	target_budget_used: number,
+	diversity_pressure: { [string]: number },
+}
+
 export type OrchestratorSectorSnapshot = {
 	mechanic: Mechanic?,
 	params: SectorParams,
@@ -192,6 +223,10 @@ export type OrchestratorContext = {
 	budget: OrchestratorBudget,
 	attempt_budget: OrchestratorAttemptBudget,
 	last_result: OrchestratorLastResult?,
+	attempt_history: { OrchestratorAttempt }?,
+	sector_attempt_counts: { [number]: number }?,
+	mechanic_repeat_pressure: { [string]: number }?,
+	track_intent: OrchestratorTrackIntent?,
 }
 
 export type OrchestratorDecision = {
@@ -199,6 +234,7 @@ export type OrchestratorDecision = {
 	sector_id: number?,
 	mechanic: Mechanic?,
 	params_hint: string?,
+	rationale: string?,
 }
 
 export type FinalStatus = "committed" | "reverted"

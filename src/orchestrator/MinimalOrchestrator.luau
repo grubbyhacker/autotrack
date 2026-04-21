@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local EnduranceObjective = require(script.Parent.EnduranceObjective)
 
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
@@ -30,15 +31,26 @@ function MinimalOrchestrator.decide(context: OrchestratorContext): OrchestratorD
 		return { action = "begin_loop" }
 	end
 
+	local fallbackDecision = nil
 	for _, sectorId in ipairs(context.editable_sectors) do
 		if not sectorIsFilled(context, sectorId) then
 			local choice = PLAN[sectorId]
-			return {
+			local decision = {
 				sector_id = sectorId,
 				mechanic = choice.mechanic,
 				params_hint = choice.params_hint,
 			}
+			if fallbackDecision == nil then
+				fallbackDecision = decision
+			end
+			if not EnduranceObjective.shouldAvoidRepeat(context, decision) then
+				return decision
+			end
 		end
+	end
+
+	if fallbackDecision ~= nil then
+		return fallbackDecision
 	end
 
 	return { action = "begin_loop" }

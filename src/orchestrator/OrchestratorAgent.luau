@@ -7,6 +7,7 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
+local EnduranceObjective = require(script.Parent.EnduranceObjective)
 local JobLock = require(script.Parent.JobLock)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local UIState = require(script.Parent.UIState)
@@ -40,6 +41,7 @@ local MECHANIC_WORDS = {
 }
 
 local _active = false
+local MAX_ORCHESTRATOR_HISTORY = 8
 
 local function defaultEnsureBaseline(): (boolean, string?)
 	if workspace:GetAttribute("AutoTrack_BaselineLapDone") == true then
@@ -113,6 +115,9 @@ local function defaultDeps()
 				initialLapCount = initialLapCount,
 			})
 		end,
+		setOrchestratorTelemetry = function(payload)
+			UIState.setOrchestratorTelemetry(payload)
+		end,
 	}
 end
 
@@ -127,7 +132,43 @@ local function budgetUsedFromSlowdown(slowdownRatio: number): number
 	)
 end
 
-local function buildContext(scoresBySector, slowdownRatio: number, attemptBudgetUsed: number, lastResult): OrchestratorContext
+local function copyMap(source)
+	local result = {}
+	if type(source) ~= "table" then
+		return result
+	end
+	for key, value in pairs(source) do
+		result[key] = value
+	end
+	return result
+end
+
+local function scoreTotal(scoresBySector): number
+	local total = 0
+	for _, score in pairs(scoresBySector) do
+		total += score or 0
+	end
+	return total
+end
+
+local function buildTrackIntent(scoresBySector, slowdownRatio: number, repeatPressure)
+	return {
+		target_total_score = scoreTotal(scoresBySector),
+		target_budget_used = budgetUsedFromSlowdown(slowdownRatio),
+		diversity_pressure = copyMap(repeatPressure),
+	}
+end
+
+local function buildContext(
+	scoresBySector,
+	slowdownRatio: number,
+	attemptBudgetUsed: number,
+	lastResult,
+	attemptHistory,
+	sectorAttemptCounts,
+	repeatPressure,
+	trackIntent
+): OrchestratorContext
 	local sectorStates = {}
 	for _, state in ipairs(SectorRegistry.getStraights()) do
 		sectorStates[state.sector_id] = {
@@ -149,6 +190,10 @@ local function buildContext(scoresBySector, slowdownRatio: number, attemptBudget
 			total = Constants.ENDURANCE_ATTEMPT_BUDGET,
 		},
 		last_result = lastResult,
+		attempt_history = attemptHistory,
+		sector_attempt_counts = sectorAttemptCounts,
+		mechanic_repeat_pressure = repeatPressure,
+		track_intent = trackIntent,
 	}
 end
 
@@ -175,6 +220,115 @@ local function buildRequestText(decision: OrchestratorDecision): string
 		return string.format("add an %s %s in sector %d", qualifiers, mechanicWord, decision.sector_id)
 	end
 	return string.format("add a %s in sector %d", mechanicWord, decision.sector_id)
+end
+
+local function buildFailureSignature(result, normalizedSignature: string?): string?
+	if result == nil or result.failure == nil then
+		return nil
+	end
+	local detail = tostring(result.failure.detail or result.failure.type or "failure")
+	if normalizedSignature ~= nil and normalizedSignature ~= "" then
+		return string.format("%s@%s", detail, normalizedSignature)
+	end
+	return detail
+end
+
+local function rebuildSectorAttemptCounts(history)
+	local counts = {}
+	for _, attempt in ipairs(history) do
+		local sectorId = attempt.sector_id
+		if type(sectorId) == "number" then
+			counts[sectorId] = (counts[sectorId] or 0) + 1
+		end
+	end
+	return counts
+end
+
+local function rebuildRepeatPressure(history)
+	local pressure = {}
+	for _, attempt in ipairs(history) do
+		local signature = attempt.normalized_signature
+		if type(signature) == "string" and signature ~= "" then
+			pressure[signature] = (pressure[signature] or 0) + 1
+		end
+	end
+	return pressure
+end
+
+local function formatDecisionSummary(decision: OrchestratorDecision): string
+	if decision.action == "begin_loop" then
+		return "BEGIN LOOP"
+	end
+
+	local summary = string.format("S%d %s", decision.sector_id or 0, tostring(decision.mechanic or ""))
+	local paramsHint = tostring(decision.params_hint or "")
+	if paramsHint ~= "" then
+		summary ..= " | " .. paramsHint
+	end
+	return summary
+end
+
+local function formatLedgerEntry(entry): string
+	local sectorId = entry.sector_id or 0
+	local mechanic = tostring(entry.mechanic or "Flat")
+	local outcome = string.upper(tostring(entry.outcome or "unknown"))
+	if entry.outcome == "committed" then
+		return string.format("#%d S%d %s %s %.1f", entry.decision_index or 0, sectorId, mechanic, outcome, entry.score or 0)
+	end
+	local failure = tostring(entry.failure_signature or "no-failure-signature")
+	return string.format("#%d S%d %s %s %s", entry.decision_index or 0, sectorId, mechanic, outcome, failure)
+end
+
+local function collectLedgerLines(history): { string }
+	local lines = {}
+	for index = 1, math.min(3, #history) do
+		lines[index] = formatLedgerEntry(history[index])
+	end
+	return lines
+end
+
+local function summarizeRepeatPressure(repeatPressure): string
+	local items = {}
+	for signature, count in pairs(repeatPressure) do
+		table.insert(items, { signature = signature, count = count })
+	end
+	table.sort(items, function(left, right)
+		if left.count == right.count then
+			return left.signature < right.signature
+		end
+		return left.count > right.count
+	end)
+
+	local parts = {}
+	for index = 1, math.min(2, #items) do
+		local item = items[index]
+		table.insert(parts, string.format("%s x%d", item.signature, item.count))
+	end
+	return table.concat(parts, " | ")
+end
+
+local function appendAttemptHistory(history, entry)
+	table.insert(history, 1, entry)
+	while #history > MAX_ORCHESTRATOR_HISTORY do
+		table.remove(history)
+	end
+end
+
+local function buildHistoryEntry(decision: OrchestratorDecision, job, result, decisionIndex: number)
+	local normalizedSignature = EnduranceObjective.signature(decision)
+	return {
+		sector_id = decision.sector_id or (job and job.request and job.request.parsed and job.request.parsed.sector_id) or 0,
+		mechanic = decision.mechanic or (job and job.working_state and job.working_state.mechanic) or nil,
+		params_hint = decision.params_hint or "",
+		normalized_signature = normalizedSignature,
+		outcome = job and job.final_status or "unknown",
+		score = result and result.score and result.score.total or nil,
+		slowdown_ratio = result and result.metrics and result.metrics.slowdown_ratio or nil,
+		failure_signature = buildFailureSignature(result, normalizedSignature),
+		repair_iterations = math.max(0, ((job and #job.attempts) or 1) - 1),
+		decision_index = decisionIndex,
+		timestamp = DateTime.now().UnixTimestampMillis,
+	}
 end
 
 function OrchestratorAgent.isActive(): boolean
@@ -209,9 +363,22 @@ function OrchestratorAgent.run(args): (boolean, string?)
 		local slowdownRatio = 1
 		local attemptBudgetUsed = 0
 		local lastResult = nil
+		local attemptHistory = {}
+		local sectorAttemptCounts = {}
+		local repeatPressure = {}
+		local trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
 
 		while attemptBudgetUsed < Constants.ENDURANCE_ATTEMPT_BUDGET do
-			local context = buildContext(scoresBySector, slowdownRatio, attemptBudgetUsed, lastResult)
+			local context = buildContext(
+				scoresBySector,
+				slowdownRatio,
+				attemptBudgetUsed,
+				lastResult,
+				attemptHistory,
+				sectorAttemptCounts,
+				repeatPressure,
+				trackIntent
+			)
 			deps.setPhase(
 				"EnduranceOrchestrate",
 				string.format("Endurance Mode — Orchestrating (%d/%d)", attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
@@ -222,10 +389,60 @@ function OrchestratorAgent.run(args): (boolean, string?)
 			if not decision then
 				return false, orchestrateErr
 			end
+			local decisionIndex = #attemptHistory + 1
+			local objectiveScore = nil
+			local rationale = tostring(decision.rationale or "")
+			if decision.action ~= "begin_loop" then
+				objectiveScore, rationale = EnduranceObjective.evaluateCandidate(context, decision)
+				if decision.rationale ~= nil and decision.rationale ~= "" then
+					rationale = decision.rationale
+				end
+			end
 			if decision.action == "begin_loop" then
+				if deps.setOrchestratorTelemetry then
+					deps.setOrchestratorTelemetry({
+						objective_total = scoreTotal(scoresBySector),
+						budget_target = trackIntent.target_budget_used,
+						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
+						decision_index = decisionIndex,
+						last_decision = "BEGIN LOOP",
+						last_rationale = if rationale ~= "" then rationale else "budget stable; start the live loop",
+						memory_depth = #attemptHistory,
+						repeat_penalties = summarizeRepeatPressure(repeatPressure),
+						failure_signature = if #attemptHistory > 0 then (attemptHistory[1].failure_signature or "") else "",
+						reliability_index = 1,
+						ledger_lines = collectLedgerLines(attemptHistory),
+						track_intent = string.format(
+							"track %.1f | budget %.0f%%",
+							trackIntent.target_total_score or 0,
+							(trackIntent.target_budget_used or 0) * 100
+						),
+					})
+				end
 				deps.appendLog("Orchestrator: begin loop")
 				deps.trace("endurance_begin_loop")
 				break
+			end
+
+			if deps.setOrchestratorTelemetry then
+				deps.setOrchestratorTelemetry({
+					objective_total = objectiveScore and objectiveScore.total or 0,
+					budget_target = trackIntent.target_budget_used,
+					budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
+					decision_index = decisionIndex,
+					last_decision = formatDecisionSummary(decision),
+					last_rationale = rationale,
+					memory_depth = #attemptHistory,
+					repeat_penalties = summarizeRepeatPressure(repeatPressure),
+					failure_signature = "",
+					reliability_index = objectiveScore and objectiveScore.reliability_index or 0,
+					ledger_lines = collectLedgerLines(attemptHistory),
+					track_intent = string.format(
+						"track %.1f | budget %.0f%%",
+						trackIntent.target_total_score or 0,
+						(trackIntent.target_budget_used or 0) * 100
+					),
+				})
 			end
 
 			attemptBudgetUsed += 1
@@ -263,6 +480,31 @@ function OrchestratorAgent.run(args): (boolean, string?)
 					score = success and (scoresBySector[sectorId] or 0) or 0,
 					failure_reason = if success or not result or not result.failure then nil else tostring(result.failure.detail or result.failure.type),
 				}
+				local historyEntry = buildHistoryEntry(decision, job, result, decisionIndex)
+				appendAttemptHistory(attemptHistory, historyEntry)
+				sectorAttemptCounts = rebuildSectorAttemptCounts(attemptHistory)
+				repeatPressure = rebuildRepeatPressure(attemptHistory)
+				trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
+				if deps.setOrchestratorTelemetry then
+					deps.setOrchestratorTelemetry({
+						objective_total = success and (historyEntry.score or 0) or (objectiveScore and objectiveScore.total or 0),
+						budget_target = trackIntent.target_budget_used,
+						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
+						decision_index = decisionIndex,
+						last_decision = formatDecisionSummary(decision),
+						last_rationale = rationale,
+						memory_depth = #attemptHistory,
+						repeat_penalties = summarizeRepeatPressure(repeatPressure),
+						failure_signature = historyEntry.failure_signature or "",
+						reliability_index = objectiveScore and objectiveScore.reliability_index or 0,
+						ledger_lines = collectLedgerLines(attemptHistory),
+						track_intent = string.format(
+							"track %.1f | budget %.0f%%",
+							trackIntent.target_total_score or 0,
+							(trackIntent.target_budget_used or 0) * 100
+						),
+					})
+				end
 			end
 
 			UIState.setBusy(true)

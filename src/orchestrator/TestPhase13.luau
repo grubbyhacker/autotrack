@@ -157,7 +157,7 @@ function TestPhase13.runUnit()
 			return HttpService:JSONEncode({
 				sector_id = 3,
 				mechanic = "RampJump",
-				params = { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 },
+				params = { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 },
 				pads = { ingress = "None", egress = "None" },
 				version = 0,
 			})
@@ -253,7 +253,7 @@ function TestPhase13.runUnit()
 			actionOk == true,
 			"expected Boost50 to pass ActionValidator: " .. tostring(actionErr))
 
-		local stateWithBoost50 = makeState(3, "RampJump", { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 })
+		local stateWithBoost50 = makeState(3, "RampJump", { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 })
 		stateWithBoost50.pads.ingress = "Boost50"
 		local stateOk, stateErr = ActionValidator.validateSectorState(stateWithBoost50)
 		T.expect("boost50_passes_state_validator",

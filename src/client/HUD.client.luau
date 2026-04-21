@@ -23,6 +23,32 @@ local baselineClickConnection = nil
 local llmControlsReady = setLLMConfigEvent ~= nil
 local renderLLMControls
 
+local function percentString(value: number): string
+	return ("%d%%"):format(math.floor((value or 0) * 100 + 0.5))
+end
+
+local function orchestratorActionText(): string
+	local objectiveTotal = stateFolder:GetAttribute("orchestrator_objective_total") or 0
+	local reliability = stateFolder:GetAttribute("orchestrator_reliability_index") or 0
+	local memoryDepth = stateFolder:GetAttribute("orchestrator_memory_depth") or 0
+	local repeatPenalties = stateFolder:GetAttribute("orchestrator_repeat_penalties") or ""
+	local trackIntent = stateFolder:GetAttribute("orchestrator_track_intent") or ""
+
+	local text = string.format(
+		"OBJ %.2f  |  REL %s  |  MEM %d",
+		objectiveTotal,
+		percentString(reliability),
+		memoryDepth
+	)
+	if repeatPenalties ~= "" then
+		text ..= "  |  " .. repeatPenalties
+	end
+	if trackIntent ~= "" then
+		text ..= "  |  " .. trackIntent
+	end
+	return text
+end
+
 local function bindBaselineButton(remoteEvent)
 	if baselineClickConnection then
 		baselineClickConnection:Disconnect()
@@ -154,8 +180,12 @@ local function render()
 
 	StatusPanel.setPhase(stateFolder:GetAttribute("phase_label") or "Ready for request")
 	StatusPanel.setRequestSummary(
-		stateFolder:GetAttribute("request_summary") or "",
-		stateFolder:GetAttribute("request_text") or ""
+		(stateFolder:GetAttribute("endurance_mode_active") == true and (stateFolder:GetAttribute("orchestrator_last_decision") or "") ~= "")
+				and (stateFolder:GetAttribute("orchestrator_last_decision") or "")
+			or (stateFolder:GetAttribute("request_summary") or ""),
+		(stateFolder:GetAttribute("endurance_mode_active") == true and (stateFolder:GetAttribute("request_summary") or "") ~= "")
+				and (stateFolder:GetAttribute("request_summary") or "")
+			or (stateFolder:GetAttribute("request_text") or "")
 	)
 	StatusPanel.setAttempt(
 		stateFolder:GetAttribute("attempt_current") or 0,
@@ -167,14 +197,29 @@ local function render()
 		stateFolder:GetAttribute("endurance_lap_count") or 0,
 		stateFolder:GetAttribute("endurance_attempt_budget_used") or 0,
 		stateFolder:GetAttribute("endurance_attempt_budget_total") or 0,
-		hotfixActive
+		hotfixActive,
+		(stateFolder:GetAttribute("endurance_mode_active") == true)
+				and string.format(
+					"OBJ %.2f  |  HDR %s",
+					stateFolder:GetAttribute("orchestrator_objective_total") or 0,
+					percentString(stateFolder:GetAttribute("orchestrator_budget_headroom") or 0)
+				)
+			or nil
 	)
 	StatusPanel.setRuntimeIdentity(
 		stateFolder:GetAttribute("build_stamp") or "",
 		stateFolder:GetAttribute("controller_profile") or ""
 	)
-	StatusPanel.setExplanation(stateFolder:GetAttribute("explanation") or "")
-	StatusPanel.setRepairAction(stateFolder:GetAttribute("repair_action_text") or "")
+	StatusPanel.setExplanation(
+		((stateFolder:GetAttribute("endurance_mode_active") == true)
+				and (stateFolder:GetAttribute("orchestrator_last_rationale") or ""))
+			or (stateFolder:GetAttribute("explanation") or "")
+	)
+	StatusPanel.setRepairAction(
+		((stateFolder:GetAttribute("endurance_mode_active") == true)
+				and orchestratorActionText())
+			or (stateFolder:GetAttribute("repair_action_text") or "")
+	)
 	StatusPanel.setError(
 		stateFolder:GetAttribute("error_text") or "",
 		stateFolder:GetAttribute("final_status") or "",
@@ -186,7 +231,7 @@ local function render()
 	)
 	syncHotfixPresentation()
 	StatusPanel.setBusy(stateFolder:GetAttribute("busy") == true)
-	StatusPanel.setLogLines({
+	local logLines = {
 		stateFolder:GetAttribute("log_1") or "",
 		stateFolder:GetAttribute("log_2") or "",
 		stateFolder:GetAttribute("log_3") or "",
@@ -195,7 +240,22 @@ local function render()
 		stateFolder:GetAttribute("log_6") or "",
 		stateFolder:GetAttribute("log_7") or "",
 		stateFolder:GetAttribute("log_8") or "",
-	})
+	}
+	if stateFolder:GetAttribute("endurance_mode_active") == true then
+		local ledger3 = stateFolder:GetAttribute("orchestrator_ledger_3") or ""
+		local ledger2 = stateFolder:GetAttribute("orchestrator_ledger_2") or ""
+		local ledger1 = stateFolder:GetAttribute("orchestrator_ledger_1") or ""
+		if ledger3 ~= "" then
+			logLines[6] = ledger3
+		end
+		if ledger2 ~= "" then
+			logLines[7] = ledger2
+		end
+		if ledger1 ~= "" then
+			logLines[8] = ledger1
+		end
+	end
+	StatusPanel.setLogLines(logLines)
 
 	StatsPanel.setBaseline(stateFolder:GetAttribute("baseline_lap_time") or -1)
 	StatsPanel.setLastLapTime(stateFolder:GetAttribute("last_lap_time") or -1)
@@ -279,6 +339,20 @@ local observedAttributes = {
 	"endurance_attempt_budget_total",
 	"build_stamp",
 	"controller_profile",
+	"orchestrator_objective_total",
+	"orchestrator_budget_target",
+	"orchestrator_budget_headroom",
+	"orchestrator_decision_index",
+	"orchestrator_last_decision",
+	"orchestrator_last_rationale",
+	"orchestrator_memory_depth",
+	"orchestrator_repeat_penalties",
+	"orchestrator_failure_signature",
+	"orchestrator_reliability_index",
+	"orchestrator_track_intent",
+	"orchestrator_ledger_1",
+	"orchestrator_ledger_2",
+	"orchestrator_ledger_3",
 }
 
 for _, attributeName in ipairs(observedAttributes) do

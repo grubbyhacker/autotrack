@@ -30,7 +30,7 @@ local function stateCrest(overrides)
 end
 
 local function stateJump(overrides)
-	local params = { ramp_angle = 20, ramp_length = 12, gap_length = 8, landing_length = 12 }
+	local params = { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 }
 	if overrides then
 		for k, v in pairs(overrides) do params[k] = v end
 	end

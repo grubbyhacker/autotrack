@@ -14,6 +14,25 @@ local _stateFolder: Folder? = nil
 local _submitEvent: RemoteEvent? = nil
 local _logs = table.create(LOG_LINES, "")
 
+local function defaultOrchestratorAttributes()
+	return {
+		orchestrator_objective_total = 0,
+		orchestrator_budget_target = 0,
+		orchestrator_budget_headroom = 1,
+		orchestrator_decision_index = 0,
+		orchestrator_last_decision = "",
+		orchestrator_last_rationale = "",
+		orchestrator_memory_depth = 0,
+		orchestrator_repeat_penalties = "",
+		orchestrator_failure_signature = "",
+		orchestrator_reliability_index = 0,
+		orchestrator_track_intent = "",
+		orchestrator_ledger_1 = "",
+		orchestrator_ledger_2 = "",
+		orchestrator_ledger_3 = "",
+	}
+end
+
 local function sectorAttr(sectorId: number, suffix: string): string
 	return string.format("sector_%d_%s", sectorId, suffix)
 end
@@ -130,6 +149,7 @@ function UIState.init(baselineLapTime: number)
 		build_stamp = "",
 		controller_profile = "",
 	})
+	setAttributes(defaultOrchestratorAttributes())
 	setLogs()
 	FailureMarker.hide()
 	SuccessMarker.clear()
@@ -446,6 +466,30 @@ function UIState.setEnduranceAttemptBudget(used: number, total: number)
 	})
 end
 
+function UIState.setOrchestratorTelemetry(payload)
+	local ledgerLines = payload and payload.ledger_lines or {}
+	setAttributes({
+		orchestrator_objective_total = payload and payload.objective_total or 0,
+		orchestrator_budget_target = payload and payload.budget_target or 0,
+		orchestrator_budget_headroom = payload and payload.budget_headroom or 1,
+		orchestrator_decision_index = payload and payload.decision_index or 0,
+		orchestrator_last_decision = payload and payload.last_decision or "",
+		orchestrator_last_rationale = payload and payload.last_rationale or "",
+		orchestrator_memory_depth = payload and payload.memory_depth or 0,
+		orchestrator_repeat_penalties = payload and payload.repeat_penalties or "",
+		orchestrator_failure_signature = payload and payload.failure_signature or "",
+		orchestrator_reliability_index = payload and payload.reliability_index or 0,
+		orchestrator_track_intent = payload and payload.track_intent or "",
+		orchestrator_ledger_1 = ledgerLines[1] or "",
+		orchestrator_ledger_2 = ledgerLines[2] or "",
+		orchestrator_ledger_3 = ledgerLines[3] or "",
+	})
+end
+
+function UIState.clearOrchestratorTelemetry()
+	setAttributes(defaultOrchestratorAttributes())
+end
+
 function UIState.setHotfixActive(active: boolean, sectorId: number?)
 	local values = {
 		endurance_hotfix_active = active == true,
@@ -484,6 +528,7 @@ function UIState.publishReady()
 		attempt_current = 0,
 		current_sector_id = 0,
 	})
+	UIState.clearOrchestratorTelemetry()
 end
 
 return UIState

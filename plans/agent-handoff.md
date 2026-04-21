@@ -55,6 +55,7 @@ Endurance chunks A through E are complete. The straight-entry retune that follow
 
 ## Verification snapshot
 
+- `make test TEST=phase14_5` passes
 - `make test TEST=phase15` passes
 - `make test TEST=phase16` passes
 - `make test TEST=phase4_rampjump` passes
@@ -137,6 +138,11 @@ Latest retune behavior:
   - objective scoring is explicit via `EnduranceObjective.evaluateCandidate(...)`
   - endurance HUD now exposes objective, reliability, memory depth, and a 3-step decision ledger
   - dedicated suite wiring exists at `make test TEST=phase14_5`
+- The current Phase 14.5 file set is the maintained implementation for that slice:
+  - orchestrator policy lives in `OrchestratorAgent`, `MinimalOrchestrator`, and `EnduranceObjective`
+  - prompt/objective context lives in `OrchestratorPromptBuilder`
+  - HUD/state surfacing lives in `UIState`, `HUD.client`, and `StatusPanel`
+  - type/test coverage lives in `Types` and `TestPhase14_5`
 - Closeout validation is complete:
   - `phase14_5` initially failed on a hardcoded budget expectation and blank begin-loop failure telemetry
   - both issues were fixed in code and the suite was rerun to green
