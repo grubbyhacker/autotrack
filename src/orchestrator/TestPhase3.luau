@@ -48,6 +48,18 @@ function TestPhase3.run()
 		"entry_speed=" .. tostring(result.metrics.entry_speed)
 	)
 
+	local settledCar = VerifierCar.getPart()
+	T.expect(
+		"lap_end_linear_velocity_settled",
+		settledCar.AssemblyLinearVelocity.Magnitude <= 0.1,
+		string.format("final linear speed %.3f should be near zero", settledCar.AssemblyLinearVelocity.Magnitude)
+	)
+	T.expect(
+		"lap_end_angular_velocity_settled",
+		settledCar.AssemblyAngularVelocity.Magnitude <= 0.1,
+		string.format("final angular speed %.3f should be near zero", settledCar.AssemblyAngularVelocity.Magnitude)
+	)
+
 	local carMass = VerifierCar.getPart():GetMass()
 	T.expect(
 		"verifiercar_mass_not_toy_light",

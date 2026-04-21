@@ -63,6 +63,7 @@
 - Working objective is still demo reliability over pure physics fidelity.
 - Target-sector entry normalization and recovery assists exist and are mechanic-specific.
 - Non-corner straights currently use stronger yaw/roll damping and forward-heading pinning than corners.
+- `VerifierController.runLap` now explicitly settles the verifier at lap completion (zero linear/angular velocity, align to final heading) so completed laps do not drift or steer off the track after control teardown.
 - RampJump full-lap stability depends on both geometry and verifier behavior:
   - calmer entry normalization
   - airborne heading freeze to ramp/path heading

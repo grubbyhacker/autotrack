@@ -117,34 +117,80 @@ local function getCornerShoulderFractions(sectorId: number?): (number, number)
 	return math.clamp(entryLength / totalLength, 0.05, 0.75), math.clamp(exitLength / totalLength, 0.05, 0.75)
 end
 
-local function cornerProfileTarget(baseSpeed: number, progress: number, sectorId: number?): number
+local function cornerProfileTarget(
+	baseSpeed: number,
+	progress: number,
+	sectorId: number?,
+	previousSectorIsCorner: boolean,
+	nextSectorIsCorner: boolean
+): number
 	local cornerSpeed = math.min(baseSpeed, Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR)
 	if baseSpeed <= cornerSpeed then
 		return baseSpeed
 	end
 
 	local entryFrac, exitFrac = getCornerShoulderFractions(sectorId)
+	local entryBaseSpeed = if previousSectorIsCorner then cornerSpeed else baseSpeed
+	local exitBaseSpeed = if nextSectorIsCorner then cornerSpeed else baseSpeed
 	if progress <= entryFrac then
-		return lerp(baseSpeed, cornerSpeed, progress / entryFrac)
+		return lerp(entryBaseSpeed, cornerSpeed, progress / entryFrac)
 	end
 	if progress >= 1 - exitFrac then
-		return lerp(cornerSpeed, baseSpeed, (progress - (1 - exitFrac)) / exitFrac)
+		return lerp(cornerSpeed, exitBaseSpeed, (progress - (1 - exitFrac)) / exitFrac)
 	end
 	return cornerSpeed
 end
 
-local function cornerSpeedRate(commandedSpeed: number, targetSpeed: number, progress: number, sectorId: number?): number
+local function cornerSpeedRate(
+	commandedSpeed: number,
+	targetSpeed: number,
+	progress: number,
+	sectorId: number?,
+	previousSectorIsCorner: boolean,
+	nextSectorIsCorner: boolean
+): number
 	local entryFrac, exitFrac = getCornerShoulderFractions(sectorId)
-	if targetSpeed < commandedSpeed and progress <= entryFrac then
+	if targetSpeed < commandedSpeed and progress <= entryFrac and not previousSectorIsCorner then
 		return Constants.CORNER_ENTRY_BRAKE_RATE
 	end
-	if targetSpeed > commandedSpeed and progress >= 1 - exitFrac then
+	if targetSpeed > commandedSpeed and progress >= 1 - exitFrac and not nextSectorIsCorner then
 		return Constants.CORNER_EXIT_ACCEL_RATE
 	end
 	if targetSpeed < commandedSpeed then
 		return Constants.CAR_BRAKE_RATE
 	end
 	return Constants.CAR_ACCEL_RATE
+end
+
+local function adjacentCornerFlags(
+	currentSectorId: number?,
+	waypointIndex: number,
+	waypointSectors: { number }?,
+	sectorKinds: { [number]: string }?
+): (boolean, boolean)
+	if currentSectorId == nil or waypointSectors == nil or sectorKinds == nil then
+		return false, false
+	end
+
+	local previousIsCorner = false
+	for index = waypointIndex - 1, 1, -1 do
+		local sectorId = waypointSectors[index]
+		if sectorId ~= currentSectorId then
+			previousIsCorner = sectorKinds[sectorId] == "Corner"
+			break
+		end
+	end
+
+	local nextIsCorner = false
+	for index = waypointIndex + 1, #waypointSectors do
+		local sectorId = waypointSectors[index]
+		if sectorId ~= currentSectorId then
+			nextIsCorner = sectorKinds[sectorId] == "Corner"
+			break
+		end
+	end
+
+	return previousIsCorner, nextIsCorner
 end
 
 local function isPostCornerEditableSector(sectorId: number?): boolean
@@ -403,6 +449,13 @@ local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, a
 	attachment:Destroy()
 	linearVelocity:Destroy()
 	alignOrientation:Destroy()
+end
+
+local function settleCarAtLapEnd(car: BasePart, finalDirection: Vector3)
+	local facing = horizontalDirectionOrFallback(finalDirection, car.CFrame.LookVector)
+	car.AssemblyLinearVelocity = Vector3.zero
+	car.AssemblyAngularVelocity = Vector3.zero
+	car.CFrame = CFrame.lookAt(car.Position, car.Position + facing)
 end
 
 local function cloneNumberMap(source)
@@ -823,6 +876,12 @@ function VerifierController.runLap(
 		local moveDirection = horizontalDirectionOrFallback(pathDirection, waypoints[waypointIndex].LookVector)
 		local segmentDirection = horizontalDirectionOrFallback(segmentEnd - segmentStart, moveDirection)
 		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
+		local previousSectorIsCorner, nextSectorIsCorner = adjacentCornerFlags(
+			currentSectorId,
+			waypointIndex,
+			waypointSectors,
+			sectorKinds
+		)
 		local waypointLookahead = if isCorner then Constants.CORNER_WAYPOINT_LOOKAHEAD else Constants.WAYPOINT_LOOKAHEAD
 		local orientationLookahead = if isCorner then Constants.CORNER_ORIENTATION_LOOKAHEAD else Constants.ORIENTATION_LOOKAHEAD
 		local orientationBlend = if isCorner then Constants.CORNER_ORIENTATION_BLEND else Constants.ORIENTATION_BLEND
@@ -1034,7 +1093,13 @@ function VerifierController.runLap(
 			if currentSectorId == firstSectorId then
 				cornerProgress = math.max(cornerProgress, Constants.CORNER_ENTRY_SHOULDER_FRACTION)
 			end
-			targetSpeed = cornerProfileTarget(targetSpeed, cornerProgress, currentSectorId)
+			targetSpeed = cornerProfileTarget(
+				targetSpeed,
+				cornerProgress,
+				currentSectorId,
+				previousSectorIsCorner,
+				nextSectorIsCorner
+			)
 		elseif currentSectorId == targetSectorId and targetState ~= nil then
 			targetSpeed = mechanicEntryTarget(targetSpeed, sectorProgress, targetState, targetSectorId)
 		elseif currentSectorState ~= nil and currentSectorState.mechanic == "RampJump" then
@@ -1050,7 +1115,14 @@ function VerifierController.runLap(
 		end
 		targetSpeed = math.max(5, targetSpeed)
 		local speedRate = if isCorner
-			then cornerSpeedRate(commandedSpeed, targetSpeed, sectorProgress, currentSectorId)
+			then cornerSpeedRate(
+				commandedSpeed,
+				targetSpeed,
+				sectorProgress,
+				currentSectorId,
+				previousSectorIsCorner,
+				nextSectorIsCorner
+			)
 			elseif targetSpeed < commandedSpeed
 				then Constants.CAR_BRAKE_RATE
 				else Constants.CAR_ACCEL_RATE
@@ -1203,6 +1275,7 @@ function VerifierController.runLap(
 	metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
 	metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
 	metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
+	settleCarAtLapEnd(car, waypoints[#waypoints].LookVector)
 	cleanup(attachment, linearVelocity, alignOrientation)
 
 	return {

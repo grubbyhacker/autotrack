@@ -162,6 +162,7 @@ function TestPhase4_5.runSpeed()
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
 
+	local sectorEntrySpeeds: { [number]: number } = {}
 	local sectorExitSpeeds: { [number]: number } = {}
 	local sector2EntryLocalX = nil
 	local sector2 = nil
@@ -173,8 +174,11 @@ function TestPhase4_5.runSpeed()
 	end
 	assert(sector2 ~= nil, "sector 2 meta missing")
 	local function onSectorChange(id: number, entering: boolean)
-		if entering and id == A_STRAIGHT_ID then
-			sector2EntryLocalX = sector2.entry:PointToObjectSpace(car.Position).X
+		if entering then
+			sectorEntrySpeeds[id] = car.AssemblyLinearVelocity.Magnitude
+			if id == A_STRAIGHT_ID then
+				sector2EntryLocalX = sector2.entry:PointToObjectSpace(car.Position).X
+			end
 		end
 		if not entering then
 			sectorExitSpeeds[id] = car.AssemblyLinearVelocity.Magnitude
@@ -190,6 +194,8 @@ function TestPhase4_5.runSpeed()
 
 	local cornerSpeed = sectorExitSpeeds[CORNER_SECTOR_IDS[1]] or 0
 	local straightSpeed = sectorExitSpeeds[A_STRAIGHT_ID] or 0
+	local sector5ExitSpeed = sectorExitSpeeds[5] or 0
+	local sector6EntrySpeed = sectorEntrySpeeds[6] or 0
 
 	T.expect("corner_exit_speed_recorded", cornerSpeed > 0,
 		string.format("no exit speed recorded for corner sector %d", CORNER_SECTOR_IDS[1]))
@@ -214,6 +220,18 @@ function TestPhase4_5.runSpeed()
 			cornerSpeed,
 			Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR,
 			Constants.CAR_TARGET_SPEED
+		)
+	)
+	T.expect(
+		"consecutive_corner_handoff_stays_slow",
+		sector5ExitSpeed > 0
+			and sector6EntrySpeed > 0
+			and sector5ExitSpeed <= Constants.CAR_TARGET_SPEED * (Constants.CORNER_SPEED_FACTOR + 0.12)
+			and sector6EntrySpeed <= sector5ExitSpeed + 6,
+		string.format(
+			"sector5 exit %.2f and sector6 entry %.2f should stay near continuous corner speed",
+			sector5ExitSpeed,
+			sector6EntrySpeed
 		)
 	)
 	T.expect(
