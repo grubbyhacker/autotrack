@@ -39,8 +39,12 @@ function StatsPanel.setSlowdown(ratio: number)
 	refs().slowdownLabel.Text = ("Slowdown  %+d%%"):format(percent)
 end
 
-function StatsPanel.setCurrentSpeed(speed: number)
-	refs().speedLabel.Text = ("Speed  %.1f"):format(speed or 0)
+function StatsPanel.setCurrentSpeed(speed: number, commandedSpeed: number?, targetSpeed: number?)
+	refs().speedLabel.Text = ("Speed  %.1f  Cmd %.1f  Tgt %.1f"):format(
+		speed or 0,
+		commandedSpeed or 0,
+		targetSpeed or 0
+	)
 end
 
 function StatsPanel.setHeading(deg: number)

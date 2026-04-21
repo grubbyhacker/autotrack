@@ -9,11 +9,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
+local CrestDipPath = require(script.Parent.CrestDipPath)
 
 type SectorState = Types.SectorState
 
 local CrestDipBuilder = {}
-local CURVE_SEGMENTS = 6
 
 local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 	return entryFrame.Position
@@ -66,29 +66,6 @@ local function makeSegment(
 	)
 end
 
-local function makeFlatRunout(
-	name: string,
-	entryFrame: CFrame,
-	startZ: number,
-	length: number,
-	color: BrickColor,
-	parent: Instance
-)
-	if length <= 0 then
-		return
-	end
-
-	local center = worldPoint(entryFrame, Vector3.new(0, 0, startZ + length * 0.5))
-	local cf = CFrame.lookAt(center, center + entryFrame.LookVector)
-	makePart(
-		name,
-		Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length),
-		cf,
-		color,
-		parent
-	)
-end
-
 function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
 	local p = state.params
 	assert(p.height_or_depth, "CrestDipBuilder: missing height_or_depth")
@@ -102,31 +79,27 @@ function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 	local height = p.height_or_depth
 	local folder = getSectorFolder(state.sector_id)
 	local color = BrickColor.new("Medium stone grey")
-	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - p.sector_length) * 0.5)
-
-	makeFlatRunout("EntryFlat", entryFrame, 0, startOffset, color, folder)
-
-	local points = {}
-	for index = 0, CURVE_SEGMENTS do
-		local t = index / CURVE_SEGMENTS
-		local y = height * 0.5 * (1 - math.cos(2 * math.pi * t))
-		table.insert(points, Vector3.new(0, y, startOffset + p.sector_length * t))
-	end
-
+	local points = CrestDipPath.buildLocalCenterlinePoints(height, p.sector_length)
 	local prefix = if height >= 0 then "Crest" else "Dip"
 	for index = 1, #points - 1 do
+		local startPoint = points[index]
+		local endPoint = points[index + 1]
+		local isFlat = math.abs(startPoint.Y) < 1e-4 and math.abs(endPoint.Y) < 1e-4
+		local segmentName = string.format("%s_%02d", prefix, index)
+		if isFlat and index == 1 then
+			segmentName = "EntryFlat"
+		elseif isFlat and index == #points - 1 then
+			segmentName = "ExitFlat"
+		end
 		makeSegment(
-			string.format("%s_%02d", prefix, index),
-			points[index],
-			points[index + 1],
+			segmentName,
+			startPoint,
+			endPoint,
 			entryFrame,
 			color,
 			folder
 		)
 	end
-
-	local exitFlatLength = Constants.STRAIGHT_LENGTH - p.sector_length - startOffset
-	makeFlatRunout("ExitFlat", entryFrame, startOffset + p.sector_length, exitFlatLength, color, folder)
 end
 
 return CrestDipBuilder

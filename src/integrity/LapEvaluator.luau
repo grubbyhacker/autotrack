@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local RampJumpIntegrity = require(script.Parent.RampJumpIntegrity)
 local ChicaneIntegrity  = require(script.Parent.ChicaneIntegrity)
 local CrestDipIntegrity = require(script.Parent.CrestDipIntegrity)
@@ -185,7 +186,8 @@ function LapEvaluator.buildFailurePacket(
 	lastAction: Types.AgentAction?,
 	result: RunResult,
 	failureSector: number,
-	hints: { string }
+	hints: { string },
+	extraDiagnostics
 ): Types.FailurePacket
 	local legalLevers = LevelMappings.NUMERIC_LEVERS[state.mechanic] or {}
 	local diagnosticHints = {}
@@ -207,13 +209,41 @@ function LapEvaluator.buildFailurePacket(
 		end
 	end
 
+	local targetExitSpeed = result.metrics.exit_speed or 0
+	local targetReacquired = result.metrics.target_reacquired
+	if result.failure and result.failure.type == "downstream_failure" then
+		if targetExitSpeed > 0 and targetExitSpeed < Constants.CAR_TARGET_SPEED * 0.75 then
+			table.insert(diagnosticHints, "target sector exit speed too low for downstream")
+		end
+		if targetReacquired == false then
+			table.insert(diagnosticHints, "target sector exit attitude unstable")
+		end
+	end
+
+	local diagnostics = {
+		failure_sector = failureSector,
+		hints = diagnosticHints,
+		failure_type = result.failure and result.failure.type or nil,
+		failure_detail = detail,
+		target_entry_speed = result.metrics.entry_speed,
+		target_exit_speed = result.metrics.exit_speed,
+		target_reacquired = result.metrics.target_reacquired,
+		target_airtime_distance = result.metrics.target_airtime_distance,
+		target_apex_min_speed = result.metrics.target_apex_min_speed,
+	}
+	if type(extraDiagnostics) == "table" then
+		for key, value in pairs(extraDiagnostics) do
+			diagnostics[key] = value
+		end
+	end
+
 	return {
 		request       = request,
 		sector_state  = state,
 		attempt_index = attemptIndex,
 		last_action   = lastAction,
 		run_result    = result,
-		diagnostics   = { failure_sector = failureSector, hints = diagnosticHints },
+		diagnostics   = diagnostics,
 		legal_actions = { numeric_levers = legalLevers, pads = { "ingress", "egress" } },
 	}
 end

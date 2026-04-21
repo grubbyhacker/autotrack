@@ -16,15 +16,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
+local OrchestratorPromptBuilder = require(script.Parent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.PromptBuilder)
 local ActionValidator = require(script.Parent.ActionValidator)
 local MinimalProposer = require(script.Parent.Parent.Orchestrator.MinimalProposer)
+local MinimalOrchestrator = require(script.Parent.Parent.Orchestrator.MinimalOrchestrator)
+local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
 
 type Request = Types.Request
 type SectorState = Types.SectorState
 type AgentAction = Types.AgentAction
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
+type OrchestratorContext = Types.OrchestratorContext
+type OrchestratorDecision = Types.OrchestratorDecision
 
 local LLMAdapter = {}
 
@@ -106,6 +111,37 @@ local function mergeRepairState(currentState: SectorState, candidate): SectorSta
 	return merged
 end
 
+local function isPlainCrestRequest(request: Request): boolean
+	return request.parsed.request_kind == "Mechanic"
+		and request.parsed.mechanic == "CrestDip"
+		and #request.qualifiers == 0
+end
+
+local function isPostCornerEditableSector(sectorId: number): boolean
+	return sectorId == 2 or sectorId == 7
+end
+
+local function normalizeInitialProposalForRequest(request: Request, state: SectorState): SectorState
+	if state.mechanic ~= "CrestDip" then
+		return state
+	end
+
+	local postCornerCrest = isPostCornerEditableSector(request.parsed.sector_id)
+	if isPlainCrestRequest(request) or postCornerCrest then
+		state.params.sector_length = math.min(state.params.sector_length or 30, 30)
+	end
+	if postCornerCrest then
+		state.params.height_or_depth = math.min(state.params.height_or_depth or 5, 5)
+		state.pads.ingress = "Brake25"
+		state.pads.egress = "None"
+	elseif isPlainCrestRequest(request) then
+		state.params.height_or_depth = math.min(state.params.height_or_depth or 5, 5)
+		state.pads.ingress = "Brake50"
+	end
+
+	return state
+end
+
 local function mockProvider()
 	return {
 		propose = function(payload)
@@ -117,6 +153,9 @@ local function mockProvider()
 			local action, explanation, err = MinimalProposer.repair(payload.packet)
 			if not action then error(err) end
 			return HttpService:JSONEncode({ action = action, explanation = explanation })
+		end,
+		orchestrate = function(payload)
+			return HttpService:JSONEncode(MinimalOrchestrator.decide(payload.context))
 		end,
 	}
 end
@@ -204,16 +243,35 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 		decoded_response = decodedOrErr,
 	}
 
-	local state = decodedOrErr
+	local templateState, templateErr = MinimalProposer.initial(request)
+	if not templateState then
+		return nil, "invalid proposal template: " .. tostring(templateErr)
+	end
+
+	local candidate = decodedOrErr
+	if type(candidate) ~= "table" then
+		return nil, "invalid proposal: sector state must be a table"
+	end
+	if candidate.sector_id ~= nil and candidate.sector_id ~= request.parsed.sector_id then
+		return nil, "invalid proposal: sector_id mismatch"
+	end
+	if request.parsed.request_kind == "Mechanic"
+		and candidate.mechanic ~= nil
+		and candidate.mechanic ~= request.parsed.mechanic then
+		return nil, "invalid proposal: mechanic mismatch"
+	end
+
+	local state = mergeRepairState(templateState, candidate)
+	state = normalizeInitialProposalForRequest(request, state)
+	if state.mechanic == "CrestDip" then
+		state.params.height_or_depth, state.params.sector_length = CrestDipTuner.tune(
+			state.params.height_or_depth or 0,
+			state.params.sector_length or 0
+		)
+	end
 	local valid, err = ActionValidator.validateSectorState(state)
 	if not valid then
 		return nil, "invalid proposal: " .. tostring(err)
-	end
-	if state.sector_id ~= request.parsed.sector_id then
-		return nil, "invalid proposal: sector_id mismatch"
-	end
-	if request.parsed.request_kind == "Mechanic" and state.mechanic ~= request.parsed.mechanic then
-		return nil, "invalid proposal: mechanic mismatch"
 	end
 	if request.parsed.request_kind == "Pad" then
 		local side = request.parsed.pad_side
@@ -282,6 +340,12 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 	if decoded.newState ~= nil then
 		-- LLM returned a full SectorState replacement
 		local newState = mergeRepairState(packet.sector_state, decoded.newState)
+		if newState.mechanic == "CrestDip" then
+			newState.params.height_or_depth, newState.params.sector_length = CrestDipTuner.tune(
+				newState.params.height_or_depth or 0,
+				newState.params.sector_length or 0
+			)
+		end
 		local explanation = shortenExplanation(decoded.explanation)
 			or string.format("LLM revised (attempt %d)", packet.attempt_index + 1)
 
@@ -314,6 +378,68 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 	end
 
 	return action, nil, explanation, nil
+end
+
+local EDITABLE_SECTORS = {
+	[2] = true,
+	[3] = true,
+	[4] = true,
+	[7] = true,
+	[8] = true,
+	[9] = true,
+}
+
+local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, string?)
+	if type(decoded) ~= "table" then
+		return nil, "invalid orchestrate response"
+	end
+	if decoded.action == "begin_loop" then
+		return { action = "begin_loop" }, nil
+	end
+	if not EDITABLE_SECTORS[decoded.sector_id] then
+		return nil, "invalid orchestrate response: sector_id must be an editable sector"
+	end
+	if decoded.mechanic ~= "RampJump" and decoded.mechanic ~= "Chicane" and decoded.mechanic ~= "CrestDip" then
+		return nil, "invalid orchestrate response: mechanic missing or unsupported"
+	end
+	return {
+		sector_id = decoded.sector_id,
+		mechanic = decoded.mechanic,
+		params_hint = if type(decoded.params_hint) == "string" then decoded.params_hint else "",
+	}, nil
+end
+
+function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDecision?, string?)
+	local provider, providerName = activeProvider()
+	if type(provider.orchestrate) ~= "function" then
+		return nil, "orchestrate backend missing"
+	end
+
+	local ok, rawOrErr = pcall(function()
+		return provider.orchestrate({
+			context = context,
+			messages = OrchestratorPromptBuilder.messages(context),
+		})
+	end)
+	if not ok then
+		return nil, "orchestrate backend failure: " .. tostring(rawOrErr)
+	end
+
+	local decodeOk, decodedOrErr = pcall(function()
+		return decodeResponse(rawOrErr, "orchestrate")
+	end)
+	if not decodeOk then
+		return nil, tostring(decodedOrErr)
+	end
+
+	_lastExchange = {
+		kind = "orchestrate",
+		provider = providerName,
+		raw_response = rawOrErr,
+		decoded_response = decodedOrErr,
+	}
+
+	return validateOrchestratorDecision(decodedOrErr)
 end
 
 return LLMAdapter

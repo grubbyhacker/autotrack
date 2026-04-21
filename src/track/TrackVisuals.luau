@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local CornerPath = require(script.Parent.CornerPath)
 
 local TrackVisuals = {}
 
@@ -212,6 +213,25 @@ local function addArcRibbon(
 	end
 end
 
+local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material)
+	for index = 2, #points do
+		local p0 = points[index - 1]
+		local p1 = points[index]
+		local chord = p1 - p0
+		local length = math.max(chord.Magnitude + 0.3, 0.8)
+		local mid = p0:Lerp(p1, 0.5) + Vector3.new(0, yOffset, 0)
+		local tangent = chord.Magnitude > 0 and chord.Unit or Vector3.zAxis
+		makeAdornmentPart(
+			parent,
+			string.format("%s_%02d", namePrefix, index - 1),
+			Vector3.new(width, thickness, length),
+			CFrame.lookAt(mid, mid + tangent),
+			color,
+			material
+		)
+	end
+end
+
 function TrackVisuals.getSectorFolder(sectorId)
 	return sectorFolderById(sectorId)
 end
@@ -311,50 +331,21 @@ end
 function TrackVisuals.renderCornerFlatVisuals(visualFolder, cellCFrame, cellSize, entryFrame, exitFrame)
 	clearFolder(visualFolder)
 	TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize)
-
-	local centerlineRadius = Constants.CORNER_RADIUS + Constants.TRACK_WIDTH * 0.5
-	local arcCenter = entryFrame.Position + entryFrame.LookVector:Cross(Vector3.new(0, 1, 0)) * centerlineRadius
-	addArcRibbon(
+	local points = CornerPath.buildWorldCenterlinePoints(
+		entryFrame,
+		exitFrame,
+		visualFolder.Parent:GetAttribute("CornerEntryShoulderLength"),
+		visualFolder.Parent:GetAttribute("CornerExitShoulderLength")
+	)
+	addPathRibbon(
 		visualFolder,
 		"RoadSurface",
-		arcCenter,
-		entryFrame.Position,
-		exitFrame.Position,
-		centerlineRadius,
+		points,
 		Constants.TRACK_WIDTH,
 		ROAD_SURFACE_THICKNESS,
 		ROAD_SURFACE_LIFT,
 		ROAD_COLOR,
-		Enum.Material.Asphalt,
-		10
-	)
-	addArcRibbon(
-		visualFolder,
-		"CornerLineOuter",
-		arcCenter,
-		entryFrame.Position,
-		exitFrame.Position,
-		Constants.CORNER_RADIUS + Constants.TRACK_WIDTH - 0.25,
-		0.2,
-		LINE_THICKNESS,
-		LINE_LIFT,
-		LINE_COLOR,
-		Enum.Material.SmoothPlastic,
-		10
-	)
-	addArcRibbon(
-		visualFolder,
-		"CornerLineInner",
-		arcCenter,
-		entryFrame.Position,
-		exitFrame.Position,
-		Constants.CORNER_RADIUS + 0.25,
-		0.2,
-		LINE_THICKNESS,
-		LINE_LIFT,
-		LINE_COLOR,
-		Enum.Material.SmoothPlastic,
-		10
+		Enum.Material.Asphalt
 	)
 end
 

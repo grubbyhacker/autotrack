@@ -64,9 +64,9 @@ LevelMappings.DEFAULTS = {
 		corridor_width     = 14,
 	},
 	CrestDip = {
-		height_or_depth = 8,
+		height_or_depth = 5,
 		radius          = 20,
-		sector_length   = 30,
+		sector_length   = 34,
 	},
 }
 

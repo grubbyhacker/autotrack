@@ -159,6 +159,8 @@ function ChallengeScore.compute(state: SectorState, metrics: RunMetrics)
 
 	if state.mechanic == "Chicane" and PadValueUtils.kind(state.pads.ingress) == "Brake" then
 		total -= Constants.CHICANE_INGRESS_BRAKE_PENALTY
+	elseif state.mechanic == "CrestDip" and PadValueUtils.kind(state.pads.egress) == "Brake" then
+		total -= Constants.CRESTDIP_EGRESS_BRAKE_PENALTY
 	end
 
 	local slowdown = metrics.slowdown_ratio or 1

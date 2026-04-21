@@ -80,6 +80,11 @@ export type RunMetrics = {
 	target_progress: number?,
 	lap_time: number,
 	slowdown_ratio: number,
+	sector_peak_centerline_distance: { [number]: number }?,
+	sector_peak_signed_lateral: { [number]: number }?,
+	sector_peak_progress: { [number]: number }?,
+	sector_peak_front_distance: { [number]: number }?,
+	sector_peak_body_distance: { [number]: number }?,
 	-- Phase 11 additions (optional, zero-default if MetricCollector unchanged)
 	hang_time: number?,
 	peak_lateral_g: number?,
@@ -125,6 +130,14 @@ export type RunResult = {
 export type Diagnostics = {
 	failure_sector: number,
 	hints: { string },
+	failure_type: FailureType?,
+	failure_detail: string?,
+	target_entry_speed: number?,
+	target_exit_speed: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_apex_min_speed: number?,
+	downstream_sector_state: SectorState?,
 }
 
 export type LegalActions = {
@@ -148,6 +161,44 @@ export type AttemptRecord = {
 	proposed_state: SectorState?,
 	result: RunResult,
 	hints: { string }?,
+}
+
+export type OrchestratorSectorSnapshot = {
+	mechanic: Mechanic?,
+	params: SectorParams,
+	score: number,
+}
+
+export type OrchestratorBudget = {
+	used: number,
+	over_budget: boolean,
+}
+
+export type OrchestratorAttemptBudget = {
+	used: number,
+	total: number,
+}
+
+export type OrchestratorLastResult = {
+	sector_id: number,
+	success: boolean,
+	score: number,
+	failure_reason: string?,
+}
+
+export type OrchestratorContext = {
+	editable_sectors: { number },
+	sector_states: { [number]: OrchestratorSectorSnapshot },
+	budget: OrchestratorBudget,
+	attempt_budget: OrchestratorAttemptBudget,
+	last_result: OrchestratorLastResult?,
+}
+
+export type OrchestratorDecision = {
+	action: "begin_loop"?,
+	sector_id: number?,
+	mechanic: Mechanic?,
+	params_hint: string?,
 }
 
 export type FinalStatus = "committed" | "reverted"

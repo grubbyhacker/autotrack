@@ -8,10 +8,11 @@ local UIState = {}
 
 local STATE_FOLDER_NAME = "AutoTrackUIState"
 local SUBMIT_EVENT_NAME = "AutoTrack_SubmitRequest"
+local LOG_LINES = 8
 
 local _stateFolder: Folder? = nil
 local _submitEvent: RemoteEvent? = nil
-local _logs = { "", "", "", "" }
+local _logs = table.create(LOG_LINES, "")
 
 local function sectorAttr(sectorId: number, suffix: string): string
 	return string.format("sector_%d_%s", sectorId, suffix)
@@ -62,7 +63,7 @@ end
 
 local function setLogs()
 	local folder = ensureStateFolder()
-	for index = 1, 4 do
+	for index = 1, LOG_LINES do
 		folder:SetAttribute(("log_%d"):format(index), _logs[index] or "")
 	end
 end
@@ -77,7 +78,7 @@ end
 function UIState.init(baselineLapTime: number)
 	ensureStateFolder()
 	ensureSubmitEvent()
-	_logs = { "", "", "", "" }
+	_logs = table.create(LOG_LINES, "")
 	setAttributes({
 		phase = "Idle",
 		phase_label = "Ready for request",
@@ -94,9 +95,12 @@ function UIState.init(baselineLapTime: number)
 		last_lap_time = -1,
 		slowdown_ratio = 1,
 		current_speed = 0,
+		current_target_speed = 0,
+		current_commanded_speed = 0,
 		current_heading_deg = 0,
 		current_pitch_deg = 0,
 		current_sector_id = 0,
+		current_sector_kind = "",
 		final_status = "",
 		error_text = "",
 		failure_banner_text = "",
@@ -123,6 +127,8 @@ function UIState.init(baselineLapTime: number)
 		endurance_lap_count = 0,
 		endurance_attempt_budget_used = 0,
 		endurance_attempt_budget_total = 0,
+		build_stamp = "",
+		controller_profile = "",
 	})
 	setLogs()
 	FailureMarker.hide()
@@ -224,7 +230,7 @@ function UIState.hideFailureBanner()
 end
 
 function UIState.resetLogs()
-	_logs = { "", "", "", "" }
+	_logs = table.create(LOG_LINES, "")
 	setLogs()
 end
 
@@ -329,6 +335,13 @@ function UIState.setCurrentSpeed(speed: number)
 	})
 end
 
+function UIState.setSpeedTargets(targetSpeed: number, commandedSpeed: number)
+	setAttributes({
+		current_target_speed = targetSpeed or 0,
+		current_commanded_speed = commandedSpeed or 0,
+	})
+end
+
 function UIState.setCarAttitude(headingDeg: number, pitchDeg: number)
 	setAttributes({
 		current_heading_deg = headingDeg,
@@ -339,6 +352,19 @@ end
 function UIState.setCurrentSector(sectorId: number)
 	setAttributes({
 		current_sector_id = sectorId,
+	})
+end
+
+function UIState.setCurrentSectorKind(kind: string)
+	setAttributes({
+		current_sector_kind = kind or "",
+	})
+end
+
+function UIState.setRuntimeIdentity(buildStamp: string, controllerProfile: string)
+	setAttributes({
+		build_stamp = buildStamp or "",
+		controller_profile = controllerProfile or "",
 	})
 end
 
@@ -400,6 +426,11 @@ end
 function UIState.setEnduranceActive(active: boolean, attemptBudgetTotal: number?)
 	setAttributes({
 		endurance_mode_active = active == true,
+		endurance_terminal = false,
+		endurance_hotfix_active = false,
+		endurance_hotfix_sector = 0,
+		endurance_lap_count = 0,
+		endurance_attempt_budget_used = 0,
 		endurance_attempt_budget_total = attemptBudgetTotal or 0,
 	})
 end
@@ -426,10 +457,12 @@ function UIState.setHotfixActive(active: boolean, sectorId: number?)
 	setAttributes(values)
 end
 
-function UIState.setEnduranceTerminal()
+function UIState.setEnduranceTerminal(sectorId: number?)
 	setAttributes({
 		endurance_terminal = true,
 		endurance_hotfix_active = false,
+		endurance_hotfix_sector = sectorId or 0,
+		busy = false,
 	})
 end
 

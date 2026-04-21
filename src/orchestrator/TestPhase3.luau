@@ -22,10 +22,10 @@ end
 
 local function runFlatLap()
 	local sectors = TrackGenerator.generate()
-	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
+	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
-	return VerifierController.runLap(car, waypoints, waypointSectors, nil, nil)
+	return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, nil)
 end
 
 function TestPhase3.run()
@@ -46,6 +46,13 @@ function TestPhase3.run()
 		"metrics_entry_speed_captured",
 		result.metrics.entry_speed > 0,
 		"entry_speed=" .. tostring(result.metrics.entry_speed)
+	)
+
+	local carMass = VerifierCar.getPart():GetMass()
+	T.expect(
+		"verifiercar_mass_not_toy_light",
+		carMass >= 700,
+		string.format("expected verifier mass >= 700, got %.2f", carMass)
 	)
 
 	VerifierCar.reset(TrackGenerator.canonicalStart())
@@ -69,9 +76,9 @@ function TestPhase3.run()
 	VerifierCar.reset(offTrackStart)
 	local offTrackCar = VerifierCar.getPart()
 	local sectors = TrackGenerator.generate()
-	local waypoints, waypointSectors = TrackGenerator.getLapPath(sectors)
+	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
 	local ok, offTrackResult = pcall(function()
-		return VerifierController.runLap(offTrackCar, waypoints, waypointSectors, nil)
+		return VerifierController.runLap(offTrackCar, waypoints, waypointSectors, sectorKinds, nil)
 	end)
 	T.expect(
 		"failure_off_track_detected",
@@ -162,8 +169,8 @@ function TestPhase3.run()
 			true,
 			Constants.CAR_TARGET_SPEED,
 			Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD + 2,
-			0.6,
-			0.8
+			0.05,
+			-0.4
 		)
 		if tumbleFailure then
 			break
@@ -173,6 +180,30 @@ function TestPhase3.run()
 		"failure_tumble_detected",
 		tumbleFailure ~= nil and tumbleFailure.detail == "tumble",
 		tostring(tumbleFailure and tumbleFailure.detail)
+	)
+
+	FailureDetector.reset()
+	local spinoutFailure = nil
+	for _, elapsed in ipairs({ 0, 0.2, 0.4, 0.6, 0.8, 1.0 }) do
+		spinoutFailure = FailureDetector.check(
+			elapsed,
+			2,
+			Vector3.new(elapsed * 10, 3, 0),
+			Vector3.new(elapsed * 10, 3, 0),
+			false,
+			Constants.CAR_TARGET_SPEED,
+			Constants.SPIN_ANGULAR_SPEED_THRESHOLD + 1.5,
+			1,
+			0.2
+		)
+		if spinoutFailure then
+			break
+		end
+	end
+	T.expect(
+		"failure_spinout_detected",
+		spinoutFailure ~= nil and spinoutFailure.detail == "spinout",
+		tostring(spinoutFailure and spinoutFailure.detail)
 	)
 
 	FailureDetector.reset()

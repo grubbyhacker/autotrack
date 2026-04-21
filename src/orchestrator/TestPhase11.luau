@@ -252,7 +252,28 @@ local function runUnit()
 				slowed.total, base.total))
 	end
 
-	-- 13. A challenging chicane (both sides + lateral G) totals higher than zero metrics.
+	-- 13. CrestDip exit brake is penalized because it harms downstream setup.
+	do
+		local free = ChallengeScore.compute(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
+		)
+		local braked = ChallengeScore.compute(
+			{
+				sector_id = 3,
+				mechanic = "CrestDip",
+				params = { height_or_depth = 6, radius = 20, sector_length = 40 },
+				pads = { ingress = "None", egress = "Brake10" },
+				version = 0,
+			},
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
+		)
+		T.expect("phase11_crestdip_egress_brake_penalized",
+			braked.total < free.total,
+			string.format("expected braked crest score < free crest score; got %.3f vs %.3f", braked.total, free.total))
+	end
+
+	-- 14. A challenging chicane (both sides + lateral G) totals higher than zero metrics.
 	do
 		local s = ChallengeScore.compute(
 			stateChicane({ corridor_width = 14 }),

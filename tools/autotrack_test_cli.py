@@ -13,7 +13,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +126,19 @@ def start_server(config: dict[str, Any], state: BridgeState) -> tuple[ThreadingH
     return server, thread
 
 
+def get_existing_bridge_health(config: dict[str, Any]) -> dict[str, Any] | None:
+    health_url = f"http://{config['listen_host']}:{config['listen_port']}/health"
+    try:
+        with urlopen(health_url, timeout=1.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+
+    if payload.get("ok") is not True:
+        return None
+    return payload
+
+
 def print_suite_list(config: dict[str, Any]) -> int:
     for suite_name in sorted(config["suites"].keys()):
         boot_mode = config["suites"][suite_name]["boot_mode"]
@@ -171,6 +186,26 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
     try:
         server, thread = start_server(config, state)
     except OSError as exc:
+        existing_bridge = get_existing_bridge_health(config)
+        if existing_bridge is not None:
+            plugin_name = existing_bridge.get("plugin_name") or "unknown"
+            result_ready = existing_bridge.get("result_ready") is True
+            command_pending = existing_bridge.get("command_pending") is True
+            if result_ready:
+                status_detail = "an earlier suite already finished but its bridge process is still running"
+            elif command_pending:
+                status_detail = "another bridge-backed suite is queued and waiting for Studio"
+            else:
+                status_detail = "another bridge-backed suite is already running"
+            print(
+                "AutoTrack test bridge already in use on "
+                f"http://{config['listen_host']}:{config['listen_port']} "
+                f"({status_detail}; plugin={plugin_name}). "
+                "Wait for the active suite to finish before starting another.",
+                file=sys.stderr,
+            )
+            return 2
+
         print(f"Failed to bind localhost bridge: {exc}", file=sys.stderr)
         return 2
 

@@ -82,7 +82,32 @@ UIState.setPhase("Boot", "Initializing track...")
 UIState.setBusy(true)
 UIState.appendLog("Boot sequence started")
 UIState.setCurrentSpeed(car.AssemblyLinearVelocity.Magnitude)
+UIState.setSpeedTargets(Constants.CAR_TARGET_SPEED, Constants.CAR_TARGET_SPEED)
 UIState.setCurrentSector(1)
+UIState.setCurrentSectorKind("Corner")
+UIState.setRuntimeIdentity(
+	Constants.BUILD_STAMP,
+	string.format(
+		"corner sf=%.2f in=%.2f out=%.2f",
+		Constants.CORNER_SPEED_FACTOR,
+		Constants.CORNER_ENTRY_SHOULDER_FRACTION,
+		Constants.CORNER_EXIT_SHOULDER_FRACTION
+	)
+)
+UIState.appendLog("Build " .. Constants.BUILD_STAMP)
+UIState.appendLog(string.format(
+	"Controller sf=%.2f in=%.2f out=%.2f",
+	Constants.CORNER_SPEED_FACTOR,
+	Constants.CORNER_ENTRY_SHOULDER_FRACTION,
+	Constants.CORNER_EXIT_SHOULDER_FRACTION
+))
+Tracer.log("build " .. Constants.BUILD_STAMP)
+Tracer.log(string.format(
+	"controller_profile corner_sf=%.2f corner_in=%.2f corner_out=%.2f",
+	Constants.CORNER_SPEED_FACTOR,
+	Constants.CORNER_ENTRY_SHOULDER_FRACTION,
+	Constants.CORNER_EXIT_SHOULDER_FRACTION
+))
 
 task.spawn(function()
 	while true do
@@ -90,12 +115,19 @@ task.spawn(function()
 		local existing = workspace:FindFirstChild("VerifierCar")
 		if existing and existing:IsA("BasePart") then
 			UIState.setCurrentSpeed(existing.AssemblyLinearVelocity.Magnitude)
+			UIState.setSpeedTargets(
+				existing:GetAttribute("AutoTrack_TargetSpeed") or 0,
+				existing:GetAttribute("AutoTrack_CommandedSpeed") or 0
+			)
+			UIState.setCurrentSectorKind(tostring(existing:GetAttribute("AutoTrack_CurrentSectorKind") or ""))
 			local look = existing.CFrame.LookVector
 			local headingDeg = (math.atan2(-look.Z, look.X) * (180 / math.pi) + 360) % 360
 			local pitchDeg = math.asin(math.clamp(look.Y, -1, 1)) * (180 / math.pi)
 			UIState.setCarAttitude(headingDeg, pitchDeg)
 		else
 			UIState.setCurrentSpeed(0)
+			UIState.setSpeedTargets(0, 0)
+			UIState.setCurrentSectorKind("")
 			UIState.setCarAttitude(0, 0)
 		end
 	end
@@ -104,9 +136,74 @@ end)
 local function onSectorChange(id: number, entering: boolean)
 	if entering then
 		UIState.setCurrentSector(id)
-		Tracer.log(string.format("sector_enter %d speed=%.1f", id, car.AssemblyLinearVelocity.Magnitude))
+		Tracer.log(string.format(
+			"sector_enter %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
+			id,
+			car.AssemblyLinearVelocity.Magnitude,
+			car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
+			car:GetAttribute("AutoTrack_TargetSpeed") or 0,
+			tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
+		))
 	else
-		Tracer.log(string.format("sector_exit %d speed=%.1f", id, car.AssemblyLinearVelocity.Magnitude))
+		Tracer.log(string.format(
+			"sector_exit %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
+			id,
+			car.AssemblyLinearVelocity.Magnitude,
+			car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
+			car:GetAttribute("AutoTrack_TargetSpeed") or 0,
+			tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
+		))
+	end
+end
+
+local function logContainmentSummary(metrics)
+	local peaks = metrics and metrics.sector_peak_centerline_distance
+	if type(peaks) ~= "table" then
+		return
+	end
+	for sectorId, peak in pairs(peaks) do
+		Tracer.log(string.format(
+			"lap_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
+			sectorId,
+			peak or 0,
+			(metrics.sector_peak_front_distance and metrics.sector_peak_front_distance[sectorId]) or 0,
+			(metrics.sector_peak_body_distance and metrics.sector_peak_body_distance[sectorId]) or 0,
+			(metrics.sector_peak_signed_lateral and metrics.sector_peak_signed_lateral[sectorId]) or 0,
+			(metrics.sector_peak_progress and metrics.sector_peak_progress[sectorId]) or 0
+		))
+	end
+end
+
+local function appendContainmentSummaryToUI(metrics)
+	local peaks = metrics and metrics.sector_peak_body_distance
+	if type(peaks) ~= "table" then
+		return
+	end
+
+	local ordered = {}
+	for sectorId, peak in pairs(peaks) do
+		table.insert(ordered, {
+			sectorId = sectorId,
+			body = peak or 0,
+			front = (metrics.sector_peak_front_distance and metrics.sector_peak_front_distance[sectorId]) or 0,
+			center = (metrics.sector_peak_centerline_distance and metrics.sector_peak_centerline_distance[sectorId]) or 0,
+			progress = (metrics.sector_peak_progress and metrics.sector_peak_progress[sectorId]) or 0,
+		})
+	end
+	table.sort(ordered, function(a, b)
+		return a.body > b.body
+	end)
+
+	for index = 1, math.min(2, #ordered) do
+		local item = ordered[index]
+		UIState.appendLog(string.format(
+			"Containment S%d body=%.1f front=%.1f center=%.1f @ %.0f%%",
+			item.sectorId,
+			item.body,
+			item.front,
+			item.center,
+			item.progress * 100
+		))
 	end
 end
 
@@ -135,11 +232,15 @@ else
 	if result.success then
 		baselineLapTime = result.metrics.lap_time
 		Tracer.log(string.format("lap_complete %.2f", baselineLapTime))
+		logContainmentSummary(result.metrics)
+		appendContainmentSummaryToUI(result.metrics)
 		print(string.format("[AutoTrack] Baseline lap complete: %.2fs", baselineLapTime))
 		UIState.setBaselineLapTime(baselineLapTime)
 		UIState.setLastLapTime(baselineLapTime)
 		UIState.appendLog(string.format("Baseline lap complete: %.2fs", baselineLapTime))
 	else
+		logContainmentSummary(result.metrics)
+		appendContainmentSummaryToUI(result.metrics)
 		print("[AutoTrack] Baseline lap FAILED: " .. tostring(result.failure and result.failure.type or "unknown"))
 		UIState.appendLog("Baseline lap failed")
 	end

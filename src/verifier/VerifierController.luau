@@ -13,6 +13,7 @@ local ReacquireDetector = require(script.Parent.ReacquireDetector)
 local RampJumpIntegrity = require(script.Parent.Parent.Integrity.RampJumpIntegrity)
 local ChicaneIntegrity = require(script.Parent.Parent.Integrity.ChicaneIntegrity)
 local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegrity)
+local Tracer = require(script.Parent.Parent.Orchestrator.Tracer)
 
 type RunResult = Types.RunResult
 
@@ -20,22 +21,283 @@ local VerifierController = {}
 local TRAIL_POINT_SPACING = 5
 local MAX_TRAIL_POINTS = 8
 
+local function moveTowards(current: number, target: number, maxDelta: number): number
+	if current < target then
+		return math.min(current + maxDelta, target)
+	end
+	return math.max(current - maxDelta, target)
+end
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function flattenHorizontal(vector: Vector3): Vector3
+	return Vector3.new(vector.X, 0, vector.Z)
+end
+
+local function horizontalDirectionOrFallback(primary: Vector3, fallback: Vector3): Vector3
+	local flattened = flattenHorizontal(primary)
+	if flattened.Magnitude > 1e-4 then
+		return flattened.Unit
+	end
+
+	local fallbackFlattened = flattenHorizontal(fallback)
+	if fallbackFlattened.Magnitude > 1e-4 then
+		return fallbackFlattened.Unit
+	end
+
+	return Vector3.zAxis
+end
+
+local function dampTowardsZero(value: number, maxDelta: number): number
+	if value > 0 then
+		return math.max(0, value - maxDelta)
+	end
+	return math.min(0, value + maxDelta)
+end
+
+local function runtimeNumberAttr(name: string, fallback: number): number
+	local value = workspace:GetAttribute(name)
+	if type(value) == "number" then
+		return value
+	end
+	return fallback
+end
+
+local function runtimeBoolAttr(name: string, fallback: boolean): boolean
+	local value = workspace:GetAttribute(name)
+	if type(value) == "boolean" then
+		return value
+	end
+	return fallback
+end
+
+local function buildSectorWaypointRanges(waypointSectors: { number }?): { [number]: { first: number, last: number } }
+	local ranges = {}
+	if waypointSectors == nil then
+		return ranges
+	end
+	for index, sectorId in ipairs(waypointSectors) do
+		local existing = ranges[sectorId]
+		if existing == nil then
+			ranges[sectorId] = { first = index, last = index }
+		else
+			existing.last = index
+		end
+	end
+	return ranges
+end
+
+local function sectorProgressForIndex(rangeInfo, waypointIndex: number, segmentAlpha: number): number
+	if rangeInfo == nil then
+		return 0
+	end
+	local span = math.max(rangeInfo.last - rangeInfo.first, 1)
+	local numerator = math.clamp((waypointIndex - rangeInfo.first) + segmentAlpha, 0, span)
+	return numerator / span
+end
+
+local function getCornerShoulderFractions(sectorId: number?): (number, number)
+	if sectorId == nil then
+		return Constants.CORNER_ENTRY_SHOULDER_FRACTION, Constants.CORNER_EXIT_SHOULDER_FRACTION
+	end
+
+	local track = workspace:FindFirstChild("Track")
+	local folder = track and track:FindFirstChild(string.format("Sector_%02d", sectorId))
+	if not folder then
+		return Constants.CORNER_ENTRY_SHOULDER_FRACTION, Constants.CORNER_EXIT_SHOULDER_FRACTION
+	end
+
+	local entryLength = folder:GetAttribute("CornerEntryShoulderLength") or Constants.CORNER_CORNER_SHOULDER_LENGTH
+	local exitLength = folder:GetAttribute("CornerExitShoulderLength") or Constants.CORNER_CORNER_SHOULDER_LENGTH
+	local coreLength = math.pi * (Constants.CORNER_RADIUS + Constants.TRACK_WIDTH * 0.5) * 0.5
+	local totalLength = math.max(1, entryLength + coreLength + exitLength)
+	return math.clamp(entryLength / totalLength, 0.05, 0.75), math.clamp(exitLength / totalLength, 0.05, 0.75)
+end
+
+local function cornerProfileTarget(baseSpeed: number, progress: number, sectorId: number?): number
+	local cornerSpeed = math.min(baseSpeed, Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR)
+	if baseSpeed <= cornerSpeed then
+		return baseSpeed
+	end
+
+	local entryFrac, exitFrac = getCornerShoulderFractions(sectorId)
+	if progress <= entryFrac then
+		return lerp(baseSpeed, cornerSpeed, progress / entryFrac)
+	end
+	if progress >= 1 - exitFrac then
+		return lerp(cornerSpeed, baseSpeed, (progress - (1 - exitFrac)) / exitFrac)
+	end
+	return cornerSpeed
+end
+
+local function cornerSpeedRate(commandedSpeed: number, targetSpeed: number, progress: number, sectorId: number?): number
+	local entryFrac, exitFrac = getCornerShoulderFractions(sectorId)
+	if targetSpeed < commandedSpeed and progress <= entryFrac then
+		return Constants.CORNER_ENTRY_BRAKE_RATE
+	end
+	if targetSpeed > commandedSpeed and progress >= 1 - exitFrac then
+		return Constants.CORNER_EXIT_ACCEL_RATE
+	end
+	if targetSpeed < commandedSpeed then
+		return Constants.CAR_BRAKE_RATE
+	end
+	return Constants.CAR_ACCEL_RATE
+end
+
+local function isPostCornerEditableSector(sectorId: number?): boolean
+	return sectorId == 2 or sectorId == 7
+end
+
+local function applySuspensionDamping(
+	car: BasePart,
+	controlDt: number,
+	wasAirborne: boolean,
+	isAirborne: boolean,
+	isCorner: boolean
+)
+	local linearVelocity = car.AssemblyLinearVelocity
+	local angularVelocity = car.AssemblyAngularVelocity
+
+	local landingMinDownSpeed = runtimeNumberAttr("AutoTrack_LandingMinDownSpeed", Constants.CAR_LANDING_MIN_DOWN_SPEED)
+	local landingVerticalMultiplier = runtimeNumberAttr("AutoTrack_LandingVerticalMultiplier", Constants.CAR_LANDING_VERTICAL_MULTIPLIER)
+	local landingAngularMultiplier = runtimeNumberAttr("AutoTrack_LandingAngularMultiplier", Constants.CAR_LANDING_ANGULAR_MULTIPLIER)
+	if wasAirborne and not isAirborne and linearVelocity.Y <= -landingMinDownSpeed then
+		linearVelocity = Vector3.new(
+			linearVelocity.X,
+			linearVelocity.Y * landingVerticalMultiplier,
+			linearVelocity.Z
+		)
+		angularVelocity = Vector3.new(
+			angularVelocity.X * landingAngularMultiplier,
+			angularVelocity.Y,
+			angularVelocity.Z * landingAngularMultiplier
+		)
+	end
+
+	local verticalDelta = runtimeNumberAttr(
+		"AutoTrack_SuspensionVerticalDamping",
+		Constants.CAR_SUSPENSION_VERTICAL_DAMPING
+	) * controlDt
+	local angularDelta = runtimeNumberAttr(
+		"AutoTrack_SuspensionAngularDamping",
+		Constants.CAR_SUSPENSION_ANGULAR_DAMPING
+	) * controlDt
+	local yawDamping = if isAirborne
+		then runtimeNumberAttr("AutoTrack_AirborneYawDamping", Constants.CAR_AIRBORNE_YAW_DAMPING)
+		elseif isCorner
+			then runtimeNumberAttr("AutoTrack_CornerYawDamping", Constants.CAR_CORNER_YAW_DAMPING)
+			else runtimeNumberAttr("AutoTrack_StraightYawDamping", Constants.CAR_STRAIGHT_YAW_DAMPING)
+	local yawDelta = yawDamping * controlDt
+	local verticalVelocity = linearVelocity.Y
+	if not isAirborne then
+		verticalVelocity = dampTowardsZero(verticalVelocity, verticalDelta)
+	end
+	car.AssemblyLinearVelocity = Vector3.new(linearVelocity.X, verticalVelocity, linearVelocity.Z)
+	car.AssemblyAngularVelocity = Vector3.new(
+		dampTowardsZero(angularVelocity.X, angularDelta),
+		dampTowardsZero(angularVelocity.Y, yawDelta),
+		dampTowardsZero(angularVelocity.Z, angularDelta)
+	)
+end
+
+local function mechanicLeadInProgress(targetState): number
+	if targetState == nil or targetState.mechanic == nil then
+		return 0
+	end
+
+	if targetState.mechanic == "RampJump" then
+		local params = targetState.params or {}
+		local total = (params.ramp_length or 0) + (params.gap_length or 0) + (params.landing_length or 0)
+		return math.clamp(math.max(0, (Constants.STRAIGHT_LENGTH - total) * 0.5) / Constants.STRAIGHT_LENGTH, 0, 1)
+	end
+
+	if targetState.mechanic == "CrestDip" then
+		local params = targetState.params or {}
+		return math.clamp(math.max(0, (Constants.STRAIGHT_LENGTH - (params.sector_length or 0)) * 0.5) / Constants.STRAIGHT_LENGTH, 0, 1)
+	end
+
+	return 0
+end
+
+local function hasPositiveIngressPad(state): boolean
+	if state == nil or state.pads == nil then
+		return false
+	end
+	return PadValueUtils.speedDelta(tostring(state.pads.ingress or "None")) > 0
+end
+
+local function mechanicEntryTarget(baseSpeed: number, progress: number, targetState, sectorId: number?): number
+	local leadInProgress = mechanicLeadInProgress(targetState)
+	local postCornerSector = isPostCornerEditableSector(sectorId)
+	if leadInProgress <= 0 or progress >= leadInProgress or (hasPositiveIngressPad(targetState) and not postCornerSector) then
+		return baseSpeed
+	end
+
+	local entryFactor = Constants.MECHANIC_ENTRY_SPEED_FACTOR
+	local blendPower = 1
+	if postCornerSector then
+		entryFactor = runtimeNumberAttr(
+			"AutoTrack_PostCornerMechanicEntrySpeedFactor",
+			Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR
+		)
+		blendPower = runtimeNumberAttr(
+			"AutoTrack_PostCornerEntryBlendPower",
+			Constants.POST_CORNER_ENTRY_BLEND_POWER
+		)
+	end
+	if targetState.mechanic == "CrestDip" then
+		entryFactor = if postCornerSector
+			then runtimeNumberAttr(
+				"AutoTrack_PostCornerCrestDipEntrySpeedFactor",
+				Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR
+			)
+			else runtimeNumberAttr(
+				"AutoTrack_CrestDipEntrySpeedFactor",
+				Constants.CRESTDIP_ENTRY_SPEED_FACTOR
+			)
+		blendPower = runtimeNumberAttr("AutoTrack_CrestDipEntryBlendPower", Constants.CRESTDIP_ENTRY_BLEND_POWER)
+	end
+
+	local entryCap = math.min(baseSpeed, Constants.CAR_TARGET_SPEED * entryFactor)
+	local blend = math.clamp(progress / leadInProgress, 0, 1) ^ blendPower
+	return lerp(entryCap, baseSpeed, blend)
+end
+
 local function projectPointToSegment(point: Vector3, startPoint: Vector3, endPoint: Vector3): (Vector3, number)
-	local segment = endPoint - startPoint
+	local flatStart = flattenHorizontal(startPoint)
+	local flatEnd = flattenHorizontal(endPoint)
+	local flatPoint = flattenHorizontal(point)
+	local segment = flatEnd - flatStart
 	local lengthSquared = segment:Dot(segment)
 
 	if lengthSquared == 0 then
-		return startPoint, 0
+		return Vector3.new(startPoint.X, point.Y, startPoint.Z), 0
 	end
 
-	local alpha = math.clamp((point - startPoint):Dot(segment) / lengthSquared, 0, 1)
-	return startPoint + segment * alpha, alpha
+	local alpha = math.clamp((flatPoint - flatStart):Dot(segment) / lengthSquared, 0, 1)
+	local projected = flatStart + segment * alpha
+	return Vector3.new(projected.X, point.Y, projected.Z), alpha
+end
+
+local function signedLateralDistance(referencePoint: Vector3, trackPoint: Vector3, segmentDirection: Vector3): number
+	local flatSegment = horizontalDirectionOrFallback(segmentDirection, Vector3.zAxis)
+	return flatSegment:Cross(flattenHorizontal(referencePoint - trackPoint)).Y
 end
 
 local function cleanup(attachment: Attachment, linearVelocity: LinearVelocity, alignOrientation: AlignOrientation)
 	attachment:Destroy()
 	linearVelocity:Destroy()
 	alignOrientation:Destroy()
+end
+
+local function cloneNumberMap(source)
+	local result = {}
+	for key, value in pairs(source) do
+		result[key] = value
+	end
+	return result
 end
 
 local function finishFailure(
@@ -108,9 +370,11 @@ function VerifierController.runLap(
 
 	local currentSectorId: number? = nil
 	local handleSectorChange = onSectorChange
+	local firstSectorId: number? = nil
 	if waypointSectors then
 		assert(#waypointSectors == #waypoints, "VerifierController.runLap: waypoint sector map mismatch")
 		currentSectorId = (waypointSectors :: { number })[1]
+		firstSectorId = currentSectorId
 
 		handleSectorChange = function(id: number, entering: boolean)
 			local speed = car.AssemblyLinearVelocity.Magnitude
@@ -156,6 +420,7 @@ function VerifierController.runLap(
 	MetricCollector.reset(car.Position.Y, targetSectorId)
 	FailureDetector.reset()
 	local baselineLapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime") or 30
+	local sectorWaypointRanges = buildSectorWaypointRanges(waypointSectors)
 
 	local startTime = os.clock()
 	local waypointIndex = 1
@@ -163,9 +428,77 @@ function VerifierController.runLap(
 	local recentTrail = { car.Position }
 	local lastTrailPoint = car.Position
 	local lastWaypointAdvanceTime = startTime
+	local lastControlTime = startTime
+	local wasAirborne = false
 	local persistentTargetSpeed = Constants.CAR_TARGET_SPEED
+	local commandedSpeed = Constants.CAR_TARGET_SPEED
 	local activePadToken = nil
 	local padEffectSectorHopsRemaining = 0
+	local sectorPeakCenterlineDistance: { [number]: number } = {}
+	local sectorPeakSignedLateral: { [number]: number } = {}
+	local sectorPeakProgress: { [number]: number } = {}
+	local sectorPeakFrontDistance: { [number]: number } = {}
+	local sectorPeakBodyDistance: { [number]: number } = {}
+	local debugSectorEnabled = runtimeBoolAttr("AutoTrack_SectorDebugEnabled", false)
+	local debugSectorTarget = runtimeNumberAttr("AutoTrack_SectorDebugTarget", targetSectorId or -1)
+	local debugProgressMax = math.clamp(runtimeNumberAttr("AutoTrack_SectorDebugProgressMax", 0.2), 0.01, 1)
+	local debugProgressStep = math.clamp(runtimeNumberAttr("AutoTrack_SectorDebugProgressStep", 0.02), 0.005, 0.2)
+	local debugNextProgress = 0
+
+	local function recordSectorPeak(
+		sectorId: number?,
+		centerlineDistance: number,
+		signedLateral: number,
+		progress: number,
+		frontDistance: number,
+		bodyDistance: number
+	)
+		if sectorId == nil then
+			return
+		end
+		local previous = sectorPeakCenterlineDistance[sectorId]
+		if previous == nil or centerlineDistance > previous then
+			sectorPeakCenterlineDistance[sectorId] = centerlineDistance
+			sectorPeakSignedLateral[sectorId] = signedLateral
+			sectorPeakProgress[sectorId] = progress
+		end
+		local previousFront = sectorPeakFrontDistance[sectorId]
+		if previousFront == nil or frontDistance > previousFront then
+			sectorPeakFrontDistance[sectorId] = frontDistance
+		end
+		local previousBody = sectorPeakBodyDistance[sectorId]
+		if previousBody == nil or bodyDistance > previousBody then
+			sectorPeakBodyDistance[sectorId] = bodyDistance
+		end
+	end
+
+	local function logSectorContainment(sectorId: number?)
+		if sectorId == nil then
+			return
+		end
+		Tracer.log(string.format(
+			"sector_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
+			sectorId,
+			sectorPeakCenterlineDistance[sectorId] or 0,
+			sectorPeakFrontDistance[sectorId] or 0,
+			sectorPeakBodyDistance[sectorId] or 0,
+			sectorPeakSignedLateral[sectorId] or 0,
+			sectorPeakProgress[sectorId] or 0
+		))
+	end
+
+	local function publishDebugState(targetSpeed: number, sectorKind: string?)
+		car:SetAttribute("AutoTrack_TargetSpeed", targetSpeed)
+		car:SetAttribute("AutoTrack_CommandedSpeed", commandedSpeed)
+		car:SetAttribute("AutoTrack_CurrentSectorKind", sectorKind or "")
+	end
+
+	if currentSectorId ~= nil and sectorKinds and sectorKinds[currentSectorId] == "Corner" then
+		commandedSpeed = Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR
+		publishDebugState(commandedSpeed, "Corner")
+	else
+		publishDebugState(Constants.CAR_TARGET_SPEED, if currentSectorId ~= nil then "Straight" else "")
+	end
 
 	local function recordTrail(position: Vector3)
 		if (position - lastTrailPoint).Magnitude < TRAIL_POINT_SPACING then
@@ -229,6 +562,8 @@ function VerifierController.runLap(
 	while not completed do
 		local now = os.clock()
 		local elapsed = now - startTime
+		local controlDt = math.max(now - lastControlTime, 1 / 60)
+		lastControlTime = now
 
 		local carPosition = car.Position
 		local carCFrame = car.CFrame
@@ -239,20 +574,27 @@ function VerifierController.runLap(
 		if distanceToTarget <= 10 then
 			waypointIndex += 1
 			lastWaypointAdvanceTime = now
-			if waypointIndex > #waypoints then
-				if waypointSectors and handleSectorChange and currentSectorId then
-					handleSectorChange(currentSectorId, false)
-				end
-				completed = true
-				break
+				if waypointIndex > #waypoints then
+					if waypointSectors and handleSectorChange and currentSectorId then
+						handleSectorChange(currentSectorId, false)
+						logSectorContainment(currentSectorId)
+					end
+					completed = true
+					break
 			end
 			if waypointSectors and handleSectorChange then
 				local newSectorId = (waypointSectors :: { number })[waypointIndex]
 				if newSectorId ~= currentSectorId then
 					handleSectorChange(currentSectorId :: number, false)
+					logSectorContainment(currentSectorId)
 					local runtimeResult = evaluateTargetSectorRuntime(elapsed, carPosition)
 					if runtimeResult then
 						cleanup(attachment, linearVelocity, alignOrientation)
+						runtimeResult.metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+						runtimeResult.metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
+						runtimeResult.metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
+						runtimeResult.metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
+						runtimeResult.metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
 						return runtimeResult
 					end
 					if padEffectSectorHopsRemaining > 0 then
@@ -263,6 +605,54 @@ function VerifierController.runLap(
 					end
 					currentSectorId = newSectorId
 					handleSectorChange(currentSectorId :: number, true)
+					if targetSectorId ~= nil
+						and currentSectorId == targetSectorId
+						and runtimeBoolAttr(
+							"AutoTrack_TargetEntryStateNormalizeEnabled",
+							Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED
+						) then
+						local entryDirection = horizontalDirectionOrFallback(
+							waypoints[waypointIndex].LookVector,
+							car.CFrame.LookVector
+						)
+						local entrySpeedFactor = runtimeNumberAttr(
+							"AutoTrack_TargetEntryNormalizedSpeedFactor",
+							Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR
+						)
+						if targetState ~= nil then
+							if targetState.mechanic == "RampJump" then
+								entrySpeedFactor = runtimeNumberAttr(
+									"AutoTrack_TargetEntryNormalizedSpeedFactorRampJump",
+									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP
+								)
+							elseif targetState.mechanic == "CrestDip" then
+								entrySpeedFactor = runtimeNumberAttr(
+									"AutoTrack_TargetEntryNormalizedSpeedFactorCrestDip",
+									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CRESTDIP
+								)
+							elseif targetState.mechanic == "Chicane" then
+								entrySpeedFactor = runtimeNumberAttr(
+									"AutoTrack_TargetEntryNormalizedSpeedFactorChicane",
+									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CHICANE
+								)
+							end
+						end
+						local normalizedSpeed = math.max(
+							5,
+							Constants.CAR_TARGET_SPEED
+								* entrySpeedFactor
+						)
+						if runtimeBoolAttr(
+							"AutoTrack_TargetEntryOrientationSnapEnabled",
+							Constants.TARGET_ENTRY_ORIENTATION_SNAP_ENABLED
+						) then
+							car.CFrame = CFrame.lookAt(car.Position, car.Position + entryDirection)
+						end
+						car.AssemblyLinearVelocity = entryDirection * normalizedSpeed
+						car.AssemblyAngularVelocity = Vector3.zero
+						persistentTargetSpeed = math.min(persistentTargetSpeed, normalizedSpeed)
+						commandedSpeed = normalizedSpeed
+					end
 				end
 			end
 			targetPosition = waypoints[waypointIndex].Position
@@ -272,35 +662,79 @@ function VerifierController.runLap(
 
 		local segmentStart = waypoints[math.max(waypointIndex - 1, 1)].Position
 		local segmentEnd = targetPosition
-		local projectedPoint = projectPointToSegment(carPosition, segmentStart, segmentEnd)
-		local moveDirection = distanceToTarget > 0 and toTarget.Unit or waypoints[waypointIndex].LookVector
-		local segmentDirection = (segmentEnd - segmentStart).Magnitude > 0
-			and (segmentEnd - segmentStart).Unit
-			or moveDirection
-		local lookAheadIndex = math.min(waypointIndex + Constants.WAYPOINT_LOOKAHEAD, #waypoints)
-		local lookTarget = waypoints[lookAheadIndex].Position
-		local lookDirection = (lookTarget - carPosition).Magnitude > 0
-			and (lookTarget - carPosition).Unit
-			or moveDirection
-		local orientationLookAheadIndex = math.min(waypointIndex + Constants.ORIENTATION_LOOKAHEAD, #waypoints)
-		local orientationTarget = waypoints[orientationLookAheadIndex].Position
-		local anticipatedDirection = (orientationTarget - carPosition).Magnitude > 0
-			and (orientationTarget - carPosition).Unit
-			or lookDirection
-		local orientationDirection = (segmentDirection * (1 - Constants.ORIENTATION_BLEND)
-			+ anticipatedDirection * Constants.ORIENTATION_BLEND)
-		if orientationDirection.Magnitude <= 0 then
-			orientationDirection = segmentDirection
-		else
-			orientationDirection = orientationDirection.Unit
+		local projectedPoint, segmentAlpha = projectPointToSegment(carPosition, segmentStart, segmentEnd)
+		local pathDirection = distanceToTarget > 0 and toTarget.Unit or waypoints[waypointIndex].LookVector
+		if pathDirection.Magnitude <= 0 then
+			pathDirection = waypoints[waypointIndex].LookVector
 		end
+		local moveDirection = horizontalDirectionOrFallback(pathDirection, waypoints[waypointIndex].LookVector)
+		local segmentDirection = horizontalDirectionOrFallback(segmentEnd - segmentStart, moveDirection)
+		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
+		local waypointLookahead = if isCorner then Constants.CORNER_WAYPOINT_LOOKAHEAD else Constants.WAYPOINT_LOOKAHEAD
+		local orientationLookahead = if isCorner then Constants.CORNER_ORIENTATION_LOOKAHEAD else Constants.ORIENTATION_LOOKAHEAD
+		local orientationBlend = if isCorner then Constants.CORNER_ORIENTATION_BLEND else Constants.ORIENTATION_BLEND
+		local lookAheadIndex = math.min(waypointIndex + waypointLookahead, #waypoints)
+		local lookTarget = waypoints[lookAheadIndex].Position
+		local lookDirection = horizontalDirectionOrFallback(lookTarget - carPosition, moveDirection)
+		local orientationLookAheadIndex = math.min(waypointIndex + orientationLookahead, #waypoints)
+		local orientationTarget = waypoints[orientationLookAheadIndex].Position
+		local anticipatedDirection = horizontalDirectionOrFallback(orientationTarget - carPosition, lookDirection)
+		local orientationDirection = horizontalDirectionOrFallback(
+			(segmentDirection * (1 - orientationBlend)) + (anticipatedDirection * orientationBlend),
+			segmentDirection
+		)
 		local isAirborne = not ReacquireDetector.isGrounded(carPosition, rayParams)
+		applySuspensionDamping(car, controlDt, wasAirborne, isAirborne, isCorner == true)
 		local speed = car.AssemblyLinearVelocity.Magnitude
 		local angularSpeed = car.AssemblyAngularVelocity.Magnitude
+		if currentSectorId == targetSectorId
+			and runtimeBoolAttr(
+				"AutoTrack_TargetSectorStabilityAssistEnabled",
+				Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED
+			) then
+			local maxAngularSpeed = math.max(0, runtimeNumberAttr(
+				"AutoTrack_TargetSectorStabilityMaxAngularSpeed",
+				Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
+			))
+			local maxVerticalSpeed = math.max(0, runtimeNumberAttr(
+				"AutoTrack_TargetSectorStabilityMaxVerticalSpeed",
+				Constants.TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
+			))
+
+			local angularVelocity = car.AssemblyAngularVelocity
+			local angularMagnitude = angularVelocity.Magnitude
+			if maxAngularSpeed > 0 and angularMagnitude > maxAngularSpeed and angularMagnitude > 1e-4 then
+				car.AssemblyAngularVelocity = angularVelocity * (maxAngularSpeed / angularMagnitude)
+			end
+
+			local linearVelocity = car.AssemblyLinearVelocity
+			if maxVerticalSpeed > 0 and math.abs(linearVelocity.Y) > maxVerticalSpeed then
+				car.AssemblyLinearVelocity = Vector3.new(
+					linearVelocity.X,
+					math.clamp(linearVelocity.Y, -maxVerticalSpeed, maxVerticalSpeed),
+					linearVelocity.Z
+				)
+			end
+
+			speed = car.AssemblyLinearVelocity.Magnitude
+			angularSpeed = car.AssemblyAngularVelocity.Magnitude
+		end
 		local upDot = carCFrame.UpVector:Dot(Vector3.yAxis)
-		local forwardDot = carCFrame.LookVector:Dot(orientationDirection)
+		local forwardDot = horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection):Dot(orientationDirection)
 		local lateralOffset = projectedPoint - carPosition
 		local lateralError = lateralOffset.Magnitude
+		local signedLateral = signedLateralDistance(carPosition, projectedPoint, segmentDirection)
+		local frontPosition = carPosition + horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection) * (Constants.CAR_LENGTH * 0.5)
+		local projectedFrontPoint = projectPointToSegment(frontPosition, segmentStart, segmentEnd)
+		local frontSignedLateral = signedLateralDistance(frontPosition, projectedFrontPoint, segmentDirection)
+		local frontDistance = math.abs(frontSignedLateral)
+		local bodyDistance = math.max(lateralError, frontDistance)
+		local sectorProgress = sectorProgressForIndex(
+			currentSectorId and sectorWaypointRanges[currentSectorId] or nil,
+			waypointIndex,
+			segmentAlpha
+		)
+		recordSectorPeak(currentSectorId, lateralError, signedLateral, sectorProgress, frontDistance, bodyDistance)
 		local targetLocalX = nil
 		local targetLocalZ = nil
 		if currentSectorId == targetSectorId and targetEntryFrame ~= nil then
@@ -341,15 +775,40 @@ function VerifierController.runLap(
 					recentTrail
 				)
 				failureResult.integrity_hints = { "airborne too long after liftoff" }
+				failureResult.metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+				failureResult.metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
+				failureResult.metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
+				failureResult.metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
+				failureResult.metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
 				return failureResult
 			end
+		end
+
+		if not isAirborne and bodyDistance > Constants.FRONT_BODY_CONTAINMENT_DISTANCE then
+			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+			metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+			metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
+			metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
+			metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
+			metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
+			logSectorContainment(currentSectorId)
+			return finishFailure(
+				attachment,
+				linearVelocity,
+				alignOrientation,
+				{ type = "local_execution_failure", sector_id = currentSectorId or 1, detail = "body_off_track" },
+				metrics,
+				carPosition,
+				recentTrail
+			)
 		end
 
 		local padToken, padType, padName = getActivePad(currentSectorId)
 		if padToken ~= nil then
 			if padToken ~= activePadToken then
 				persistentTargetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + PadValueUtils.speedDelta(tostring(padType)))
-				car.AssemblyLinearVelocity = moveDirection * persistentTargetSpeed
+				commandedSpeed = persistentTargetSpeed
+				car.AssemblyLinearVelocity = pathDirection * persistentTargetSpeed
 				if padName == "EgressPad" then
 					padEffectSectorHopsRemaining = 2
 				else
@@ -361,27 +820,82 @@ function VerifierController.runLap(
 			activePadToken = nil
 		end
 
-		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
 		local targetSpeed = persistentTargetSpeed
 		if isCorner then
-			targetSpeed = math.min(targetSpeed, Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR)
+			local cornerProgress = sectorProgress
+			if currentSectorId == firstSectorId then
+				cornerProgress = math.max(cornerProgress, Constants.CORNER_ENTRY_SHOULDER_FRACTION)
+			end
+			targetSpeed = cornerProfileTarget(targetSpeed, cornerProgress, currentSectorId)
+		elseif currentSectorId == targetSectorId and targetState ~= nil then
+			targetSpeed = mechanicEntryTarget(targetSpeed, sectorProgress, targetState, targetSectorId)
 		end
 		targetSpeed = math.max(5, targetSpeed)
-		local vectorVelocity = moveDirection * targetSpeed
+		local speedRate = if isCorner
+			then cornerSpeedRate(commandedSpeed, targetSpeed, sectorProgress, currentSectorId)
+			elseif targetSpeed < commandedSpeed
+				then Constants.CAR_BRAKE_RATE
+				else Constants.CAR_ACCEL_RATE
+		commandedSpeed = moveTowards(commandedSpeed, targetSpeed, speedRate * controlDt)
+		publishDebugState(targetSpeed, if isCorner then "Corner" else "Straight")
+		if debugSectorEnabled
+			and currentSectorId ~= nil
+			and currentSectorId == debugSectorTarget
+			and sectorProgress <= debugProgressMax
+			and sectorProgress >= debugNextProgress then
+			Tracer.log(string.format(
+				"sector_debug sector=%d progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
+				currentSectorId,
+				sectorProgress,
+				speed,
+				commandedSpeed,
+				targetSpeed,
+				angularSpeed,
+				forwardDot,
+				upDot,
+				tostring(not isAirborne),
+				bodyDistance,
+				lateralError
+			))
+			debugNextProgress += debugProgressStep
+		end
+		local vectorVelocity = pathDirection * commandedSpeed
 		if not isAirborne and lateralError > 1 then
 			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)
-			vectorVelocity += lateralNudge
+			vectorVelocity += Vector3.new(lateralNudge.X, 0, lateralNudge.Z)
 		end
 
 		linearVelocity.VectorVelocity = vectorVelocity
 
 		if isAirborne then
-			alignOrientation.MaxTorque = Constants.CAR_AIRBORNE_ORIENTATION_MAX_TORQUE
-			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)
+			alignOrientation.MaxTorque = runtimeNumberAttr(
+				"AutoTrack_AirborneOrientationMaxTorque",
+				Constants.CAR_AIRBORNE_ORIENTATION_MAX_TORQUE
+			)
+			alignOrientation.Responsiveness = runtimeNumberAttr(
+				"AutoTrack_StraightOrientationResponsiveness",
+				Constants.CAR_STRAIGHT_ORIENTATION_RESPONSIVENESS
+			)
+		elseif isCorner then
+			alignOrientation.MaxTorque = runtimeNumberAttr(
+				"AutoTrack_CornerOrientationMaxTorque",
+				Constants.CAR_CORNER_ORIENTATION_MAX_TORQUE
+			)
+			alignOrientation.Responsiveness = runtimeNumberAttr(
+				"AutoTrack_CornerOrientationResponsiveness",
+				Constants.CAR_CORNER_ORIENTATION_RESPONSIVENESS
+			)
 		else
-			alignOrientation.MaxTorque = Constants.CAR_ORIENTATION_MAX_TORQUE
-			alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)
+			alignOrientation.MaxTorque = runtimeNumberAttr(
+				"AutoTrack_StraightOrientationMaxTorque",
+				Constants.CAR_STRAIGHT_ORIENTATION_MAX_TORQUE
+			)
+			alignOrientation.Responsiveness = runtimeNumberAttr(
+				"AutoTrack_StraightOrientationResponsiveness",
+				Constants.CAR_STRAIGHT_ORIENTATION_RESPONSIVENESS
+			)
 		end
+		alignOrientation.CFrame = CFrame.lookAt(Vector3.zero, orientationDirection)
 
 		local failure = FailureDetector.check(
 			elapsed,
@@ -395,7 +909,33 @@ function VerifierController.runLap(
 			forwardDot
 		)
 		if failure then
+			if debugSectorEnabled
+				and currentSectorId ~= nil
+				and currentSectorId == debugSectorTarget then
+				Tracer.log(string.format(
+					"sector_debug_failure sector=%d type=%s detail=%s progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
+					currentSectorId,
+					tostring(failure.type),
+					tostring(failure.detail),
+					sectorProgress,
+					speed,
+					commandedSpeed,
+					targetSpeed,
+					angularSpeed,
+					forwardDot,
+					upDot,
+					tostring(not isAirborne),
+					bodyDistance,
+					lateralError
+				))
+			end
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+			metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+			metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
+			metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
+			metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
+			metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
+			logSectorContainment(currentSectorId)
 			return finishFailure(
 				attachment,
 				linearVelocity,
@@ -407,11 +947,17 @@ function VerifierController.runLap(
 			)
 		end
 
+		wasAirborne = isAirborne
 		RunService.Heartbeat:Wait()
 	end
 
 	local lapTime = os.clock() - startTime
 	local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, lapTime, baselineLapTime)
+	metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+	metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
+	metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
+	metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
+	metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
 	cleanup(attachment, linearVelocity, alignOrientation)
 
 	return {

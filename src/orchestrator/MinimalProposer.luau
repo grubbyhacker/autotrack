@@ -4,6 +4,7 @@ local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForC
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
+local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 
@@ -37,15 +38,15 @@ local QUALIFIER_BIASES = {
 		gentle = { transition_length = 4, amplitude = -2 },
 	},
 	CrestDip = {
-		extreme = { height_or_depth = 8, sector_length = -16 },
-		really = { height_or_depth = 6, sector_length = -12 },
-		tall = { height_or_depth = 4, sector_length = -4 },
-		steep = { height_or_depth = 4, sector_length = -8 },
-		gentle = { height_or_depth = -2, sector_length = 8 },
-		long = { sector_length = 20 },
-		short = { sector_length = -10 },
-		shallow = { height_or_depth = -3 },
-		deep = { height_or_depth = 4, sector_length = -4 },
+		extreme = { height_or_depth = 7, sector_length = -10 },
+		really = { height_or_depth = 5, sector_length = -8 },
+		tall = { height_or_depth = 3, sector_length = -2 },
+		steep = { height_or_depth = 2, sector_length = -4 },
+		gentle = { height_or_depth = -2, sector_length = 6 },
+		long = { sector_length = 10 },
+		short = { sector_length = -6 },
+		shallow = { height_or_depth = -3, sector_length = 4 },
+		deep = { height_or_depth = 3, sector_length = -2 },
 	},
 }
 
@@ -84,6 +85,18 @@ local function normalizeParams(mechanic, params)
 		params.amplitude = math.clamp(params.amplitude or 1, Constants.CHICANE_MIN_LATERAL_DISPLACEMENT, Constants.TRACK_WIDTH * 0.5)
 		params.transition_length = math.clamp(params.transition_length or 1, 1, MAX_CHICANE_TRANSITION_LENGTH)
 		params.corridor_width = math.clamp(params.corridor_width or 1, 1, Constants.TRACK_WIDTH)
+	elseif mechanic == "CrestDip" then
+		params.height_or_depth = math.clamp(
+			params.height_or_depth or LevelMappings.DEFAULTS.CrestDip.height_or_depth,
+			LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.min,
+			LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max
+		)
+		params.sector_length = math.clamp(
+			params.sector_length or LevelMappings.DEFAULTS.CrestDip.sector_length,
+			LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+			LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.max
+		)
+		params.radius = math.clamp(params.radius or LevelMappings.DEFAULTS.CrestDip.radius, 8, 40)
 	end
 	return params
 end
@@ -138,11 +151,76 @@ local function weakerBrake(current: string): string
 	return PadValueUtils.weaker("Brake", current)
 end
 
+local function crestIngressBoost(current: string, entrySpeed: number?): string
+	local speed = entrySpeed or 0
+	if speed > 0 and speed <= Constants.CAR_TARGET_SPEED * 0.4 then
+		local normalized = PadValueUtils.normalize(current)
+		if PadValueUtils.kind(normalized) ~= "Boost" or PadValueUtils.amount(normalized) < 25 then
+			return "Boost25"
+		end
+	end
+	return strongerBoost(current)
+end
+
 local function crestSofteningDeltas(attemptIndex: number): (number, number)
 	local severity = math.clamp(attemptIndex or 0, 0, 4)
-	local lengthDelta = 8 + severity * 4
-	local heightDelta = 2 + math.floor(severity / 2)
+	local lengthDelta = 4 + severity * 2
+	local heightDelta = 1 + math.floor(severity / 2)
 	return lengthDelta, heightDelta
+end
+
+local function crestBounds()
+	return LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth, LevelMappings.LEVER_BOUNDS.CrestDip.sector_length
+end
+
+local function crestTuneTarget(height: number, sectorLength: number, bounds): (number, number)
+	local heightBounds, lengthBounds = crestBounds()
+	return CrestDipTuner.tune(
+		math.clamp(math.round(height), heightBounds.min, heightBounds.max),
+		math.clamp(math.round(sectorLength), lengthBounds.min, lengthBounds.max),
+		bounds
+	)
+end
+
+local function appendCrestTuneCandidates(
+	candidates: { AgentAction },
+	params,
+	desiredHeight: number,
+	desiredLength: number,
+	preferHeightFirst: boolean,
+	bounds
+)
+	local tunedHeight, tunedLength = crestTuneTarget(desiredHeight, desiredLength, bounds)
+	local currentHeight = params.height_or_depth or 0
+	local currentLength = params.sector_length or 0
+
+	local function appendHeight()
+		if tunedHeight ~= currentHeight then
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "height_or_depth",
+				value = tunedHeight,
+			})
+		end
+	end
+
+	local function appendLength()
+		if tunedLength ~= currentLength then
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "sector_length",
+				value = tunedLength,
+			})
+		end
+	end
+
+	if preferHeightFirst then
+		appendHeight()
+		appendLength()
+	else
+		appendLength()
+		appendHeight()
+	end
 end
 
 local function targetProgress(packet: FailurePacket): number
@@ -171,6 +249,10 @@ end
 
 local function crestHeightFloor(): number
 	return Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+end
+
+local function isPostCornerEditableSector(sectorId: number): boolean
+	return sectorId == 2 or sectorId == 7
 end
 
 function MinimalProposer.initial(request: Request): (SectorState?, string?)
@@ -211,13 +293,35 @@ function MinimalProposer.initial(request: Request): (SectorState?, string?)
 	end
 	params = normalizeParams(mechanic, params)
 
+	local plainCrestRequest = mechanic == "CrestDip" and #request.qualifiers == 0
+	local postCornerCrest = mechanic == "CrestDip" and isPostCornerEditableSector(request.parsed.sector_id)
+	if mechanic == "CrestDip" and (plainCrestRequest or postCornerCrest) then
+		params.sector_length = math.min(params.sector_length, 30)
+	end
+	if mechanic == "RampJump" and isPostCornerEditableSector(request.parsed.sector_id) then
+		params.ramp_angle = 8
+		params.ramp_length = math.max(params.ramp_length, 22)
+	end
+
+	local ingressPad = if mechanic == "CrestDip" then "Brake25" else "None"
+	if mechanic == "CrestDip" and plainCrestRequest then
+		ingressPad = "Brake50"
+	end
+	if postCornerCrest then
+		ingressPad = "Brake25"
+	end
+	if mechanic == "RampJump" and isPostCornerEditableSector(request.parsed.sector_id) then
+		ingressPad = "Brake25"
+	end
+	local egressPad = if mechanic == "RampJump" then "Brake10" else "None"
+
 	return {
 		sector_id = request.parsed.sector_id,
 		mechanic = mechanic,
 		params = params,
 		pads = {
-			ingress = "None",
-			egress = if mechanic == "RampJump" then "Brake10" else "None",
+			ingress = ingressPad,
+			egress = egressPad,
 		},
 		version = committed.version,
 	}, nil
@@ -232,6 +336,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 	local hintsText = string.lower(table.concat(packet.diagnostics.hints, " | "))
 	local state = packet.sector_state
 	local params = state.params
+	local metrics = packet.run_result.metrics
 	local candidates = {}
 	local explanation = "adjusted the target sector"
 
@@ -242,6 +347,65 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 		table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 		table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
 		explanation = "post-jump instability detected; softened the landing"
+	elseif state.mechanic == "CrestDip" and failure.type == "downstream_failure" then
+		local downstreamNeedsSpeed = string.find(hintsText, "exit speed too low", 1, true) ~= nil
+			or string.find(hintsText, "no_progress", 1, true) ~= nil
+			or string.find(hintsText, "stall", 1, true) ~= nil
+		local unstableExit = metrics.target_reacquired == false
+			or string.find(hintsText, "exit attitude unstable", 1, true) ~= nil
+			or string.find(hintsText, "reacquire", 1, true) ~= nil
+		local sectorLengthCap = if isPostCornerEditableSector(state.sector_id)
+			then 34
+			else Constants.STRAIGHT_LENGTH - 10
+		local softenLengthDelta, softenHeightDelta = crestSofteningDeltas(packet.attempt_index or 0)
+
+		if downstreamNeedsSpeed then
+			local ingressCarrySpeed = crestIngressBoost(state.pads.ingress, metrics.entry_speed)
+			if PadValueUtils.kind(state.pads.ingress) == "Brake" then
+				ingressCarrySpeed = weakerBrake(state.pads.ingress)
+			end
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressCarrySpeed })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "height_or_depth",
+				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+			})
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "sector_length",
+				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+			})
+			explanation = "downstream sector lost too much speed after the crest; carrying more speed out"
+		elseif unstableExit then
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "height_or_depth",
+				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+			})
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "sector_length",
+				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+			})
+			explanation = "crest exited unstable into the next sector; slowing entry and calming the rejoin"
+		else
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "height_or_depth",
+				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+			})
+			table.insert(candidates, {
+				type = "SetNumericLever",
+				lever = "sector_length",
+				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+			})
+			explanation = "downstream sector destabilized after the crest; slowed entry and softened the feature"
+		end
 	elseif failure.type == "downstream_failure" then
 		table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 		table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
@@ -257,9 +421,15 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			or failureDetail == "overturn"
 			or failureDetail == "backward_facing"
 			or failureDetail == "tumble"
+			or failureDetail == "spinout"
+			or failureDetail == "off_track"
+			or failureDetail == "fell_below_kill_plane"
 		if failure.type == "local_execution_failure" then
 			if stalledOnTakeoff then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				if metrics.entry_speed ~= nil then
+					candidates[#candidates].value = crestIngressBoost(state.pads.ingress, metrics.entry_speed)
+				end
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 4) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
@@ -267,15 +437,18 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
 				explanation = "jump bogged down on takeoff; boosted entry and shortened the launch"
 			elseif unstableOnTakeoff and progress < 0.30 then
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 4) })
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 5) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 4) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2) })
 				explanation = "jump takeoff attitude was unstable; slowed entry and widened the landing window"
 			elseif progress >= 0.30 then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				if metrics.entry_speed ~= nil then
+					candidates[#candidates].value = crestIngressBoost(state.pads.ingress, metrics.entry_speed)
+				end
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) + 5) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) + 2) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
@@ -288,6 +461,9 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 2) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) + 2) })
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				if metrics.entry_speed ~= nil then
+					candidates[#candidates].value = crestIngressBoost(state.pads.ingress, metrics.entry_speed)
+				end
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
 				explanation = "jump geometry blocked launch; extended and steepened the takeoff"
 			end
@@ -421,78 +597,151 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			end
 		end
 	elseif state.mechanic == "CrestDip" then
-		local sectorLengthCap = Constants.STRAIGHT_LENGTH - 10
+		local sectorLengthCap = if isPostCornerEditableSector(state.sector_id)
+			then 34
+			else Constants.STRAIGHT_LENGTH - 10
 		local softenLengthDelta, softenHeightDelta = crestSofteningDeltas(packet.attempt_index or 0)
 		local stalledOnCrest = string.find(hintsText, "no_progress", 1, true) ~= nil
 			or string.find(hintsText, "stall", 1, true) ~= nil
+		local failureDetail = string.lower(tostring(failure.detail or ""))
+		stalledOnCrest = stalledOnCrest
+			or failureDetail == "no_progress"
+			or failureDetail == "stall"
+		local unstableCrash = failureDetail == "tumble"
+			or failureDetail == "spinout"
+			or failureDetail == "overturn"
+			or failureDetail == "invalid_attitude"
+			or failureDetail == "backward_facing"
+			or failureDetail == "off_track"
+			or failureDetail == "fell_below_kill_plane"
 		if string.find(hintsText, "airborne too long", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 10) })
+			appendCrestTuneCandidates(
+				candidates,
+				params,
+				math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2),
+				math.min(sectorLengthCap, (params.sector_length or 0) + 10),
+				true,
+				{
+					maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+					minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+				}
+			)
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
 			explanation = "car flew too far; softened the crest"
 		elseif string.find(hintsText, "curvature", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.max(12, (params.sector_length or 0) - 10) })
+			appendCrestTuneCandidates(
+				candidates,
+				params,
+				(params.height_or_depth or 0) + 1,
+				math.max(LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min, (params.sector_length or 0) - 4),
+				true,
+				{
+					minHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.min,
+					maxLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.max,
+				}
+			)
 			explanation = "crest too gentle; sharpened the curve"
 		elseif string.find(hintsText, "vertical displacement", 1, true) then
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
+			appendCrestTuneCandidates(
+				candidates,
+				params,
+				(params.height_or_depth or 0) + 2,
+				(params.sector_length or 0),
+				true,
+				{
+					minHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.min,
+				}
+			)
 			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
 			explanation = "crest or dip is too subtle; raised the peak"
 		elseif string.find(hintsText, "reacquire", 1, true)
 			or string.find(hintsText, "reacquisition", 1, true) then
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 8) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2) })
-			explanation = "reacquisition unstable; softened the landing"
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			appendCrestTuneCandidates(
+				candidates,
+				params,
+				math.max(crestHeightFloor(), (params.height_or_depth or 0) - 2),
+				math.min(sectorLengthCap, (params.sector_length or 0) + 8),
+				false,
+				{
+					maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+					minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+				}
+			)
+			explanation = "reacquisition unstable; slowed entry and softened the landing"
 		elseif failure.type == "local_execution_failure" then
 			local progress = (packet.run_result.metrics.target_progress or 0)
-			if stalledOnCrest then
+			if unstableCrash then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				appendCrestTuneCandidates(
+					candidates,
+					params,
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+					true,
+					{
+						maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+					}
+				)
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				explanation = "crest entry was unstable; braking earlier and flattening the feature"
+			elseif stalledOnCrest then
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "height_or_depth",
-					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "sector_length",
-					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-				})
+				appendCrestTuneCandidates(
+					candidates,
+					params,
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+					true,
+					{
+						maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+					}
+				)
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
 				explanation = "crest climb bled off too much speed; boosted entry and lowered the peak"
 			elseif progress < 0.30 then
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "sector_length",
-					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "height_or_depth",
-					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-				})
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				appendCrestTuneCandidates(
+					candidates,
+					params,
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+					true,
+					{
+						maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+					}
+				)
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-				explanation = "crest too steep for entry speed; softened geometry first"
+				explanation = "crest entry was overloaded; braking earlier and softening geometry first"
 			else
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "sector_length",
-					value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "height_or_depth",
-					value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-				})
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				appendCrestTuneCandidates(
+					candidates,
+					params,
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
+					true,
+					{
+						maxHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
+						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
+					}
+				)
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-				explanation = "the crest stalled the car; boosted entry and softened the feature"
+				explanation = "the crest remained unstable through the feature; slowed entry and softened it"
 			end
 		else
-			table.insert(candidates, { type = "SetNumericLever", lever = "height_or_depth", value = math.max(crestHeightFloor(), (params.height_or_depth or 0) + 2) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "sector_length", value = math.min(sectorLengthCap, (params.sector_length or 0) + 4) })
+			appendCrestTuneCandidates(
+				candidates,
+				params,
+				(params.height_or_depth or 0) + 1,
+				math.min(sectorLengthCap, (params.sector_length or 0) + 4),
+				true,
+				nil
+			)
 		end
 	else
 		return nil, nil, "unsupported mechanic in repair: " .. tostring(state.mechanic)

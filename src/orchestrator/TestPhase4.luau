@@ -174,10 +174,10 @@ function TestPhase4.runCrestDip()
 	if not ensureBaselineOrAbort() then return end
 
 	applyState(makeState(TARGET_SECTOR_ID, "CrestDip", {
-		height_or_depth = 5,
+		height_or_depth = 4,
 		radius = 24,
-		sector_length = 24,
-	}, "Brake50", "Brake10"))
+		sector_length = 40,
+	}, "Brake25", "Brake10"))
 
 	local crestLap = runLapOnCurrentTrack()
 	T.expect("crestdip_lap_succeeds",

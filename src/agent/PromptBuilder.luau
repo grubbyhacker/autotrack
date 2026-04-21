@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
@@ -50,7 +51,10 @@ local function paramRangeLine(mechanic: string, levers: { string }): string
 	end
 	local suffix = "."
 	if mechanic == "CrestDip" then
-		suffix = ". CONSTRAINT: height_or_depth / sector_length^2 must be >= 0.006."
+		suffix = string.format(
+			". CONSTRAINT: height_or_depth / sector_length^2 must be >= %.3f.",
+			Constants.CRESTDIP_MIN_CURVATURE
+		)
 	end
 	return string.format("  %s: %s%s", mechanic, table.concat(parts, ", "), suffix)
 end
@@ -92,9 +96,13 @@ local function llmRepairSystemPrompt(): string
 		"",
 		"Failure interpretation guide:",
 		"  off_track or lateral_error high → too wide/sharp; reduce amplitude (Chicane) or ramp_angle (RampJump)",
+		"  tumble, spinout, overturn, backward_facing, invalid_attitude → entry/setup unstable; prefer braking entry and softening geometry, not adding speed",
 		"  vertical_displacement high or bad landing → ramp too steep or gap too long; reduce ramp_angle and/or gap_length",
 		"  slowdown_ratio high → too much speed loss; reduce severity of all params",
 		"  target_progress < 1 → car never reached the end; reduce ALL params toward defaults",
+		"  downstream_failure → your sector passed but harmed a later committed sector; preserve exit speed and post-feature stability",
+		"  For downstream_failure, avoid adding egress brake unless diagnostics say exit attitude was unstable.",
+		"  For CrestDip specifically: do not add an egress brake by default. Prefer ingress brake plus softer geometry for crash repair; use egress brake only when diagnostics explicitly say the exit attitude is unstable.",
 		"  When in doubt: move params TOWARD the defaults, not away from them.",
 		"",
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
@@ -105,6 +113,21 @@ local function llmRepairSystemPrompt(): string
 		"",
 		"Return a complete revised SectorState. Make small targeted changes — one or two params at a time.",
 	}, "\n")
+end
+
+local function compactMetrics(metrics): string
+	return encode({
+		entry_speed = metrics.entry_speed,
+		exit_speed = metrics.exit_speed,
+		target_progress = metrics.target_progress,
+		target_entered = metrics.target_entered,
+		target_exited = metrics.target_exited,
+		target_reacquired = metrics.target_reacquired,
+		target_airtime_distance = metrics.target_airtime_distance,
+		target_vertical_displacement = metrics.target_vertical_displacement,
+		target_apex_min_speed = metrics.target_apex_min_speed,
+		slowdown_ratio = metrics.slowdown_ratio,
+	})
 end
 
 -- Build the user turn for an initial proposal.
@@ -215,37 +238,35 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		local failureType = result.failure and result.failure.type or "unknown"
 		local failureDetail = result.failure and result.failure.detail or ""
 		local hints = record.hints or {}
-		local failureContent = string.format(
-			"Attempt %d failed.\nfailure_type: %s\ndetail: %s\nhints: %s\nmetrics: %s",
+			local failureContent = string.format(
+				"Attempt %d failed.\nfailure_type: %s\ndetail: %s\nhints: %s\nmetrics: %s",
 			record.attempt_index,
 			failureType,
 			failureDetail ~= "" and failureDetail or "-",
 			#hints > 0 and table.concat(hints, ", ") or "-",
-			encode({
-				slowdown_ratio = result.metrics.slowdown_ratio,
-				target_progress = result.metrics.target_progress,
-				air_distance = result.metrics.air_distance,
-				lateral_error = result.metrics.lateral_error,
-				vertical_displacement = result.metrics.vertical_displacement,
-			})
-		)
-		table.insert(messages, { role = "user", content = failureContent })
+				compactMetrics(result.metrics)
+			)
+			table.insert(messages, { role = "user", content = failureContent })
 	end
 
 	-- Final user turn: request the revised state.
 	-- Remind model of current params and direction: failures mean make it EASIER.
 	local currentParams = packet.sector_state.params and encode(packet.sector_state.params) or "{}"
-	local finalContent = string.format(
-		"Provide a revised complete SectorState JSON for attempt %d.\n"
-		.. "Sector %d, mechanic %s.\n"
-		.. "Current params: %s\n"
-		.. "The car FAILED — the obstacle is too hard. Reduce the difficulty: lower the values that make this mechanic more demanding.\n"
-		.. "Make small changes to 1-2 params. Stay within the specified ranges.",
-		packet.attempt_index + 1,
-		packet.sector_state.sector_id,
-		tostring(mechanic),
-		currentParams
-	)
+	local finalLines = {
+		string.format("Provide a revised complete SectorState JSON for attempt %d.", packet.attempt_index + 1),
+		string.format("Sector %d, mechanic %s.", packet.sector_state.sector_id, tostring(mechanic)),
+		"Current params: " .. currentParams,
+		"Current pads: " .. encode(packet.sector_state.pads),
+		"Current run metrics: " .. compactMetrics(packet.run_result.metrics),
+		"Diagnostics: " .. encode(packet.diagnostics),
+		"The car FAILED — make the obstacle easier.",
+		"If this is a downstream_failure, your sector already passed but harmed a later committed sector. Preserve downstream compatibility, especially exit speed and post-feature stability.",
+		"Make small changes to 1-2 params or pads. Stay within the specified ranges.",
+	}
+	if packet.diagnostics.downstream_sector_state ~= nil then
+		table.insert(finalLines, "Downstream committed sector: " .. encode(packet.diagnostics.downstream_sector_state))
+	end
+	local finalContent = table.concat(finalLines, "\n")
 	table.insert(messages, { role = "user", content = finalContent })
 
 	return messages

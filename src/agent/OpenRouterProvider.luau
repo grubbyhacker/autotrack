@@ -11,8 +11,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local OrchestratorPromptBuilder = require(script.Parent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.PromptBuilder)
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
+local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 type Request = Types.Request
 type FailurePacket = Types.FailurePacket
@@ -92,8 +95,6 @@ local function callAPI(modelId: string, messages: { { role: string, content: str
 	return json
 end
 
-local CRESTDIP_MIN_CURVATURE = 0.006
-
 local function normalizeState(state: SectorState, integerLevers: boolean): SectorState
 	-- Clamp and optionally round lever values to legal bounds
 	if state.params and state.mechanic then
@@ -108,9 +109,15 @@ local function normalizeState(state: SectorState, integerLevers: boolean): Secto
 		end
 		-- CrestDip: enforce h/L² >= MIN_CURVATURE by bumping height if needed
 		if state.mechanic == "CrestDip" then
+			local tunedHeight, tunedLength = CrestDipTuner.tune(
+				state.params.height_or_depth or 0,
+				state.params.sector_length or 0
+			)
+			state.params.height_or_depth = tunedHeight
+			state.params.sector_length = tunedLength
 			local h = state.params.height_or_depth or 0
 			local L = state.params.sector_length or 1
-			local minH = math.ceil(CRESTDIP_MIN_CURVATURE * L * L)
+			local minH = math.ceil(Constants.CRESTDIP_MIN_CURVATURE * L * L)
 			if h < minH then
 				local hBound = LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth
 				state.params.height_or_depth = math.min(minH, hBound.max)
@@ -175,6 +182,11 @@ function OpenRouterProvider(modelId: string)
 			packet.attempt_index + 1
 		)
 		return encode({ newState = state, explanation = explanation })
+	end
+
+	function provider.orchestrate(payload)
+		local messages = payload.messages or OrchestratorPromptBuilder.messages(payload.context)
+		return callAPI(modelId, messages)
 	end
 
 	return provider

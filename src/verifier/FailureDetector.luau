@@ -22,6 +22,8 @@ local _overturnStartTime: number? = nil
 local _invalidAttitudeStartTime: number? = nil
 local _backwardStartTime: number? = nil
 local _tumbleStartTime: number? = nil
+local _lastCheckTime: number? = nil
+local _spinAngleAccum = 0
 
 function FailureDetector.reset()
 	_stallStartTime = nil
@@ -31,6 +33,8 @@ function FailureDetector.reset()
 	_invalidAttitudeStartTime = nil
 	_backwardStartTime = nil
 	_tumbleStartTime = nil
+	_lastCheckTime = nil
+	_spinAngleAccum = 0
 end
 
 -- Called each frame during a run.
@@ -48,6 +52,12 @@ function FailureDetector.check(
 	upDot: number,
 	forwardDot: number?
 ): FailureInfo?
+	local dt = 0
+	if _lastCheckTime ~= nil then
+		dt = math.max(0, elapsed - _lastCheckTime)
+	end
+	_lastCheckTime = elapsed
+
 	if elapsed >= Constants.LAP_TIMEOUT then
 		return { type = "system_failure", sector_id = currentSector, detail = "lap_timeout" }
 	end
@@ -56,17 +66,28 @@ function FailureDetector.check(
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "fell_below_kill_plane" }
 	end
 
-	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.TRACK_WIDTH * 1.5 then
+	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.OFF_TRACK_FAILURE_DISTANCE then
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "off_track" }
 	end
 
 	local facingDot = forwardDot or 1
+	local unstableSpin = angularSpeed >= Constants.SPIN_ANGULAR_SPEED_THRESHOLD
+		and (facingDot <= 0.5 or upDot <= 0.8 or isAirborne)
+	if unstableSpin then
+		_spinAngleAccum += angularSpeed * dt
+		if _spinAngleAccum >= Constants.SPIN_FAILURE_ANGLE_RAD then
+			return { type = "local_execution_failure", sector_id = currentSector, detail = "spinout" }
+		end
+	elseif angularSpeed <= Constants.SPIN_RESET_ANGULAR_SPEED_THRESHOLD then
+		_spinAngleAccum = 0
+	end
+
+	local groundedTumble = not isAirborne
+		and (upDot <= Constants.TUMBLE_UP_DOT_THRESHOLD or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD)
+	local airborneTumble = isAirborne
+		and (upDot <= 0.1 or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD)
 	local tumbling = angularSpeed >= Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD
-		and (
-			upDot <= Constants.TUMBLE_UP_DOT_THRESHOLD
-			or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD
-			or (isAirborne and (upDot <= 0.45 or facingDot <= 0))
-		)
+		and (groundedTumble or airborneTumble)
 	if tumbling then
 		if _tumbleStartTime == nil then
 			_tumbleStartTime = elapsed

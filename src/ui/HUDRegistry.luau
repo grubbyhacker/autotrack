@@ -14,6 +14,10 @@ local DANGER = Color3.fromRGB(214, 91, 73)
 local SUCCESS = Color3.fromRGB(115, 199, 143)
 local TEXT = Color3.fromRGB(234, 231, 225)
 local MUTED = Color3.fromRGB(168, 163, 154)
+local LEFT_RAIL_WIDTH = 282
+local LEFT_RAIL_MARGIN = 20
+local LEFT_RAIL_GAP = 20
+local RIGHT_RAIL_WIDTH = 188
 
 local function addCorner(parent: Instance, radius: number)
 	local corner = Instance.new("UICorner")
@@ -215,14 +219,36 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
+	local enduranceLabel = createLabel(topRight, {
+		Position = UDim2.new(0, 18, 0, 36),
+		Size = UDim2.new(1, -36, 0, 16),
+		Text = "",
+		TextColor3 = MUTED,
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local buildLabel = createLabel(topRight, {
+		Position = UDim2.new(0, 18, 0, 54),
+		Size = UDim2.new(1, -36, 0, 14),
+		Text = "",
+		TextColor3 = MUTED,
+		TextSize = 10,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
 	local errorLabel = createLabel(topRight, {
-		Position = UDim2.new(0, 18, 0, 38),
-		Size = UDim2.new(1, -36, 0, 22),
+		Position = UDim2.new(0, 18, 0, 72),
+		Size = UDim2.new(1, -36, 0, 30),
 		Text = "",
 		TextColor3 = DANGER,
 		TextSize = 14,
 		Font = Enum.Font.GothamMedium,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
 	})
 
 	-- FAILURE BANNER — centered overlay
@@ -280,7 +306,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local logContainer = createFrame(gui, {
 		Position = UDim2.new(0, 20, 0, 140),
 		AnchorPoint = Vector2.new(0, 0),
-		Size = UDim2.new(0, 188, 0, 260),
+		Size = UDim2.new(0, LEFT_RAIL_WIDTH, 0, 260),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.12,
 	})
@@ -301,10 +327,10 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local speedLabel = createLabel(logContainer, {
 		Position = UDim2.new(0, 14, 0, 38),
 		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Speed  0.0",
+		Text = "Speed  0.0  Cmd 0.0  Tgt 0.0",
 		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		Font = Enum.Font.Code,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
@@ -339,13 +365,13 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local logLabels = {}
-	for index = 1, 4 do
+	for index = 1, 8 do
 		logLabels[index] = createLabel(logContainer, {
-			Position = UDim2.new(0, 14, 0, 126 + (index - 1) * 30),
-			Size = UDim2.new(1, -28, 0, 26),
+			Position = UDim2.new(0, 14, 0, 126 + (index - 1) * 16),
+			Size = UDim2.new(1, -28, 0, 14),
 			Text = "",
 			TextColor3 = MUTED,
-			TextSize = 12,
+			TextSize = 11,
 			Font = Enum.Font.Code,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextYAlignment = Enum.TextYAlignment.Top,
@@ -357,7 +383,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- RIGHT RAIL — session telemetry + set baseline + overview
 	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, 188, 0, 298),
+		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 298),
 		Position = UDim2.new(1, -20, 0, 140),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
@@ -440,8 +466,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- BOTTOM DOCK — command input + LLM controls
 	local bottomDock = createFrame(gui, {
-		Size = UDim2.new(1, -40, 0, 118),
-		Position = UDim2.new(0, 20, 1, -20),
+		Size = UDim2.new(1, -(LEFT_RAIL_MARGIN + LEFT_RAIL_WIDTH + LEFT_RAIL_GAP + RIGHT_RAIL_WIDTH + 60), 0, 118),
+		Position = UDim2.new(0, LEFT_RAIL_MARGIN + LEFT_RAIL_WIDTH + LEFT_RAIL_GAP, 1, -20),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.12,
@@ -548,6 +574,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		phaseLabel = phaseLabel,
 		requestLabel = requestLabel,
 		attemptLabel = attemptLabel,
+		enduranceLabel = enduranceLabel,
+		buildLabel = buildLabel,
 		errorLabel = errorLabel,
 		reasoningLabel = reasoningLabel,
 		reasoningActionLabel = reasoningActionLabel,

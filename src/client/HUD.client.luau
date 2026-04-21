@@ -161,6 +161,18 @@ local function render()
 		stateFolder:GetAttribute("attempt_current") or 0,
 		stateFolder:GetAttribute("attempt_max") or 0
 	)
+	StatusPanel.setEndurance(
+		stateFolder:GetAttribute("endurance_mode_active") == true,
+		stateFolder:GetAttribute("endurance_terminal") == true,
+		stateFolder:GetAttribute("endurance_lap_count") or 0,
+		stateFolder:GetAttribute("endurance_attempt_budget_used") or 0,
+		stateFolder:GetAttribute("endurance_attempt_budget_total") or 0,
+		hotfixActive
+	)
+	StatusPanel.setRuntimeIdentity(
+		stateFolder:GetAttribute("build_stamp") or "",
+		stateFolder:GetAttribute("controller_profile") or ""
+	)
 	StatusPanel.setExplanation(stateFolder:GetAttribute("explanation") or "")
 	StatusPanel.setRepairAction(stateFolder:GetAttribute("repair_action_text") or "")
 	StatusPanel.setError(
@@ -179,12 +191,20 @@ local function render()
 		stateFolder:GetAttribute("log_2") or "",
 		stateFolder:GetAttribute("log_3") or "",
 		stateFolder:GetAttribute("log_4") or "",
+		stateFolder:GetAttribute("log_5") or "",
+		stateFolder:GetAttribute("log_6") or "",
+		stateFolder:GetAttribute("log_7") or "",
+		stateFolder:GetAttribute("log_8") or "",
 	})
 
 	StatsPanel.setBaseline(stateFolder:GetAttribute("baseline_lap_time") or -1)
 	StatsPanel.setLastLapTime(stateFolder:GetAttribute("last_lap_time") or -1)
 	StatsPanel.setSlowdown(stateFolder:GetAttribute("slowdown_ratio") or 1)
-	StatsPanel.setCurrentSpeed(stateFolder:GetAttribute("current_speed") or 0)
+	StatsPanel.setCurrentSpeed(
+		stateFolder:GetAttribute("current_speed") or 0,
+		stateFolder:GetAttribute("current_commanded_speed") or 0,
+		stateFolder:GetAttribute("current_target_speed") or 0
+	)
 	StatsPanel.setHeading(stateFolder:GetAttribute("current_heading_deg") or 0)
 	StatsPanel.setPitch(stateFolder:GetAttribute("current_pitch_deg") or 0)
 	renderLLMControls()
@@ -220,8 +240,11 @@ local observedAttributes = {
 	"last_lap_time",
 	"slowdown_ratio",
 	"current_speed",
+	"current_target_speed",
+	"current_commanded_speed",
 	"current_heading_deg",
 	"current_pitch_deg",
+	"current_sector_kind",
 	"final_status",
 	"failure_banner_text",
 	"failure_banner_visible",
@@ -229,6 +252,10 @@ local observedAttributes = {
 	"log_2",
 	"log_3",
 	"log_4",
+	"log_5",
+	"log_6",
+	"log_7",
+	"log_8",
 	"last_score_sector",
 	"last_score_total",
 	"last_score_air",
@@ -243,8 +270,15 @@ local observedAttributes = {
 	"track_over_budget",
 	"llm_enabled",
 	"llm_model",
+	"endurance_mode_active",
 	"endurance_hotfix_active",
 	"endurance_hotfix_sector",
+	"endurance_terminal",
+	"endurance_lap_count",
+	"endurance_attempt_budget_used",
+	"endurance_attempt_budget_total",
+	"build_stamp",
+	"controller_profile",
 }
 
 for _, attributeName in ipairs(observedAttributes) do

@@ -211,7 +211,35 @@ function TestPhase13.runUnit()
 		tostring(exchange and exchange.provider))
 	LLMAdapter.useMockProvider()
 
-	-- 13: Boost50 is a valid pad value (phase 14 wiring check)
+	-- 13: partial initial proposal state is merged with request-shaped defaults
+	LLMAdapter.setProvider("partial-propose", {
+		propose = function()
+			return HttpService:JSONEncode({
+				sector_id = 3,
+				mechanic = "CrestDip",
+				params = { height_or_depth = 11, sector_length = 26 },
+				pads = { ingress = "Brake10" },
+			})
+		end,
+		repair = function()
+			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 11 }, explanation = "x" })
+		end,
+	})
+	local partialProposed, partialProposeErr = LLMAdapter.propose(makeRequest(3, "CrestDip"))
+	T.expect("llmadapter_merges_partial_initial_proposal",
+		partialProposeErr == nil
+			and partialProposed ~= nil
+			and type(partialProposed.params.height_or_depth) == "number"
+			and type(partialProposed.params.sector_length) == "number"
+			and type(partialProposed.params.radius) == "number"
+			and partialProposed.pads.ingress == "Brake10"
+			and partialProposed.pads.egress == "None"
+			and partialProposed.params.height_or_depth >= 4
+			and partialProposed.params.sector_length >= 20,
+		tostring(partialProposeErr or HttpService:JSONEncode(partialProposed or {})))
+	LLMAdapter.useMockProvider()
+
+	-- 14: Boost50 is a valid pad value (phase 14 wiring check)
 	do
 		local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 		local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)

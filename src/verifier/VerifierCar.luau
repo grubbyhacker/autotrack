@@ -84,7 +84,7 @@ function VerifierCar.spawn(startCFrame: CFrame): BasePart
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	part.Transparency = 1
-	part.CustomPhysicalProperties = PhysicalProperties.new(1, 0.5, 0)
+	part.CustomPhysicalProperties = PhysicalProperties.new(Constants.CAR_ROOT_DENSITY, 0.8, 0, 1, 1)
 	part.CFrame = startCFrame
 	part.Parent = workspace
 	buildVisualShell(part)

@@ -8,11 +8,13 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
+local CrestDipTuner = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipTuner"))
 local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegrity)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local MinimalProposer = require(script.Parent.MinimalProposer)
 local JobRunner = require(script.Parent.JobRunner)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
+local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 
 local TestPhase9 = {}
 
@@ -104,21 +106,67 @@ end
 function TestPhase9.runUnit()
 	local points = CrestDipPath.buildLocalCenterlinePoints(6, 40)
 	local maxY = -math.huge
+	local sawStartOffset = false
+	local sawCurveEnd = false
 	for _, point in ipairs(points) do
 		if point.Y > maxY then
 			maxY = point.Y
+		end
+		if math.abs(point.Z - ((Constants.STRAIGHT_LENGTH - 40) * 0.5)) < 0.01 then
+			sawStartOffset = true
+		end
+		if math.abs(point.Z - (Constants.STRAIGHT_LENGTH - ((Constants.STRAIGHT_LENGTH - 40) * 0.5))) < 0.01 then
+			sawCurveEnd = true
 		end
 	end
 	local expectedStartZ = (Constants.STRAIGHT_LENGTH - 40) * 0.5
 	T.expect(
 		"phase9_path_waypoints_follow_cosine",
-		#points >= CrestDipPath.CURVE_SEGMENTS + 2
+		#points > CrestDipPath.CURVE_SEGMENTS + 2
 			and math.abs(points[1].Y) < 1e-4
 			and math.abs(points[#points].Y) < 1e-4
+			and math.abs(points[2].Y) < 1e-4
 			and math.abs(maxY - 6) < 1e-3
-			and math.abs(points[2].Z - expectedStartZ) < 0.01
-			and math.abs(points[#points - 1].Z - (Constants.STRAIGHT_LENGTH - expectedStartZ)) < 0.01,
-		string.format("maxY=%.4f startZ=%.4f endZ=%.4f", maxY, points[2].Z, points[#points - 1].Z)
+			and sawStartOffset
+			and sawCurveEnd
+			and math.abs(points[#points].Z - Constants.STRAIGHT_LENGTH) < 0.01,
+		string.format("maxY=%.4f startZ=%.4f finalZ=%.4f", maxY, expectedStartZ, points[#points].Z)
+	)
+
+	local tunedHeight, tunedLength = CrestDipTuner.tune(10, 20)
+	T.expect(
+		"phase9_tuner_preserves_runout_and_curvature",
+		tunedHeight >= Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+			and tunedLength >= 20
+			and CrestDipTuner.runout(tunedLength) >= 20
+			and CrestDipTuner.peakSlope(tunedHeight, tunedLength) <= 0.70
+			and math.abs(tunedHeight) / (tunedLength * tunedLength) >= Constants.CRESTDIP_MIN_CURVATURE,
+		string.format("h=%d L=%d runout=%.2f slope=%.3f", tunedHeight, tunedLength, CrestDipTuner.runout(tunedLength), CrestDipTuner.peakSlope(tunedHeight, tunedLength))
+	)
+
+	local softenedHeight, softenedLength = CrestDipTuner.tune(4, 35, {
+		maxHeight = 5,
+		minLength = 31,
+	})
+	T.expect(
+		"phase9_tuner_softening_stays_monotonic",
+		softenedHeight <= 5
+			and softenedLength >= 31
+			and CrestDipTuner.runout(softenedLength) >= 20
+			and math.abs(softenedHeight) / (softenedLength * softenedLength) >= Constants.CRESTDIP_MIN_CURVATURE,
+		string.format("h=%d L=%d", softenedHeight, softenedLength)
+	)
+
+	local sharpenedHeight, sharpenedLength = CrestDipTuner.tune(8, 28, {
+		minHeight = 6,
+		maxLength = 30,
+	})
+	T.expect(
+		"phase9_tuner_sharpening_stays_monotonic",
+		(sharpenedHeight >= 6 or sharpenedLength <= 30)
+			and CrestDipTuner.peakSlope(sharpenedHeight, sharpenedLength) <= 0.70
+			and math.abs(sharpenedHeight) / (sharpenedLength * sharpenedLength) >= Constants.CRESTDIP_MIN_CURVATURE,
+		string.format("h=%d L=%d", sharpenedHeight, sharpenedLength)
 	)
 
 	local sectors = TrackGenerator.generate()
@@ -221,11 +269,13 @@ function TestPhase9.runUnit()
 	)
 	local curvatureAction = MinimalProposer.repair(curvaturePacket)
 	T.expect(
-		"phase9_proposer_curvature_picks_height_increase",
+		"phase9_proposer_curvature_picks_sharpening_change",
 		curvatureAction ~= nil
 			and curvatureAction.type == "SetNumericLever"
-			and curvatureAction.lever == "height_or_depth"
-			and curvatureAction.value > 6,
+			and (
+				(curvatureAction.lever == "height_or_depth" and curvatureAction.value > 6)
+				or (curvatureAction.lever == "sector_length" and curvatureAction.value < 40)
+			),
 		tostring(curvatureAction and curvatureAction.lever) .. "=" .. tostring(curvatureAction and curvatureAction.value)
 	)
 
@@ -245,19 +295,68 @@ function TestPhase9.runUnit()
 		tostring(dedupAction and dedupAction.lever) .. "=" .. tostring(dedupAction and dedupAction.value)
 	)
 
+	local crestRequest, crestRequestErr = RequestParser.parse("add a crest in sector 3", "phase9-crest-initial")
+	assert(crestRequest ~= nil, "expected crest request: " .. tostring(crestRequestErr))
+	local initialCrestState, initialCrestErr = MinimalProposer.initial(crestRequest)
+	T.expect(
+		"phase9_initial_crestdip_starts_braked",
+		initialCrestErr == nil
+			and initialCrestState ~= nil
+			and initialCrestState.pads.ingress == "Brake25"
+			and initialCrestState.pads.egress == "None",
+		tostring(initialCrestErr or initialCrestState and initialCrestState.pads.ingress or "nil")
+	)
+
 	local crestPadPacket = makePacket(
 		{ height_or_depth = 10, radius = 20, sector_length = 24 },
 		{},
 		"local_execution_failure"
 	)
+	crestPadPacket.run_result.failure.detail = "no_progress"
 	local crestPadAction = MinimalProposer.repair(crestPadPacket)
 	T.expect(
-		"phase9_proposer_crestdip_local_failure_lengthens_feature_first",
+		"phase9_proposer_crestdip_local_failure_boosts_first",
 		crestPadAction ~= nil
-			and crestPadAction.type == "SetNumericLever"
-			and crestPadAction.lever == "sector_length"
-			and crestPadAction.value > 24,
-		tostring(crestPadAction and crestPadAction.type == "SetNumericLever" and crestPadAction.lever or crestPadAction and crestPadAction.type)
+			and crestPadAction.type == "SetPad"
+			and crestPadAction.pad == "ingress"
+			and string.find(crestPadAction.value, "Boost", 1, true) ~= nil,
+		tostring(crestPadAction and crestPadAction.type == "SetPad" and crestPadAction.pad or crestPadAction and crestPadAction.type)
+	)
+
+	local crestCrashPacket = makePacket(
+		{ height_or_depth = 10, radius = 20, sector_length = 24 },
+		{},
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.2 }
+	)
+	crestCrashPacket.run_result.failure.detail = "spinout"
+	local crestCrashAction = MinimalProposer.repair(crestCrashPacket)
+	T.expect(
+		"phase9_proposer_crestdip_spinout_brakes_first",
+		crestCrashAction ~= nil
+			and crestCrashAction.type == "SetPad"
+			and crestCrashAction.pad == "ingress"
+			and string.find(crestCrashAction.value, "Brake", 1, true) ~= nil,
+		tostring(crestCrashAction and crestCrashAction.type == "SetPad" and crestCrashAction.pad or crestCrashAction and crestCrashAction.type)
+	)
+
+	local crestOffTrackPacket = makePacket(
+		{ height_or_depth = 10, radius = 20, sector_length = 24 },
+		{},
+		"local_execution_failure",
+		nil,
+		{ target_progress = 0.2 }
+	)
+	crestOffTrackPacket.run_result.failure.detail = "off_track"
+	local crestOffTrackAction = MinimalProposer.repair(crestOffTrackPacket)
+	T.expect(
+		"phase9_proposer_crestdip_off_track_brakes_first",
+		crestOffTrackAction ~= nil
+			and crestOffTrackAction.type == "SetPad"
+			and crestOffTrackAction.pad == "ingress"
+			and string.find(crestOffTrackAction.value, "Brake", 1, true) ~= nil,
+		tostring(crestOffTrackAction and crestOffTrackAction.type == "SetPad" and crestOffTrackAction.pad or crestOffTrackAction and crestOffTrackAction.type)
 	)
 
 	local crestExitPadPacket = makePacket(
@@ -266,10 +365,10 @@ function TestPhase9.runUnit()
 	)
 	local crestExitPadAction = MinimalProposer.repair(crestExitPadPacket)
 	T.expect(
-		"phase9_proposer_crestdip_reacquire_picks_egress_brake",
+		"phase9_proposer_crestdip_reacquire_picks_ingress_brake",
 		crestExitPadAction ~= nil
 			and crestExitPadAction.type == "SetPad"
-			and crestExitPadAction.pad == "egress"
+			and crestExitPadAction.pad == "ingress"
 			and string.find(crestExitPadAction.value, "Brake", 1, true) ~= nil,
 		tostring(crestExitPadAction and crestExitPadAction.type == "SetPad" and crestExitPadAction.pad or crestExitPadAction and crestExitPadAction.type)
 	)

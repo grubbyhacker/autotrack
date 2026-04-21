@@ -29,6 +29,7 @@ local CameraDemo = require(script.Parent.CameraDemo)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
 local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local HotfixAgent = require(script.Parent.HotfixAgent)
+local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
@@ -40,6 +41,7 @@ local _idCounter = 0
 local _pendingRequest: string? = nil
 local _extremeDemoActive = false
 local _extremePriorStates = {}
+local _allowEnduranceInternalSubmit = false
 local HOTFIX_DEMO_REQUEST = "add a chicane in sector 7"
 
 local function nextId(prefix: string): string
@@ -175,6 +177,48 @@ local function stateSummary(state): string
 	return "flat"
 end
 
+local function compactStateDetails(state): string
+	if state.mechanic == nil then
+		return string.format("flat ingress=%s egress=%s", state.pads.ingress, state.pads.egress)
+	end
+	local parts = {}
+	for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic] or {}) do
+		local value = state.params[lever]
+		if type(value) == "number" then
+			table.insert(parts, string.format("%s=%s", lever, tostring(value)))
+		end
+	end
+	table.insert(parts, string.format("ingress=%s", state.pads.ingress))
+	table.insert(parts, string.format("egress=%s", state.pads.egress))
+	return string.format("%s {%s}", tostring(state.mechanic), table.concat(parts, ", "))
+end
+
+local function metricsSummary(metrics): string
+	return string.format(
+		"entry=%.1f exit=%.1f progress=%.2f reacq=%s apex=%.1f air=%.1f slow=%.2f",
+		metrics.entry_speed or 0,
+		metrics.exit_speed or 0,
+		metrics.target_progress or 0,
+		boolString(metrics.target_reacquired == true),
+		metrics.target_apex_min_speed or 0,
+		metrics.target_airtime_distance or 0,
+		metrics.slowdown_ratio or 0
+	)
+end
+
+local function downstreamDiagnostics(targetSectorId: number, failureSector: number?)
+	if failureSector == nil or failureSector == targetSectorId then
+		return nil
+	end
+	local downstreamState = SectorRegistry.getCommitted(failureSector)
+	if downstreamState == nil or downstreamState.mechanic == nil then
+		return nil
+	end
+	return {
+		downstream_sector_state = cloneState(downstreamState),
+	}
+end
+
 local function finishRevert(job, targetSector, reason)
 	SectorRollback.revert(job.request.parsed.sector_id, targetSector.entry, targetSector.exit)
 	job.final_status = "reverted"
@@ -286,6 +330,33 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				MaximizerAgent.run({
 					submit = JobRunner.submit,
 					isBusy = JobRunner.isBusy,
+					isCameraDemoActive = CameraDemo.isActive,
+				})
+			end)
+			return true, nil
+		end
+
+		if slashArg == "endurance" then
+			if CameraDemo.isActive() then
+				UIState.rejectRequest(rawText, "camera demo is running; toggle it off before /demo endurance")
+				return false, "camera demo is running; toggle it off before /demo endurance"
+			end
+			if OrchestratorAgent.isActive() then
+				UIState.rejectRequest(rawText, "endurance mode already running")
+				return false, "endurance mode already running"
+			end
+			task.spawn(function()
+				OrchestratorAgent.run({
+					submit = function(text: string)
+						_allowEnduranceInternalSubmit = true
+						local callOk, submitOk, submitReason = pcall(JobRunner.submit, text)
+						_allowEnduranceInternalSubmit = false
+						if not callOk then
+							return false, tostring(submitOk)
+						end
+						return submitOk, submitReason
+					end,
+					getLastJob = JobRunner.getLastJob,
 					isCameraDemoActive = CameraDemo.isActive,
 				})
 			end)
@@ -437,8 +508,8 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return true, nil
 		end
 
-		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo extreme, /demo hotfix")
-		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo extreme, /demo hotfix"
+		UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix")
+		return false, "unknown demo; supported: /demo camera, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix"
 	end
 
 	if slashCommand == "llm" then
@@ -507,6 +578,11 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		return false, "camera demo is running; use /demo camera to toggle it off"
 	end
 
+	if OrchestratorAgent.isActive() and not _allowEnduranceInternalSubmit then
+		UIState.rejectRequest(rawText, "endurance mode owns the session; restart or wait for it to finish")
+		return false, "endurance mode owns the session; restart or wait for it to finish"
+	end
+
 	if JobLock.isHeld() then
 		Tracer.log(string.format("job_reject reason=busy raw=%q", rawText))
 		UIState.rejectRequest(rawText, "track is busy; try again shortly")
@@ -569,6 +645,12 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return false, "invalid initial proposal: " .. tostring(validationErr)
 		end
 		UIState.appendLog("Initial proposal accepted")
+		UIState.appendLog("Proposal: " .. compactStateDetails(initialState))
+		Tracer.log(string.format(
+			"proposal sector=%d state=%s",
+			targetSectorId,
+			compactStateDetails(initialState)
+		))
 
 		local job: CIJob = {
 			job_id = request.request_id,
@@ -741,6 +823,10 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				tostring(result.failure and result.failure.type or "unknown"),
 				result.failure and result.failure.sector_id or targetSectorId
 			))
+			UIState.appendLog("Metrics: " .. metricsSummary(result.metrics))
+			if #hints > 0 then
+				UIState.appendLog("Hints: " .. table.concat(hints, " | "))
+			end
 			Tracer.log(string.format(
 				"failure_analysis target_sector=%d failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f hints=%s",
 				targetSectorId,
@@ -834,8 +920,16 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				lastAction,
 				result,
 				failureSector,
-				hints
+				hints,
+				downstreamDiagnostics(targetSectorId, failureSector)
 			)
+			if packet.diagnostics.downstream_sector_state ~= nil then
+				UIState.appendLog(string.format(
+					"Downstream sector %d: %s",
+					packet.diagnostics.downstream_sector_state.sector_id,
+					tostring(packet.diagnostics.downstream_sector_state.mechanic)
+				))
+			end
 
 			sm:transition("ApplyRepair")
 			UIState.setPhase("ApplyRepair", "Applying repair...")
@@ -860,6 +954,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				UIState.setRepairAction("LLM: full state revision")
 				UIState.setExplanation(explanation or "")
 				UIState.appendLog(string.format("Attempt %d (LLM): %s", attemptIndex, explanation or "revised state"))
+				UIState.appendLog("Revised: " .. compactStateDetails(job.working_state))
 				pauseForUI()
 				Tracer.log(string.format(
 					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s path=llm_full_state explanation=%s",
@@ -881,6 +976,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 				UIState.setRepairAction(repairActionLabel(action))
 				UIState.setExplanation(explanation or "")
 				UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
+				UIState.appendLog("Action: " .. repairActionLabel(action))
 				pauseForUI()
 				Tracer.log(string.format(
 					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f action=%s explanation=%s",

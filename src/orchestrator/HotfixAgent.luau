@@ -87,7 +87,7 @@ end
 function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending, clearPending, resubmit)
 	if _active then
 		Tracer.log("hotfix_agent_reject reason=already_active sector=" .. sectorId)
-		return
+		return false
 	end
 	_active = true
 
@@ -101,10 +101,10 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 	if not committedState or committedState.mechanic == nil then
 		Tracer.log("hotfix_abort reason=no_committed_mechanic sector=" .. sectorId)
 		UIState.appendLog("Hotfix aborted: sector " .. sectorId .. " has no committed mechanic")
-		UIState.setEnduranceTerminal()
+		UIState.setEnduranceTerminal(sectorId)
 		UIState.setPhase("EnduranceFailed", "ENDURANCE FAILED")
 		_active = false
-		return
+		return false
 	end
 
 	local targetSector = RuntimeContext.getSectorById(sectorId)
@@ -117,6 +117,15 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 
 	while attemptIndex < Constants.HOTFIX_MAX_ATTEMPTS do
 		local hints = {}
+		local extraDiagnostics = nil
+		if lastResult.failure and lastResult.failure.sector_id ~= sectorId then
+			local downstreamState = SectorRegistry.getCommitted(lastResult.failure.sector_id)
+			if downstreamState and downstreamState.mechanic ~= nil then
+				extraDiagnostics = {
+					downstream_sector_state = cloneState(downstreamState),
+				}
+			end
+		end
 
 		-- Build failure packet with hotfix constraint injected into the description
 		local packet = LapEvaluator.buildFailurePacket(
@@ -139,7 +148,8 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 			nil,
 			lastResult,
 			sectorId,
-			hints
+			hints,
+			extraDiagnostics
 		)
 
 		UIState.setPhase("HotfixRepair", string.format("Hotfix: attempt %d/%d", attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS))
@@ -214,7 +224,7 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 			Tracer.log(string.format("hotfix_commit sector=%d version=%d", sectorId, workingState.version))
 
 			-- Re-record baseline over the now-fixed track
-			UIState.setPhase("HotfixBaseline", "Hotfix complete — re-baselining...")
+			UIState.setPhase("HotfixBaseline", "Hotfix complete — re-recording baseline...")
 			UIState.appendLog("Re-recording baseline lap...")
 			local newBaseline = rerecordBaseline()
 			if newBaseline then
@@ -251,16 +261,18 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		else
 			UIState.publishReady()
 		end
+		_active = false
+		return true
 	else
 		-- Hotfix failed — terminal state
 		Tracer.log(string.format("hotfix_failed sector=%d attempts=%d", sectorId, attemptIndex))
-		UIState.setEnduranceTerminal()
+		UIState.setEnduranceTerminal(sectorId)
 		UIState.setPhase("EnduranceFailed", "ENDURANCE FAILED")
 		UIState.showFailureBanner(string.format("ENDURANCE FAILED — Sector %d unfixable", sectorId))
 		UIState.appendLog(string.format("Hotfix exhausted — sector %d unfixable after %d attempts", sectorId, attemptIndex))
+		_active = false
+		return false
 	end
-
-	_active = false
 end
 
 return HotfixAgent

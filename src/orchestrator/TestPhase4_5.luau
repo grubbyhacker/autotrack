@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local T = require(script.Parent.TestUtils)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
+local CornerPath = require(script.Parent.Parent.Track.CornerPath)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 
@@ -13,7 +14,10 @@ local TestPhase4_5 = {}
 
 local CORNER_SECTOR_IDS = { 1, 5, 6, 10 }
 local A_STRAIGHT_ID = 2
-local ARC_TOLERANCE = 0.05  -- studs
+local ENTRY_ALIGNMENT_TOLERANCE = 0.98
+local EXIT_ALIGNMENT_TOLERANCE = 0.98
+local MAX_CORNER_CONTAINMENT = Constants.OFF_TRACK_FAILURE_DISTANCE * 0.75
+local MAX_CORNER_BODY_CONTAINMENT = Constants.FRONT_BODY_CONTAINMENT_DISTANCE * 0.95
 
 local function waitForBaseline(): (boolean, number?)
 	local deadline = os.clock() + 45
@@ -74,44 +78,60 @@ function TestPhase4_5.runGeometry()
 		sectorById[sector.id] = sector
 	end
 
-	local up = Vector3.new(0, 1, 0)
-	local R = Constants.CORNER_RADIUS + Constants.TRACK_WIDTH * 0.5
-	local N = Constants.CORNER_ARC_SAMPLES
-
 	local allCountsOk = true
-	local allOnArc = true
 	local countErrors = {}
-	local arcErrors = {}
+	local endpointErrors = {}
+	local alignmentErrors = {}
 
 	for _, cid in ipairs(CORNER_SECTOR_IDS) do
 		local sector = sectorById[cid]
 		local wpts = sectorWpts[cid] or {}
 		local count = #wpts
+		local expected = #CornerPath.buildWorldCenterlinePoints(
+			sector.entry,
+			sector.exit,
+			sector.entryShoulderLength,
+			sector.exitShoulderLength
+		)
 
-		if count ~= N then
+		if count ~= expected then
 			allCountsOk = false
-			table.insert(countErrors, string.format("corner%d: got %d want %d", cid, count, N))
+			table.insert(countErrors, string.format("corner%d: got %d want %d", cid, count, expected))
 		end
 
-		-- Arc center is computed from entry position and look direction (Y component will be TRACK_Y).
-		-- Waypoints are at CAR_RIDE_Y. Compare XZ distance only.
-		local arcCenter = sector.entry.Position + sector.entry.LookVector:Cross(up) * R
-		for _, wpt in ipairs(wpts) do
-			local dx = wpt.Position.X - arcCenter.X
-			local dz = wpt.Position.Z - arcCenter.Z
-			local dist = math.sqrt(dx * dx + dz * dz)
-			if math.abs(dist - R) > ARC_TOLERANCE then
-				allOnArc = false
-				table.insert(arcErrors, string.format(
-					"corner%d @(%.1f,%.1f) dist=%.3f want %.3f",
-					cid, wpt.Position.X, wpt.Position.Z, dist, R
+		if count >= 2 then
+			local first = wpts[1]
+			local second = wpts[2]
+			local last = wpts[count]
+			local penultimate = wpts[count - 1]
+			local firstDelta = Vector3.new(first.Position.X - sector.entry.Position.X, 0, first.Position.Z - sector.entry.Position.Z)
+			local lastDelta = Vector3.new(last.Position.X - sector.exit.Position.X, 0, last.Position.Z - sector.exit.Position.Z)
+			if firstDelta.Magnitude > 0.05
+				or lastDelta.Magnitude > 0.05 then
+				table.insert(endpointErrors, string.format(
+					"corner%d endpoints off: start=%.3f end=%.3f",
+					cid,
+					firstDelta.Magnitude,
+					lastDelta.Magnitude
+				))
+			end
+			local entryDir = (second.Position - first.Position).Unit
+			local exitDir = (last.Position - penultimate.Position).Unit
+			if entryDir:Dot(sector.entry.LookVector) < ENTRY_ALIGNMENT_TOLERANCE
+				or exitDir:Dot(sector.exit.LookVector) < EXIT_ALIGNMENT_TOLERANCE then
+				table.insert(alignmentErrors, string.format(
+					"corner%d alignment bad: entry=%.3f exit=%.3f",
+					cid,
+					entryDir:Dot(sector.entry.LookVector),
+					exitDir:Dot(sector.exit.LookVector)
 				))
 			end
 		end
 	end
 
 	T.expect("corner_waypoint_count", allCountsOk, table.concat(countErrors, "; "))
-	T.expect("corner_waypoints_on_arc", allOnArc, table.concat(arcErrors, "; "))
+	T.expect("corner_waypoints_match_sector_endpoints", #endpointErrors == 0, table.concat(endpointErrors, "; "))
+	T.expect("corner_waypoints_align_with_entry_exit", #alignmentErrors == 0, table.concat(alignmentErrors, "; "))
 end
 
 -- ── Lap test ──────────────────────────────────────────────────────────────────
@@ -143,7 +163,19 @@ function TestPhase4_5.runSpeed()
 	local car = VerifierCar.getPart()
 
 	local sectorExitSpeeds: { [number]: number } = {}
+	local sector2EntryLocalX = nil
+	local sector2 = nil
+	for _, sector in ipairs(sectors) do
+		if sector.id == A_STRAIGHT_ID then
+			sector2 = sector
+			break
+		end
+	end
+	assert(sector2 ~= nil, "sector 2 meta missing")
 	local function onSectorChange(id: number, entering: boolean)
+		if entering and id == A_STRAIGHT_ID then
+			sector2EntryLocalX = sector2.entry:PointToObjectSpace(car.Position).X
+		end
 		if not entering then
 			sectorExitSpeeds[id] = car.AssemblyLinearVelocity.Magnitude
 		end
@@ -167,6 +199,54 @@ function TestPhase4_5.runSpeed()
 		"corner_speed_lower_than_straight",
 		cornerSpeed < straightSpeed,
 		string.format("corner exit speed %.2f should be < straight exit speed %.2f", cornerSpeed, straightSpeed)
+	)
+	T.expect(
+		"sector2_entry_centered_after_sector1_corner",
+		type(sector2EntryLocalX) == "number" and math.abs(sector2EntryLocalX) <= 4.0,
+		string.format("sector 2 entry localX %.2f should stay near centerline", sector2EntryLocalX or math.huge)
+	)
+	T.expect(
+		"corner_exit_speed_uses_exit_shoulder",
+		cornerSpeed > Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR
+			and cornerSpeed < Constants.CAR_TARGET_SPEED,
+		string.format(
+			"corner exit speed %.2f should be between corner cap %.2f and straight %.2f",
+			cornerSpeed,
+			Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR,
+			Constants.CAR_TARGET_SPEED
+		)
+	)
+	T.expect(
+		"baseline_corner_lateral_error_stays_on_road",
+		(result.metrics.lateral_error or math.huge) <= Constants.OFF_TRACK_FAILURE_DISTANCE * 0.85,
+		string.format(
+			"baseline lateral error %.2f exceeded containment budget %.2f",
+			result.metrics.lateral_error or math.huge,
+			Constants.OFF_TRACK_FAILURE_DISTANCE * 0.85
+		)
+	)
+	local perCornerOk = true
+	local perCornerMessages = {}
+	for _, sectorId in ipairs(CORNER_SECTOR_IDS) do
+		local peak = result.metrics.sector_peak_centerline_distance and result.metrics.sector_peak_centerline_distance[sectorId] or math.huge
+		local bodyPeak = result.metrics.sector_peak_body_distance and result.metrics.sector_peak_body_distance[sectorId] or math.huge
+		if peak > MAX_CORNER_CONTAINMENT or bodyPeak > MAX_CORNER_BODY_CONTAINMENT then
+			perCornerOk = false
+			table.insert(perCornerMessages, string.format(
+				"sector %d center %.2f front %.2f body %.2f signed %.2f progress %.2f",
+				sectorId,
+				peak,
+				(result.metrics.sector_peak_front_distance and result.metrics.sector_peak_front_distance[sectorId]) or 0,
+				bodyPeak,
+				(result.metrics.sector_peak_signed_lateral and result.metrics.sector_peak_signed_lateral[sectorId]) or 0,
+				(result.metrics.sector_peak_progress and result.metrics.sector_peak_progress[sectorId]) or 0
+			))
+		end
+	end
+	T.expect(
+		"baseline_each_corner_stays_contained",
+		perCornerOk,
+		table.concat(perCornerMessages, " | ")
 	)
 end
 
