@@ -33,10 +33,8 @@
   - endurance and hotfix are independent left-side badges above `Live`, not overloaded into repair UI
   - LLM backend/model failures now surface as an amber warning strip above the `LLM` panel, not in the old attempt cluster
   - repair explanation/action copy is now a transient callout below the top ribbon and must not be fed from endurance/orchestrator telemetry each render
-- HUD-only demo commands now include:
-  - `/demo repair`
-  - `/demo llmerror`
-  - `/demo ui-hotfix`
+- Demo/HUD commands in active use:
+  - `/demo camera`, `/demo rampitup`, `/demo repair`, `/demo llmerror`, `/demo ui-hotfix`
 - Endurance policy/objective work lives in:
   - `src/orchestrator/OrchestratorAgent.luau`
   - `src/orchestrator/MinimalOrchestrator.luau`
@@ -52,7 +50,6 @@
   - `src/integrity/RampJumpIntegrity.luau`
   - `src/verifier/VerifierController.luau`
   - `src/orchestrator/CameraDemo.luau`
-- `/demo camera` and `/demo rampitup` are both supported.
 - Track visual cleanup changed the rendering strategy:
   - the old per-sector shell underlay was replaced with a shared track foundation in `TrackVisuals.renderTrackFoundation`
   - corner visuals now use denser visual-only path sampling than the verifier path
@@ -63,6 +60,7 @@
 - Working objective is still demo reliability over pure physics fidelity.
 - Target-sector entry normalization and recovery assists exist and are mechanic-specific.
 - Non-corner straights currently use stronger yaw/roll damping and forward-heading pinning than corners.
+- Corner-exit acceleration is now heading-gated: on the exit shoulder and first `0.15` of the following straight, target speed stays pinned until forward alignment exceeds `0.992`, which removes the visible slide-before-rotate handoff from S1 into S2.
 - `VerifierController.runLap` now explicitly settles the verifier at lap completion (zero linear/angular velocity, align to final heading) so completed laps do not drift or steer off the track after control teardown.
 - RampJump full-lap stability depends on both geometry and verifier behavior:
   - calmer entry normalization
@@ -81,6 +79,8 @@
 - `make test TEST=phase16`
 - `make test TEST=phase4_rampjump`
 - `make test TEST=phase4_5`
+- `make phase4_5_geometry`
+- `make phase4_5_speed`
 - `make test TEST=phase5_unit`
 - `make test TEST=phase9_unit`
 - `make test TEST=phase3`
@@ -90,12 +90,9 @@
 - Keep `phase14_5` in the fast gate set whenever endurance-policy or HUD-decision work changes.
 - Keep `phase14_integration` as the real acceptance gate for endurance retunes.
 - When verifier or RampJump behavior changes, check the actual `/demo rampitup` full-lap path in addition to the narrow suites.
+- When corner-exit feel changes, recheck `phase4_5_speed`; if the car starts sliding again, inspect heading-gated acceleration before retuning raw accel rates.
 - If CrestDip reliability regresses again, inspect straight lead-in speed and waypoint density before expanding mechanic-specific repair logic.
-- For future track-visual work, avoid mixing three concerns in one tweak:
-  - collision/verifier path
-  - smooth visual overlay
-  - edge piping
-  Visual-only fixes are safer when those stay separate.
+- For future track-visual work, avoid mixing collision/verifier path, smooth visual overlay, and edge piping in one tweak; visual-only fixes are safer when those stay separate.
 - Two failed visual approaches from this session should not be repeated casually:
   - trimming corner visual shoulders to zero produced V-shaped corners
   - forcing aggressive endpoint trimming/overlap on visible top ribbons exposed spoke-like seams or z-fighting

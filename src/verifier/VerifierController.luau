@@ -79,7 +79,16 @@ local function buildSectorWaypointRanges(waypointSectors: { number }?): { [numbe
 	if waypointSectors == nil then
 		return ranges
 	end
-	for index, sectorId in ipairs(waypointSectors) do
+
+	-- The lap path closes by repeating sector 1's entry waypoint at the end.
+	-- Ignore that duplicate so sector 1 progress reflects its first real visit.
+	local limit = #waypointSectors
+	if limit >= 2 and waypointSectors[limit] == waypointSectors[1] then
+		limit -= 1
+	end
+
+	for index = 1, limit do
+		local sectorId = waypointSectors[index]
 		local existing = ranges[sectorId]
 		if existing == nil then
 			ranges[sectorId] = { first = index, last = index }
@@ -89,6 +98,8 @@ local function buildSectorWaypointRanges(waypointSectors: { number }?): { [numbe
 	end
 	return ranges
 end
+
+VerifierController._buildSectorWaypointRanges = buildSectorWaypointRanges
 
 local function sectorProgressForIndex(rangeInfo, waypointIndex: number, segmentAlpha: number): number
 	if rangeInfo == nil then
@@ -161,6 +172,52 @@ local function cornerSpeedRate(
 	end
 	return Constants.CAR_ACCEL_RATE
 end
+
+local function resolveCornerExitAlignedTargetSpeed(
+	isCorner: boolean,
+	sectorId: number?,
+	previousSectorIsCorner: boolean,
+	nextSectorIsCorner: boolean,
+	isAirborne: boolean,
+	sectorProgress: number,
+	forwardDot: number,
+	targetSpeed: number,
+	commandedSpeed: number
+): number
+	if isAirborne or targetSpeed <= commandedSpeed then
+		return targetSpeed
+	end
+
+	local alignDot = math.clamp(
+		runtimeNumberAttr("AutoTrack_CornerExitAccelAlignDot", Constants.CORNER_EXIT_ACCEL_ALIGN_DOT),
+		-1,
+		0.9999
+	)
+	if forwardDot >= alignDot then
+		return targetSpeed
+	end
+
+	if isCorner then
+		local _, exitFrac = getCornerShoulderFractions(sectorId)
+		if not nextSectorIsCorner and sectorProgress >= 1 - exitFrac then
+			return commandedSpeed
+		end
+		return targetSpeed
+	end
+
+	local straightWindow = math.clamp(
+		runtimeNumberAttr("AutoTrack_PostCornerAccelStraightWindow", Constants.POST_CORNER_ACCEL_STRAIGHT_WINDOW),
+		0,
+		1
+	)
+	if previousSectorIsCorner and sectorProgress <= straightWindow then
+		return commandedSpeed
+	end
+
+	return targetSpeed
+end
+
+VerifierController._resolveCornerExitAlignedTargetSpeed = resolveCornerExitAlignedTargetSpeed
 
 local function adjacentCornerFlags(
 	currentSectorId: number?,
@@ -1113,6 +1170,17 @@ function VerifierController.runLap(
 				)
 			)
 		end
+		targetSpeed = resolveCornerExitAlignedTargetSpeed(
+			isCorner == true,
+			currentSectorId,
+			previousSectorIsCorner,
+			nextSectorIsCorner,
+			isAirborne,
+			sectorProgress,
+			forwardDot,
+			targetSpeed,
+			commandedSpeed
+		)
 		targetSpeed = math.max(5, targetSpeed)
 		local speedRate = if isCorner
 			then cornerSpeedRate(

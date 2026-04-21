@@ -78,6 +78,43 @@ function TestPhase4_5.runGeometry()
 		sectorById[sector.id] = sector
 	end
 
+	local sectorRanges = VerifierController._buildSectorWaypointRanges(waypointSectors)
+	local sector1Range = sectorRanges[1]
+	local sector1WaypointCount = #(sectorWpts[1] or {})
+	local heldCornerExitTarget = VerifierController._resolveCornerExitAlignedTargetSpeed(
+		true,
+		1,
+		false,
+		false,
+		false,
+		0.9,
+		0.97,
+		Constants.CAR_TARGET_SPEED,
+		48
+	)
+	local heldPostCornerStraightTarget = VerifierController._resolveCornerExitAlignedTargetSpeed(
+		false,
+		2,
+		true,
+		false,
+		false,
+		0.08,
+		0.98,
+		Constants.CAR_TARGET_SPEED,
+		52
+	)
+	local releasedAlignedTarget = VerifierController._resolveCornerExitAlignedTargetSpeed(
+		true,
+		1,
+		false,
+		false,
+		false,
+		0.9,
+		0.999,
+		Constants.CAR_TARGET_SPEED,
+		48
+	)
+
 	local allCountsOk = true
 	local countErrors = {}
 	local endpointErrors = {}
@@ -132,6 +169,35 @@ function TestPhase4_5.runGeometry()
 	T.expect("corner_waypoint_count", allCountsOk, table.concat(countErrors, "; "))
 	T.expect("corner_waypoints_match_sector_endpoints", #endpointErrors == 0, table.concat(endpointErrors, "; "))
 	T.expect("corner_waypoints_align_with_entry_exit", #alignmentErrors == 0, table.concat(alignmentErrors, "; "))
+	T.expect(
+		"sector1_progress_range_ignores_lap_close_duplicate",
+		sector1Range ~= nil and sector1Range.first == 1 and sector1Range.last == sector1WaypointCount,
+		string.format(
+			"sector1 range [%s,%s] should stop at first-visit waypoint count %d",
+			tostring(sector1Range and sector1Range.first),
+			tostring(sector1Range and sector1Range.last),
+			sector1WaypointCount
+		)
+	)
+	T.expect(
+		"corner_exit_accel_waits_for_heading_alignment",
+		heldCornerExitTarget == 48,
+		string.format("misaligned corner exit should hold 48, got %.2f", heldCornerExitTarget)
+	)
+	T.expect(
+		"post_corner_straight_accel_waits_for_heading_alignment",
+		heldPostCornerStraightTarget == 52,
+		string.format("misaligned post-corner straight should hold 52, got %.2f", heldPostCornerStraightTarget)
+	)
+	T.expect(
+		"corner_exit_accel_releases_once_aligned",
+		releasedAlignedTarget == Constants.CAR_TARGET_SPEED,
+		string.format(
+			"aligned corner exit should release to %.2f, got %.2f",
+			Constants.CAR_TARGET_SPEED,
+			releasedAlignedTarget
+		)
+	)
 end
 
 -- ── Lap test ──────────────────────────────────────────────────────────────────
