@@ -1,9 +1,74 @@
+local TweenService = game:GetService("TweenService")
+
 local HUDRegistry = require(script.Parent.HUDRegistry)
 
 local StatusPanel = {}
+local _detailState = {
+	explanation = "",
+	action = "",
+}
+local _repairCalloutRevision = 0
 
 local function refs()
 	return HUDRegistry.get()
+end
+
+local function tween(instance: Instance, duration: number, propertyTable)
+	local animation = TweenService:Create(instance, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), propertyTable)
+	animation:Play()
+	return animation
+end
+
+local function renderDetailLine()
+	local hud = refs()
+	local actionText = _detailState.action or ""
+	local explanationText = _detailState.explanation or ""
+	local calloutText = if explanationText ~= "" then explanationText else actionText
+	local currentlyVisible = hud.repairCallout.Visible == true and hud.repairCalloutLabel.Text ~= ""
+
+	hud.reasoningLabel.Text = ""
+	hud.reasoningLabel.Visible = false
+
+	if calloutText == "" and not currentlyVisible then
+		return
+	end
+
+	if calloutText ~= "" and currentlyVisible and hud.repairCalloutLabel.Text == calloutText then
+		return
+	end
+
+	_repairCalloutRevision += 1
+	local revision = _repairCalloutRevision
+
+	if calloutText == "" then
+		hud.repairCallout.Visible = false
+		hud.repairCalloutLabel.Text = ""
+		return
+	end
+
+	local updated = hud.repairCallout.Visible == true and hud.repairCalloutLabel.Text ~= ""
+	hud.repairCallout.Visible = true
+	hud.repairCallout.BackgroundTransparency = 0.22
+	hud.repairCalloutLabel.TextTransparency = 0
+	hud.repairCalloutLabel.Text = calloutText
+	tween(hud.repairCallout, 0.16, { BackgroundTransparency = 0.1 })
+	tween(hud.repairCalloutLabel, 0.16, { TextTransparency = 0 })
+
+	task.delay(if updated then 4.0 else 10.0, function()
+		if revision ~= _repairCalloutRevision then
+			return
+		end
+		local fadeDuration = if updated then 0.45 else 1.15
+		tween(hud.repairCallout, fadeDuration, { BackgroundTransparency = 1 })
+		tween(hud.repairCalloutLabel, fadeDuration, { TextTransparency = 1 })
+		task.delay(fadeDuration, function()
+			if revision ~= _repairCalloutRevision then
+				return
+			end
+			hud.repairCallout.Visible = false
+			hud.repairCalloutLabel.Text = ""
+		end)
+	end)
 end
 
 function StatusPanel.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
@@ -19,15 +84,20 @@ end
 function StatusPanel.setRequestSummary(summary: string, rawText: string)
 	local hud = refs()
 	if summary ~= "" then
-		hud.requestLabel.Text = ("%s  |  %s"):format(summary, rawText)
+		hud.requestLabel.Text = summary
 	else
-		hud.requestLabel.Text = if rawText ~= "" then rawText else "Awaiting command"
+		hud.requestLabel.Text = rawText or ""
 	end
 end
 
 function StatusPanel.setAttempt(current: number, max: number)
 	local hud = refs()
-	hud.attemptLabel.Text = ("ATTEMPT %d/%d"):format(current, max)
+	local showRepair = current ~= nil and max ~= nil and current > 0 and max > 0
+	hud.repairBanner.Visible = showRepair
+	if showRepair then
+		hud.repairLabel.Text = ("REPAIR MODE  |  ATTEMPT %d/%d"):format(current, max)
+		hud.tweenFlash(hud.repairLabel, { TextTransparency = 0 })
+	end
 end
 
 function StatusPanel.setEndurance(
@@ -40,67 +110,35 @@ function StatusPanel.setEndurance(
 	objectiveText: string?
 )
 	local hud = refs()
-	if terminal then
-		hud.enduranceLabel.Text = "ENDURANCE TERMINAL"
-		hud.enduranceLabel.TextColor3 = hud.colors.danger
-	elseif active then
-		hud.enduranceLabel.Text = ("ENDURANCE %d/%d  |  LAP %d"):format(used or 0, total or 0, lapCount or 0)
-		if objectiveText ~= nil and objectiveText ~= "" then
-			hud.enduranceLabel.Text ..= "  |  " .. objectiveText
-		end
-		hud.enduranceLabel.TextColor3 = if hotfixActive then hud.colors.danger else hud.colors.amberSoft
-	else
-		hud.enduranceLabel.Text = ""
-	end
-
+	hud.enduranceBadge.Visible = active == true
 	hud.topLeftStroke.Color = if hotfixActive == true or terminal then hud.colors.danger else hud.colors.amber
 end
 
 function StatusPanel.setRuntimeIdentity(buildStamp: string, controllerProfile: string)
-	local hud = refs()
-	if buildStamp == "" and controllerProfile == "" then
-		hud.buildLabel.Text = ""
-	else
-		hud.buildLabel.Text = string.format("%s  |  %s", buildStamp, controllerProfile)
-	end
+	return
 end
 
 function StatusPanel.setExplanation(text: string)
-	local hud = refs()
-	if text == "" then
-		hud.reasoningLabel.Text = "No repair explanation yet"
-		hud.reasoningLabel.TextColor3 = hud.colors.muted
-	else
-		hud.reasoningLabel.Text = text
-		hud.reasoningLabel.TextColor3 = hud.colors.text
-	end
+	_detailState.explanation = text or ""
+	renderDetailLine()
 end
 
 function StatusPanel.setRepairAction(text: string)
-	local hud = refs()
-	if text == "" then
-		hud.reasoningActionLabel.Text = ""
-	else
-		hud.reasoningActionLabel.Text = "→ " .. text
-	end
+	_detailState.action = if text ~= "" then "→ " .. text else ""
+	renderDetailLine()
 end
 
 function StatusPanel.setError(text: string, finalStatus: string, hotfixActive: boolean?)
 	local hud = refs()
-	if text ~= "" then
-		hud.errorLabel.Text = text
-		hud.errorLabel.TextColor3 = hud.colors.danger
-	elseif hotfixActive == true then
-		hud.errorLabel.Text = "Hotfix escalation in progress"
-		hud.errorLabel.TextColor3 = hud.colors.danger
-	elseif finalStatus == "committed" then
-		hud.errorLabel.Text = "Commit locked in"
-		hud.errorLabel.TextColor3 = hud.colors.success
-	elseif finalStatus == "reverted" then
-		hud.errorLabel.Text = "Sector reverted"
-		hud.errorLabel.TextColor3 = hud.colors.danger
+	local isLLMError = text ~= "" and string.find(text, "LLM error:", 1, true) == 1
+
+	hud.llmWarning.Visible = isLLMError
+	if isLLMError then
+		local warningText = string.gsub(text, "^LLM error:%s*", "")
+		hud.llmWarningLabel.Text = if warningText ~= "" then warningText else text
+		hud.tweenFlash(hud.llmWarning, { BackgroundTransparency = 0.02 })
 	else
-		hud.errorLabel.Text = ""
+		hud.llmWarningLabel.Text = ""
 	end
 end
 
@@ -128,21 +166,34 @@ end
 
 function StatusPanel.setHotfixBanner(text: string, isVisible: boolean)
 	local hud = refs()
-	hud.hotfixBanner.Visible = isVisible
-	hud.hotfixBannerLabel.Text = if isVisible then text else ""
+	hud.hotfixBadge.Visible = isVisible
+	hud.hotfixBanner.Visible = false
+	hud.hotfixBannerLabel.Text = ""
 	if isVisible then
-		hud.hotfixBanner.BackgroundTransparency = 0.16
-		hud.hotfixBannerLabel.TextTransparency = 0
-		hud.tweenFlash(hud.hotfixBanner, { BackgroundTransparency = 0.04 })
-		hud.tweenFlash(hud.hotfixBannerLabel, { TextTransparency = 0 })
+		hud.hotfixBadge.BackgroundTransparency = 0.06
+		hud.hotfixBadgeLabel.TextTransparency = 0
+		hud.tweenFlash(hud.hotfixBadge, { BackgroundTransparency = 0.02 })
+		hud.tweenFlash(hud.hotfixBadgeLabel, { TextTransparency = 0 })
 	end
 end
 
 function StatusPanel.setLogLines(lines: { string })
 	local hud = refs()
-	for index, label in ipairs(hud.logLabels) do
-		label.Text = lines[index] or ""
+	local lastIndex = 0
+	for index, line in ipairs(lines) do
+		if line ~= nil and line ~= "" then
+			lastIndex = index
+		end
 	end
+
+	local visibleLines = {}
+	for index = 1, lastIndex do
+		table.insert(visibleLines, lines[index] or "")
+	end
+
+	hud.logTextBox.Text = table.concat(visibleLines, "\n")
+	local overflowY = math.max(0, hud.logTextBox.TextBounds.Y - hud.logScroll.AbsoluteWindowSize.Y)
+	hud.logScroll.CanvasPosition = Vector2.new(0, overflowY)
 end
 
 function StatusPanel.clearExplanation()

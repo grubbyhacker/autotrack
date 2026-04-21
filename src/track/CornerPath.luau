@@ -11,13 +11,13 @@ local function cubicBezier(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t
 		+ p3 * (t * t * t)
 end
 
-local function appendLinearSamples(points: { Vector3 }, startPoint: Vector3, endPoint: Vector3)
+local function appendLinearSamples(points: { Vector3 }, startPoint: Vector3, endPoint: Vector3, sampleSpacing: number?)
 	local distance = (endPoint - startPoint).Magnitude
 	if distance <= 0 then
 		return
 	end
 
-	local spacing = math.max(4, Constants.CORNER_SHOULDER_SAMPLE_SPACING)
+	local spacing = math.max(2, sampleSpacing or Constants.CORNER_SHOULDER_SAMPLE_SPACING)
 	local steps = math.max(1, math.ceil(distance / spacing))
 	for index = 1, steps do
 		table.insert(points, startPoint:Lerp(endPoint, index / steps))
@@ -28,12 +28,15 @@ function CornerPath.buildWorldCenterlinePoints(
 	entryFrame: CFrame,
 	exitFrame: CFrame,
 	entryShoulderLength: number?,
-	exitShoulderLength: number?
+	exitShoulderLength: number?,
+	curveSamplesOverride: number?,
+	shoulderSampleSpacingOverride: number?
 ): { Vector3 }
 	local entryShoulder = entryShoulderLength or Constants.CORNER_CORNER_SHOULDER_LENGTH
 	local exitShoulder = exitShoulderLength or Constants.CORNER_EDITABLE_SHOULDER_LENGTH
 	local handle = Constants.CORNER_CURVE_HANDLE_LENGTH
-	local curveSamples = math.max(Constants.CORNER_ARC_SAMPLES, 5)
+	local curveSamples = math.max(curveSamplesOverride or Constants.CORNER_ARC_SAMPLES, 5)
+	local shoulderSampleSpacing = shoulderSampleSpacingOverride or Constants.CORNER_SHOULDER_SAMPLE_SPACING
 
 	local entryPoint = entryFrame.Position
 	local exitPoint = exitFrame.Position
@@ -43,13 +46,13 @@ function CornerPath.buildWorldCenterlinePoints(
 	local control2 = exitShoulderStart - exitFrame.LookVector * handle
 
 	local points = { entryPoint }
-	appendLinearSamples(points, entryPoint, entryShoulderEnd)
+	appendLinearSamples(points, entryPoint, entryShoulderEnd, shoulderSampleSpacing)
 	for index = 1, curveSamples - 2 do
 		local t = index / (curveSamples - 1)
 		table.insert(points, cubicBezier(entryShoulderEnd, control1, control2, exitShoulderStart, t))
 	end
 	table.insert(points, exitShoulderStart)
-	appendLinearSamples(points, exitShoulderStart, exitPoint)
+	appendLinearSamples(points, exitShoulderStart, exitPoint, shoulderSampleSpacing)
 	return points
 end
 

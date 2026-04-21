@@ -14,9 +14,10 @@ local function smoothstep(t: number): number
 	return t * t * (3 - 2 * t)
 end
 
-function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLength: number): { Vector3 }
+function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLength: number, turnSegmentsOverride: number?): { Vector3 }
 	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
+	local turnSegments = math.max(turnSegmentsOverride or ChicanePath.TURN_SEGMENTS, 1)
 	local points = { Vector3.new(0, 0, 0) }
 	if startOffset > 0 then
 		table.insert(points, Vector3.new(0, 0, startOffset))
@@ -24,8 +25,8 @@ function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLen
 	table.insert(points, Vector3.new(0, 0, startOffset + ChicanePath.ENTRY_STRAIGHT))
 
 	local function appendTurn(startX: number, endX: number, startZ: number)
-		for index = 1, ChicanePath.TURN_SEGMENTS do
-			local t = index / ChicanePath.TURN_SEGMENTS
+		for index = 1, turnSegments do
+			local t = index / turnSegments
 			local eased = smoothstep(t)
 			table.insert(points, Vector3.new(
 				startX + (endX - startX) * eased,

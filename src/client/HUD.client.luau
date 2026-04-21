@@ -27,28 +27,6 @@ local function percentString(value: number): string
 	return ("%d%%"):format(math.floor((value or 0) * 100 + 0.5))
 end
 
-local function orchestratorActionText(): string
-	local objectiveTotal = stateFolder:GetAttribute("orchestrator_objective_total") or 0
-	local reliability = stateFolder:GetAttribute("orchestrator_reliability_index") or 0
-	local memoryDepth = stateFolder:GetAttribute("orchestrator_memory_depth") or 0
-	local repeatPenalties = stateFolder:GetAttribute("orchestrator_repeat_penalties") or ""
-	local trackIntent = stateFolder:GetAttribute("orchestrator_track_intent") or ""
-
-	local text = string.format(
-		"OBJ %.2f  |  REL %s  |  MEM %d",
-		objectiveTotal,
-		percentString(reliability),
-		memoryDepth
-	)
-	if repeatPenalties ~= "" then
-		text ..= "  |  " .. repeatPenalties
-	end
-	if trackIntent ~= "" then
-		text ..= "  |  " .. trackIntent
-	end
-	return text
-end
-
 local function bindBaselineButton(remoteEvent)
 	if baselineClickConnection then
 		baselineClickConnection:Disconnect()
@@ -92,7 +70,8 @@ local TEXT_COLOR = Color3.fromRGB(234, 231, 225)
 
 function renderLLMControls()
 	local enabled = stateFolder:GetAttribute("llm_enabled") == true
-	local modelId = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local storedModelId = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local modelId = if enabled then storedModelId else "heuristic"
 
 	-- Find display name for the current model
 	local displayName = "Heuristic"
@@ -103,33 +82,20 @@ function renderLLMControls()
 		end
 	end
 
-	hud.llmToggleButton.Active = llmControlsReady
-	hud.llmToggleButton.AutoButtonColor = llmControlsReady
 	hud.llmPrevButton.Active = llmControlsReady
 	hud.llmPrevButton.AutoButtonColor = llmControlsReady
 	hud.llmNextButton.Active = llmControlsReady
 	hud.llmNextButton.AutoButtonColor = llmControlsReady
-	hud.llmToggleButton.Text = if enabled then "LLM ON" else "LLM OFF"
-	hud.llmToggleButton.TextColor3 = if enabled and llmControlsReady then AMBER_SOFT_COLOR else MUTED_COLOR
-	hud.llmToggleButton.BackgroundColor3 = if enabled and llmControlsReady then AMBER_COLOR else STEEL_COLOR
-	hud.llmModelLabel.Text = "MODEL  " .. displayName
-	hud.llmModelLabel.TextColor3 = if llmControlsReady and enabled then TEXT_COLOR else MUTED_COLOR
+	hud.llmModelLabel.Text = "Model  " .. displayName
+	hud.llmModelLabel.TextColor3 = if llmControlsReady then TEXT_COLOR else MUTED_COLOR
 end
-
-hud.llmToggleButton.MouseButton1Click:Connect(function()
-	if not setLLMConfigEvent then
-		return
-	end
-	local currentEnabled = stateFolder:GetAttribute("llm_enabled") == true
-	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
-	setLLMConfigEvent:FireServer({ enabled = not currentEnabled, model = currentModel })
-end)
 
 hud.llmPrevButton.MouseButton1Click:Connect(function()
 	if not setLLMConfigEvent then
 		return
 	end
-	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local currentEnabled = stateFolder:GetAttribute("llm_enabled") == true
+	local currentModel = if currentEnabled then (stateFolder:GetAttribute("llm_model") or "heuristic") else "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
 		if m.id == currentModel then idx = i; break end
@@ -137,15 +103,15 @@ hud.llmPrevButton.MouseButton1Click:Connect(function()
 	local count = #LLMConfig.MODELS
 	local newIdx = ((idx - 2) % count) + 1
 	local newModel = LLMConfig.MODELS[newIdx].id
-	local enabled = stateFolder:GetAttribute("llm_enabled") == true
-	setLLMConfigEvent:FireServer({ enabled = enabled, model = newModel })
+	setLLMConfigEvent:FireServer({ enabled = newModel ~= "heuristic", model = newModel })
 end)
 
 hud.llmNextButton.MouseButton1Click:Connect(function()
 	if not setLLMConfigEvent then
 		return
 	end
-	local currentModel = stateFolder:GetAttribute("llm_model") or "heuristic"
+	local currentEnabled = stateFolder:GetAttribute("llm_enabled") == true
+	local currentModel = if currentEnabled then (stateFolder:GetAttribute("llm_model") or "heuristic") else "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
 		if m.id == currentModel then idx = i; break end
@@ -153,12 +119,18 @@ hud.llmNextButton.MouseButton1Click:Connect(function()
 	local count = #LLMConfig.MODELS
 	local newIdx = (idx % count) + 1
 	local newModel = LLMConfig.MODELS[newIdx].id
-	local enabled = stateFolder:GetAttribute("llm_enabled") == true
-	setLLMConfigEvent:FireServer({ enabled = enabled, model = newModel })
+	setLLMConfigEvent:FireServer({ enabled = newModel ~= "heuristic", model = newModel })
 end)
 
 -- Overview button — writes overview_mode attribute; TrackCamera reads it
 local _overviewActive = false
+local _logOpen = false
+
+local function renderLogToggle()
+	hud.logOverlay.Visible = _logOpen
+	hud.logButton.BackgroundColor3 = if _logOpen then AMBER_COLOR else STEEL_COLOR
+	hud.logButton.TextColor3 = if _logOpen then Color3.fromRGB(18, 21, 25) else AMBER_SOFT_COLOR
+end
 
 local function syncHotfixPresentation()
 	local hotfixActive = stateFolder:GetAttribute("endurance_hotfix_active") == true
@@ -172,11 +144,22 @@ end
 hud.overviewButton.MouseButton1Click:Connect(function()
 	_overviewActive = not _overviewActive
 	stateFolder:SetAttribute("overview_mode", _overviewActive)
-	hud.overviewButton.Text = if _overviewActive then "↩ Chase" else "Overview"
+	hud.overviewButton.Text = "O"
+end)
+
+hud.logButton.MouseButton1Click:Connect(function()
+	_logOpen = not _logOpen
+	renderLogToggle()
+end)
+
+hud.logCloseButton.MouseButton1Click:Connect(function()
+	_logOpen = false
+	renderLogToggle()
 end)
 
 local function render()
 	local hotfixActive = stateFolder:GetAttribute("endurance_hotfix_active") == true
+	local attemptCurrent = stateFolder:GetAttribute("attempt_current") or 0
 
 	StatusPanel.setPhase(stateFolder:GetAttribute("phase_label") or "Ready for request")
 	StatusPanel.setRequestSummary(
@@ -211,14 +194,10 @@ local function render()
 		stateFolder:GetAttribute("controller_profile") or ""
 	)
 	StatusPanel.setExplanation(
-		((stateFolder:GetAttribute("endurance_mode_active") == true)
-				and (stateFolder:GetAttribute("orchestrator_last_rationale") or ""))
-			or (stateFolder:GetAttribute("explanation") or "")
+		(if attemptCurrent > 0 then (stateFolder:GetAttribute("explanation") or "") else "")
 	)
 	StatusPanel.setRepairAction(
-		((stateFolder:GetAttribute("endurance_mode_active") == true)
-				and orchestratorActionText())
-			or (stateFolder:GetAttribute("repair_action_text") or "")
+		(if attemptCurrent > 0 then (stateFolder:GetAttribute("repair_action_text") or "") else "")
 	)
 	StatusPanel.setError(
 		stateFolder:GetAttribute("error_text") or "",
@@ -370,3 +349,4 @@ task.spawn(function()
 end)
 
 render()
+renderLogToggle()

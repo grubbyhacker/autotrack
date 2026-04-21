@@ -1,3 +1,4 @@
+local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
 
 local HUDRegistry = {}
@@ -18,6 +19,13 @@ local LEFT_RAIL_WIDTH = 282
 local LEFT_RAIL_MARGIN = 20
 local LEFT_RAIL_GAP = 20
 local RIGHT_RAIL_WIDTH = 188
+local LLM_DOCK_WIDTH = 320
+local BOTTOM_DOCK_HEIGHT = 78
+local BOTTOM_DOCK_GAP = 16
+local TOP_STATUS_RIGHT_RESERVE = 300
+local TOP_STATUS_MIN_LEFT = 196
+local TOP_STATUS_CHROME_CLEARANCE = 196
+local REPAIR_CALLOUT_RIGHT_MARGIN = 20
 
 local function addCorner(parent: Instance, radius: number)
 	local corner = Instance.new("UICorner")
@@ -104,11 +112,19 @@ local function createTextBox(parent: Instance, props)
 	box.TextColor3 = TEXT
 	box.TextSize = props.TextSize or 16
 	box.Font = props.Font or Enum.Font.Code
-	box.TextXAlignment = Enum.TextXAlignment.Left
-	box.ClearTextOnFocus = true
+	box.TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left
+	box.TextYAlignment = props.TextYAlignment or Enum.TextYAlignment.Center
+	box.TextWrapped = props.TextWrapped == true
+	box.TextTruncate = props.TextTruncate or Enum.TextTruncate.None
+	box.MultiLine = props.MultiLine == true
+	box.ClearTextOnFocus = if props.ClearTextOnFocus ~= nil then props.ClearTextOnFocus else true
+	box.TextEditable = if props.TextEditable ~= nil then props.TextEditable else true
 	box.Parent = parent
 	if props.ZIndex then
 		box.ZIndex = props.ZIndex
+	end
+	if props.AutomaticSize then
+		box.AutomaticSize = props.AutomaticSize
 	end
 	return box
 end
@@ -146,13 +162,18 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	overlayGui.DisplayOrder = 11
 	overlayGui.Parent = playerGui
 
-	-- TOP LEFT — phase label, request summary, reasoning
-	local topLeft = createFrame(gui, {
-		Size = UDim2.new(0, 400, 0, 116),
-		Position = UDim2.new(0, 20, 0, 12),
+	local topLeftInset = select(1, GuiService:GetGuiInset())
+	local statusLeft = math.max(TOP_STATUS_MIN_LEFT, math.floor(topLeftInset.X + TOP_STATUS_CHROME_CLEARANCE))
+
+	-- TOP RIBBON — phase, request summary, repair detail
+	local topLeft = createFrame(overlayGui, {
+		Size = UDim2.new(1, -(statusLeft + TOP_STATUS_RIGHT_RESERVE), 0, 42),
+		Position = UDim2.new(0, statusLeft, 0, 8),
 		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.12,
+		BackgroundTransparency = 0.08,
+		ZIndex = 32,
 	})
+	topLeft.ClipsDescendants = true
 	addCorner(topLeft, 16)
 	local topLeftStroke = Instance.new("UIStroke")
 	topLeftStroke.Color = AMBER
@@ -160,95 +181,141 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	topLeftStroke.Parent = topLeft
 
 	local phaseLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 22, 0, 12),
-		Size = UDim2.new(1, -44, 0, 26),
+		Position = UDim2.new(0, 14, 0, 0),
+		Size = UDim2.new(0, 210, 1, 0),
 		Text = "Ready for request",
 		TextColor3 = TEXT,
-		TextSize = 24,
+		TextSize = 18,
 		Font = Enum.Font.GothamBold,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 33,
 	})
 
 	local requestLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 22, 0, 42),
-		Size = UDim2.new(1, -44, 0, 18),
-		Text = "Awaiting command",
+		Position = UDim2.new(0, 230, 0, 0),
+		Size = UDim2.new(1, -244, 1, 0),
+		Text = "",
 		TextColor3 = MUTED,
 		TextSize = 14,
 		Font = Enum.Font.Code,
 		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 33,
 	})
 
 	local reasoningLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 22, 0, 70),
-		Size = UDim2.new(1, -44, 0, 18),
+		Position = UDim2.new(0, 14, 0, 25),
+		Size = UDim2.new(1, -28, 0, 15),
 		Text = "",
 		TextColor3 = MUTED,
-		TextSize = 13,
-		Font = Enum.Font.GothamMedium,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
-
-	local reasoningActionLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 22, 0, 92),
-		Size = UDim2.new(1, -44, 0, 14),
-		Text = "",
-		TextColor3 = AMBER_SOFT,
 		TextSize = 12,
 		Font = Enum.Font.Code,
 		TextTruncate = Enum.TextTruncate.AtEnd,
+		Visible = false,
+		ZIndex = 33,
 	})
 
-	-- TOP RIGHT — attempt counter, error status
-	local topRight = createFrame(gui, {
-		Size = UDim2.new(0, 210, 0, 116),
-		Position = UDim2.new(1, -20, 0, 12),
+	local reasoningActionLabel = createLabel(topLeft, {
+		Position = UDim2.new(0, 14, 0, 25),
+		Size = UDim2.new(1, -28, 0, 15),
+		Text = "",
+		TextColor3 = MUTED,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Visible = false,
+		ZIndex = 33,
+	})
+
+	local repairCallout = createFrame(overlayGui, {
+		Size = UDim2.new(1, -(statusLeft + REPAIR_CALLOUT_RIGHT_MARGIN), 0, 44),
+		Position = UDim2.new(0, statusLeft, 0, 60),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.22,
+		ZIndex = 34,
+	})
+	repairCallout.Visible = false
+	addCorner(repairCallout, 14)
+	addStroke(repairCallout, AMBER, 0.28)
+
+	local repairCalloutLabel = createLabel(repairCallout, {
+		Position = UDim2.new(0, 16, 0, 0),
+		Size = UDim2.new(1, -32, 1, 0),
+		Text = "",
+		TextColor3 = TEXT,
+		TextTransparency = 0,
+		TextSize = 12,
+		Font = Enum.Font.Gotham,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 35,
+	})
+
+	-- TOP EDGE — repair mode banner
+	local repairBanner = createFrame(overlayGui, {
+		Size = UDim2.new(0, 260, 0, 42),
+		Position = UDim2.new(1, -12, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.12,
+		BackgroundTransparency = 0.08,
+		ZIndex = 35,
 	})
-	addCorner(topRight, 16)
-	addStroke(topRight, AMBER, 0.25)
+	repairBanner.Visible = false
+	addCorner(repairBanner, 14)
+	addStroke(repairBanner, AMBER, 0.18)
 
-	local attemptLabel = createLabel(topRight, {
-		Position = UDim2.new(0, 18, 0, 14),
-		Size = UDim2.new(1, -36, 0, 18),
-		Text = "ATTEMPT 0/5",
+	local repairLabel = createLabel(repairBanner, {
+		Position = UDim2.new(0, 14, 0, 0),
+		Size = UDim2.new(1, -28, 1, 0),
+		Text = "REPAIR MODE  |  ATTEMPT 1/7",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 14,
+		TextSize = 13,
 		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		ZIndex = 36,
 	})
 
-	local enduranceLabel = createLabel(topRight, {
-		Position = UDim2.new(0, 18, 0, 36),
-		Size = UDim2.new(1, -36, 0, 16),
-		Text = "",
-		TextColor3 = MUTED,
+	local enduranceBadge = createFrame(gui, {
+		Position = UDim2.new(0, 20, 0, 6),
+		Size = UDim2.new(0, 148, 0, 22),
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 0.1,
+	})
+	enduranceBadge.Visible = false
+	addCorner(enduranceBadge, 10)
+	addStroke(enduranceBadge, AMBER, 0.18)
+
+	local enduranceBadgeLabel = createLabel(enduranceBadge, {
+		Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.new(0.5, 0, 0.5, -1),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Text = "Endurance Mode",
+		TextColor3 = AMBER_SOFT,
 		TextSize = 11,
 		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 	})
 
-	local buildLabel = createLabel(topRight, {
-		Position = UDim2.new(0, 18, 0, 54),
-		Size = UDim2.new(1, -36, 0, 14),
-		Text = "",
-		TextColor3 = MUTED,
-		TextSize = 10,
-		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
+	local hotfixBadge = createFrame(gui, {
+		Position = UDim2.new(0, 20, 0, 32),
+		Size = UDim2.new(0, 148, 0, 22),
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 0.06,
 	})
+	hotfixBadge.Visible = false
+	addCorner(hotfixBadge, 10)
+	addStroke(hotfixBadge, DANGER, 0.12)
 
-	local errorLabel = createLabel(topRight, {
-		Position = UDim2.new(0, 18, 0, 72),
-		Size = UDim2.new(1, -36, 0, 30),
-		Text = "",
+	local hotfixBadgeLabel = createLabel(hotfixBadge, {
+		Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.new(0.5, 0, 0.5, -1),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Text = "Hotfix Mode",
 		TextColor3 = DANGER,
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextWrapped = true,
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 	})
 
 	-- FAILURE BANNER — centered overlay
@@ -278,35 +345,32 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local hotfixBanner = createFrame(overlayGui, {
-		Size = UDim2.new(0, 620, 0, 74),
-		Position = UDim2.new(0.5, 0, 0, 0),
-		AnchorPoint = Vector2.new(0.5, 0),
+		Size = UDim2.new(0, 1, 0, 1),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundColor3 = DANGER,
-		BackgroundTransparency = 0.12,
-		ZIndex = 40,
+		BackgroundTransparency = 1,
+		ZIndex = 1,
 	})
 	hotfixBanner.Visible = false
-	addCorner(hotfixBanner, 20)
-	addStroke(hotfixBanner, AMBER_SOFT, 0.05)
 
 	local hotfixBannerLabel = createLabel(hotfixBanner, {
-		Size = UDim2.new(1, -28, 1, -12),
-		Position = UDim2.new(0, 14, 0, 6),
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
 		Text = "",
-		TextColor3 = TEXT,
-		TextSize = 28,
-		Font = Enum.Font.GothamBlack,
+		TextColor3 = DANGER,
+		TextSize = 1,
+		Font = Enum.Font.Code,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextYAlignment = Enum.TextYAlignment.Center,
-		TextWrapped = true,
+		TextWrapped = false,
 		ZIndex = 41,
 	})
 
 	-- LEFT RAIL — live telemetry + event log
 	local logContainer = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 140),
+		Position = UDim2.new(0, 20, 0, 60),
 		AnchorPoint = Vector2.new(0, 0),
-		Size = UDim2.new(0, LEFT_RAIL_WIDTH, 0, 260),
+		Size = UDim2.new(0, 148, 0, 112),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.12,
 	})
@@ -316,8 +380,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local logTitle = createLabel(logContainer, {
 		Position = UDim2.new(0, 14, 0, 8),
-		Size = UDim2.new(1, -28, 0, 22),
-		Text = "LIVE TELEMETRY",
+		Size = UDim2.new(0, 90, 0, 18),
+		Text = "Live",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
 		Font = Enum.Font.Code,
@@ -325,66 +389,154 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local speedLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 38),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Speed  0.0  Cmd 0.0  Tgt 0.0",
+		Position = UDim2.new(0, 14, 0, 36),
+		Size = UDim2.new(0, 56, 0, 20),
+		Text = "Speed",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local speedValueLabel = createLabel(logContainer, {
+		Position = UDim2.new(1, -14, 0, 36),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 62, 0, 20),
+		Text = "0.0",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
+	local headingLabel = createLabel(logContainer, {
+		Position = UDim2.new(0, 14, 0, 56),
+		Size = UDim2.new(0, 56, 0, 20),
+		Text = "Heading",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local headingValueLabel = createLabel(logContainer, {
+		Position = UDim2.new(1, -14, 0, 56),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 62, 0, 20),
+		Text = "N   0°",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
+	local pitchLabel = createLabel(logContainer, {
+		Position = UDim2.new(0, 14, 0, 76),
+		Size = UDim2.new(0, 56, 0, 20),
+		Text = "Pitch",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local pitchValueLabel = createLabel(logContainer, {
+		Position = UDim2.new(1, -14, 0, 76),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 62, 0, 20),
+		Text = "+0°",
+		TextColor3 = TEXT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
+	local logOverlay = createFrame(overlayGui, {
+		Position = UDim2.new(0, 20, 0, 64),
+		Size = UDim2.new(1, -40, 0, 220),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.04,
+		ZIndex = 42,
+	})
+	logOverlay.Visible = false
+	addCorner(logOverlay, 18)
+	addStroke(logOverlay, STEEL_LIGHT, 0.12)
+
+	local logOverlayTitle = createLabel(logOverlay, {
+		Position = UDim2.new(0, 16, 0, 10),
+		Size = UDim2.new(0, 120, 0, 18),
+		Text = "Event Log",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.Code,
+		ZIndex = 43,
+	})
+
+	local logOverlayHint = createLabel(logOverlay, {
+		Position = UDim2.new(1, -54, 0, 10),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 220, 0, 18),
+		Text = "Select text to copy",
+		TextColor3 = MUTED,
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 43,
+	})
+
+	local logCloseButton = createButton(logOverlay, {
+		Position = UDim2.new(1, -16, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 30, 0, 22),
+		Text = "X",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+		ZIndex = 43,
+	})
+	addCorner(logCloseButton, 8)
+	addStroke(logCloseButton, AMBER_SOFT, 0.48)
+
+	local logScroll = Instance.new("ScrollingFrame")
+	logScroll.Name = "LogScroll"
+	logScroll.Position = UDim2.new(0, 12, 0, 36)
+	logScroll.Size = UDim2.new(1, -24, 1, -48)
+	logScroll.BackgroundColor3 = PANEL_SOFT
+	logScroll.BackgroundTransparency = 0.08
+	logScroll.BorderSizePixel = 0
+	logScroll.ScrollBarThickness = 8
+	logScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	logScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	logScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	logScroll.ZIndex = 43
+	logScroll.Parent = logOverlay
+	addCorner(logScroll, 12)
+
+	local logTextBox = createTextBox(logScroll, {
+		Position = UDim2.new(0, 8, 0, 8),
+		Size = UDim2.new(1, -16, 0, 0),
+		Text = "",
 		TextColor3 = TEXT,
 		TextSize = 13,
 		Font = Enum.Font.Code,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextEditable = true,
+		ClearTextOnFocus = false,
+		MultiLine = true,
+		TextWrapped = false,
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		ZIndex = 44,
 	})
-
-	local headingLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 60),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Heading  N 0°",
-		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-
-	local pitchLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 82),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Pitch  +0°",
-		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-
-	local recentLoopLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 110),
-		Size = UDim2.new(1, -28, 0, 16),
-		Text = "EVENT LOG  older↑  ↓newer",
-		TextColor3 = AMBER_SOFT,
-		TextSize = 11,
-		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-
-	local logLabels = {}
-	for index = 1, 8 do
-		logLabels[index] = createLabel(logContainer, {
-			Position = UDim2.new(0, 14, 0, 126 + (index - 1) * 16),
-			Size = UDim2.new(1, -28, 0, 14),
-			Text = "",
-			TextColor3 = MUTED,
-			TextSize = 11,
-			Font = Enum.Font.Code,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			TextWrapped = true,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			ClipsDescendants = true,
-		})
-	end
 
 	-- RIGHT RAIL — session telemetry + set baseline + overview
 	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 298),
-		Position = UDim2.new(1, -20, 0, 140),
+		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 160),
+		Position = UDim2.new(1, -20, 0, 60),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.12,
@@ -394,8 +546,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	createLabel(rightRail, {
 		Position = UDim2.new(0, 14, 0, 10),
-		Size = UDim2.new(1, -28, 0, 18),
-		Text = "SESSION TELEMETRY",
+		Size = UDim2.new(0, 90, 0, 18),
+		Text = "Session",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
 		Font = Enum.Font.Code,
@@ -403,71 +555,89 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local baselineLabel = createLabel(rightRail, {
 		Position = UDim2.new(0, 14, 0, 34),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Baseline  --",
+		Size = UDim2.new(0, 58, 0, 18),
+		Text = "Base --",
 		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		Font = Enum.Font.Code,
 	})
 
 	local lastLapLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 56),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Last Lap  --",
+		Position = UDim2.new(0, 74, 0, 34),
+		Size = UDim2.new(0, 58, 0, 18),
+		Text = "Last --",
 		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		Font = Enum.Font.Code,
 	})
 
 	local slowdownLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 78),
-		Size = UDim2.new(1, -28, 0, 20),
-		Text = "Slowdown  +0%",
+		Position = UDim2.new(1, -14, 0, 34),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 40, 0, 18),
+		Text = "+0%",
 		TextColor3 = TEXT,
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Right,
 	})
 
 	local scoreLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 106),
-		Size = UDim2.new(1, -28, 0, 100),
-		Text = "Score  --\nAir --  Edge --\nLat --  Cost --\nTrack --\nBudget ░░░░░░░░",
+		Position = UDim2.new(0, 14, 0, 58),
+		Size = UDim2.new(1, -28, 0, 88),
+		Text = "Score  --\nAir    --\nEdge   --\nLat    --\nCost   --\nTrack  --\nBudget ░░░░░░░░",
 		TextColor3 = TEXT,
-		TextSize = 13,
-		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		Font = Enum.Font.Code,
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})
 
 	local setBaselineButton = createButton(rightRail, {
-		Position = UDim2.new(0, 10, 0, 214),
-		Size = UDim2.new(1, -20, 0, 32),
-		Text = "Set Baseline Lap",
+		Position = UDim2.new(1, -70, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 24, 0, 24),
+		Text = "S",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 13,
+		TextSize = 12,
 		Font = Enum.Font.GothamMedium,
 		BackgroundColor3 = STEEL,
 		BackgroundTransparency = 0.3,
 	})
-	addCorner(setBaselineButton, 10)
+	addCorner(setBaselineButton, 8)
 	addStroke(setBaselineButton, AMBER, 0.55)
 
-	local overviewButton = createButton(rightRail, {
-		Position = UDim2.new(0, 10, 0, 254),
-		Size = UDim2.new(1, -20, 0, 32),
-		Text = "Overview",
+	local logButton = createButton(rightRail, {
+		Position = UDim2.new(1, -42, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 24, 0, 24),
+		Text = "L",
 		TextColor3 = AMBER_SOFT,
-		TextSize = 13,
+		TextSize = 12,
 		Font = Enum.Font.GothamMedium,
 		BackgroundColor3 = STEEL,
 		BackgroundTransparency = 0.3,
 	})
-	addCorner(overviewButton, 10)
+	addCorner(logButton, 8)
+	addStroke(logButton, AMBER_SOFT, 0.48)
+
+	local overviewButton = createButton(rightRail, {
+		Position = UDim2.new(1, -14, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 24, 0, 24),
+		Text = "O",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 12,
+		Font = Enum.Font.GothamMedium,
+		BackgroundColor3 = STEEL,
+		BackgroundTransparency = 0.3,
+	})
+	addCorner(overviewButton, 8)
 	addStroke(overviewButton, AMBER_SOFT, 0.48)
 
-	-- BOTTOM DOCK — command input + LLM controls
+	-- BOTTOM LEFT — input panel
 	local bottomDock = createFrame(gui, {
-		Size = UDim2.new(1, -(LEFT_RAIL_MARGIN + LEFT_RAIL_WIDTH + LEFT_RAIL_GAP + RIGHT_RAIL_WIDTH + 60), 0, 118),
-		Position = UDim2.new(0, LEFT_RAIL_MARGIN + LEFT_RAIL_WIDTH + LEFT_RAIL_GAP, 1, -20),
+		Size = UDim2.new(1, -(LLM_DOCK_WIDTH + 216), 0, BOTTOM_DOCK_HEIGHT),
+		Position = UDim2.new(0, LEFT_RAIL_MARGIN, 1, -20),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.12,
@@ -477,8 +647,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	createLabel(bottomDock, {
 		Position = UDim2.new(0, 20, 0, 10),
-		Size = UDim2.new(1, -170, 0, 16),
-		Text = "COMMAND INPUT",
+		Size = UDim2.new(1, -40, 0, 16),
+		Text = "INPUT",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
 		Font = Enum.Font.Code,
@@ -486,7 +656,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local inputBox = createTextBox(bottomDock, {
 		Position = UDim2.new(0, 20, 0, 30),
-		Size = UDim2.new(1, -154, 0, 34),
+		Size = UDim2.new(1, -128, 0, 34),
 		PlaceholderText = "Try: Add a chicane in sector 3",
 		TextSize = 16,
 	})
@@ -496,7 +666,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local submitButton = createButton(bottomDock, {
 		Position = UDim2.new(1, -20, 0, 30),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 120, 0, 34),
+		Size = UDim2.new(0, 72, 0, 34),
 		Text = "Submit",
 		TextColor3 = PANEL,
 		TextSize = 15,
@@ -505,32 +675,79 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 	addCorner(submitButton, 10)
 
-	-- LLM CONTROLS — row below the command input
-	local llmToggleButton = createButton(bottomDock, {
-		Position = UDim2.new(0, 8, 0, 74),
-		Size = UDim2.new(0, 88, 0, 34),
-		Text = "LLM OFF",
-		TextColor3 = MUTED,
-		TextSize = 13,
-		Font = Enum.Font.GothamMedium,
-		BackgroundColor3 = STEEL,
-		BackgroundTransparency = 0.3,
+	-- BOTTOM RIGHT — LLM selector
+	local llmWarning = createFrame(gui, {
+		Size = UDim2.new(0, LLM_DOCK_WIDTH, 0, 34),
+		Position = UDim2.new(1, -20, 1, -(BOTTOM_DOCK_HEIGHT + 28)),
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.06,
 	})
-	addCorner(llmToggleButton, 10)
-	addStroke(llmToggleButton, STEEL_LIGHT, 0.5)
+	llmWarning.Visible = false
+	addCorner(llmWarning, 14)
+	addStroke(llmWarning, AMBER, 0.18)
 
-	local llmModelLabel = createLabel(bottomDock, {
-		Position = UDim2.new(0, 106, 0, 74),
-		Size = UDim2.new(1, -214, 0, 34),
-		Text = "MODEL  Heuristic",
-		TextColor3 = TEXT,
-		TextSize = 13,
-		Font = Enum.Font.GothamMedium,
+	local llmWarningIcon = createFrame(llmWarning, {
+		Size = UDim2.new(0, 18, 0, 18),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = AMBER,
+		BackgroundTransparency = 0,
+	})
+	addCorner(llmWarningIcon, 9)
+
+	local llmWarningIconLabel = createLabel(llmWarningIcon, {
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
+		Text = "!",
+		TextColor3 = PANEL,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
 		TextXAlignment = Enum.TextXAlignment.Center,
 	})
 
-	local llmPrevButton = createButton(bottomDock, {
-		Position = UDim2.new(1, -68, 0, 77),
+	local llmWarningLabel = createLabel(llmWarning, {
+		Position = UDim2.new(0, 38, 0, 0),
+		Size = UDim2.new(1, -50, 1, 0),
+		Text = "",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+
+	local llmDock = createFrame(gui, {
+		Size = UDim2.new(0, LLM_DOCK_WIDTH, 0, BOTTOM_DOCK_HEIGHT),
+		Position = UDim2.new(1, -20, 1, -20),
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundColor3 = PANEL,
+		BackgroundTransparency = 0.12,
+	})
+	addCorner(llmDock, 20)
+	addStroke(llmDock, STEEL_LIGHT, 0.25)
+
+	createLabel(llmDock, {
+		Position = UDim2.new(0, 20, 0, 10),
+		Size = UDim2.new(0, 60, 0, 16),
+		Text = "LLM",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.Code,
+	})
+
+	local llmModelLabel = createLabel(llmDock, {
+		Position = UDim2.new(0, 20, 0, 30),
+		Size = UDim2.new(1, -104, 0, 34),
+		Text = "Model  Heuristic",
+		TextColor3 = TEXT,
+		TextSize = 13,
+		Font = Enum.Font.Code,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local llmPrevButton = createButton(llmDock, {
+		Position = UDim2.new(1, -52, 0, 33),
+		AnchorPoint = Vector2.new(1, 0),
 		Size = UDim2.new(0, 28, 0, 28),
 		Text = "◀",
 		TextSize = 14,
@@ -539,8 +756,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 	addCorner(llmPrevButton, 8)
 
-	local llmNextButton = createButton(bottomDock, {
-		Position = UDim2.new(1, -36, 0, 77),
+	local llmNextButton = createButton(llmDock, {
+		Position = UDim2.new(1, -20, 0, 33),
+		AnchorPoint = Vector2.new(1, 0),
 		Size = UDim2.new(0, 28, 0, 28),
 		Text = "▶",
 		TextSize = 14,
@@ -567,16 +785,22 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	_refs = {
 		gui = gui,
 		overlayGui = overlayGui,
-		llmToggleButton = llmToggleButton,
+		llmWarning = llmWarning,
+		llmWarningLabel = llmWarningLabel,
+		llmDock = llmDock,
 		llmModelLabel = llmModelLabel,
 		llmPrevButton = llmPrevButton,
 		llmNextButton = llmNextButton,
 		phaseLabel = phaseLabel,
 		requestLabel = requestLabel,
-		attemptLabel = attemptLabel,
-		enduranceLabel = enduranceLabel,
-		buildLabel = buildLabel,
-		errorLabel = errorLabel,
+		repairCallout = repairCallout,
+		repairCalloutLabel = repairCalloutLabel,
+		repairBanner = repairBanner,
+		repairLabel = repairLabel,
+		enduranceBadge = enduranceBadge,
+		enduranceBadgeLabel = enduranceBadgeLabel,
+		hotfixBadge = hotfixBadge,
+		hotfixBadgeLabel = hotfixBadgeLabel,
 		reasoningLabel = reasoningLabel,
 		reasoningActionLabel = reasoningActionLabel,
 		inputBox = inputBox,
@@ -586,11 +810,17 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		slowdownLabel = slowdownLabel,
 		scoreLabel = scoreLabel,
 		speedLabel = speedLabel,
+		speedValueLabel = speedValueLabel,
 		headingLabel = headingLabel,
+		headingValueLabel = headingValueLabel,
 		pitchLabel = pitchLabel,
-		recentLoopLabel = recentLoopLabel,
+		pitchValueLabel = pitchValueLabel,
 		logContainer = logContainer,
-		logLabels = logLabels,
+		logButton = logButton,
+		logOverlay = logOverlay,
+		logCloseButton = logCloseButton,
+		logScroll = logScroll,
+		logTextBox = logTextBox,
 		overviewButton = overviewButton,
 		setBaselineButton = setBaselineButton,
 		topLeftStroke = topLeftStroke,

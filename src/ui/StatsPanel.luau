@@ -15,6 +15,10 @@ local function formatSeconds(seconds: number): string
 	return ("%.2fs"):format(seconds)
 end
 
+local function alignMetric(name: string, value: string): string
+	return string.format("%-6s %7s", name, value)
+end
+
 local function compassPoint(deg: number): string
 	local idx = math.floor((deg + 22.5) / 45) % 8
 	return COMPASS[idx + 1]
@@ -27,32 +31,28 @@ local function budgetBar(used: number): string
 end
 
 function StatsPanel.setBaseline(seconds: number)
-	refs().baselineLabel.Text = ("Baseline  %s"):format(formatSeconds(seconds))
+	refs().baselineLabel.Text = ("Base %s"):format(formatSeconds(seconds))
 end
 
 function StatsPanel.setLastLapTime(seconds: number)
-	refs().lastLapLabel.Text = ("Last Lap  %s"):format(formatSeconds(seconds))
+	refs().lastLapLabel.Text = ("Last %s"):format(formatSeconds(seconds))
 end
 
 function StatsPanel.setSlowdown(ratio: number)
 	local percent = math.floor(((ratio or 1) - 1) * 100 + 0.5)
-	refs().slowdownLabel.Text = ("Slowdown  %+d%%"):format(percent)
+	refs().slowdownLabel.Text = ("%+d%%"):format(percent)
 end
 
 function StatsPanel.setCurrentSpeed(speed: number, commandedSpeed: number?, targetSpeed: number?)
-	refs().speedLabel.Text = ("Speed  %.1f  Cmd %.1f  Tgt %.1f"):format(
-		speed or 0,
-		commandedSpeed or 0,
-		targetSpeed or 0
-	)
+	refs().speedValueLabel.Text = string.format("%5.1f", speed or 0)
 end
 
 function StatsPanel.setHeading(deg: number)
-	refs().headingLabel.Text = ("Heading  %s %d°"):format(compassPoint(deg or 0), math.floor(deg or 0))
+	refs().headingValueLabel.Text = string.format("%2s %3d°", compassPoint(deg or 0), math.floor(deg or 0))
 end
 
 function StatsPanel.setPitch(deg: number)
-	refs().pitchLabel.Text = ("Pitch  %+.0f°"):format(deg or 0)
+	refs().pitchValueLabel.Text = string.format("%+4.0f°", deg or 0)
 end
 
 function StatsPanel.setScore(
@@ -72,40 +72,46 @@ function StatsPanel.setScore(
 	local label = refs().scoreLabel
 
 	if (not sectorId or sectorId == 0) and (not trackCount or trackCount == 0) then
-		label.Text = "Score  --\nAir --  Edge --\nLat --  Cost --\nTrack --\nBudget ░░░░░░░░"
+		label.Text = table.concat({
+			alignMetric("Score", "--"),
+			alignMetric("Air", "--"),
+			alignMetric("Edge", "--"),
+			alignMetric("Lat", "--"),
+			alignMetric("Cost", "--"),
+			alignMetric("Track", "--"),
+			"Budget ░░░░░░░░",
+		}, "\n")
 		label.TextColor3 = refs().colors.text
 		return
 	end
 
 	local sectorText = if sectorId and sectorId > 0
-		then ("S%d  %.1f"):format(sectorId, total or 0)
+		then string.format("S%-2d %4.1f%s", sectorId, total or 0, if overBudget then "!" else "")
 		else "S--"
 	local usedPercent = math.floor((trackBudgetUsed or 0) * 100 + 0.5)
 	local bar = budgetBar(trackBudgetUsed or 0)
 	local budgetFlag = if trackOverBudget then " !" else ""
 
 	if trackCount and trackCount > 0 then
-		label.Text = ("Score  %s%s\nAir %.1f  Edge %.1f\nLat %.1f  Cost %.1f\nTrack %.1f (%d)\nBudget %s %d%%"):format(
-			sectorText,
-			if overBudget then " !" else "",
-			air or 0,
-			edge or 0,
-			lateral or 0,
-			cost or 0,
-			trackTotal or 0,
-			trackCount,
-			bar .. budgetFlag,
-			usedPercent
-		)
+		label.Text = table.concat({
+			alignMetric("Score", sectorText),
+			alignMetric("Air", string.format("%4.1f", air or 0)),
+			alignMetric("Edge", string.format("%4.1f", edge or 0)),
+			alignMetric("Lat", string.format("%4.1f", lateral or 0)),
+			alignMetric("Cost", string.format("%4.1f", cost or 0)),
+			alignMetric("Track", string.format("%4.1f (%d)", trackTotal or 0, trackCount)),
+			string.format("Budget %s %3d%%%s", bar, usedPercent, budgetFlag),
+		}, "\n")
 	else
-		label.Text = ("Score  %s%s\nAir %.1f  Edge %.1f\nLat %.1f  Cost %.1f\nTrack --\nBudget ░░░░░░░░"):format(
-			sectorText,
-			if overBudget then " !" else "",
-			air or 0,
-			edge or 0,
-			lateral or 0,
-			cost or 0
-		)
+		label.Text = table.concat({
+			alignMetric("Score", sectorText),
+			alignMetric("Air", string.format("%4.1f", air or 0)),
+			alignMetric("Edge", string.format("%4.1f", edge or 0)),
+			alignMetric("Lat", string.format("%4.1f", lateral or 0)),
+			alignMetric("Cost", string.format("%4.1f", cost or 0)),
+			alignMetric("Track", "--"),
+			"Budget ░░░░░░░░",
+		}, "\n")
 	end
 
 	label.TextColor3 = if overBudget or trackOverBudget then refs().colors.danger else refs().colors.text

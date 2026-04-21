@@ -11,8 +11,17 @@ local ROAD_SURFACE_THICKNESS = 0.04
 local ROAD_SURFACE_LIFT = Constants.TRACK_THICKNESS * 0.5 - ROAD_SURFACE_THICKNESS * 0.5 + 0.005
 local LINE_THICKNESS = 0.06
 local LINE_LIFT = Constants.TRACK_THICKNESS * 0.5 + 0.16
+local EDGE_LINE_OFFSET = Constants.TRACK_WIDTH * 0.5 - 0.25
+local PATH_RIBBON_OVERLAP = 0.16
+local PATH_UNDERLAY_OVERLAP = 0.38
+local PATH_EDGE_OVERLAP = 0.08
+local PATH_UNDERLAY_EXTRA_WIDTH = 0.12
+local PATH_UNDERLAY_EXTRA_THICKNESS = 0.01
+local PATH_UNDERLAY_LIFT_OFFSET = -0.015
+local CORNER_VISUAL_ARC_SAMPLES = 81
+local CORNER_VISUAL_SHOULDER_SAMPLE_SPACING = 1
 
-local BASE_COLOR = Color3.fromRGB(178, 162, 134)
+local BASE_COLOR = Color3.fromRGB(122, 130, 138)
 local ROAD_COLOR = Color3.fromRGB(42, 43, 47)
 local LINE_COLOR = Color3.fromRGB(240, 238, 227)
 local CURB_RED = Color3.fromRGB(181, 54, 48)
@@ -27,6 +36,7 @@ local COLLISION_FOLDER = "Collision"
 local VISUAL_FOLDER = "Visual"
 local PADS_FOLDER = "Pads"
 local ANCHOR_NAME = "Anchor"
+local FOUNDATION_FOLDER = "Foundation"
 
 local function sectorFolderById(sectorId)
 	local track = workspace:FindFirstChild("Track")
@@ -213,14 +223,15 @@ local function addArcRibbon(
 	end
 end
 
-local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material)
+local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material, overlap)
+	local joinOverlap = overlap or PATH_RIBBON_OVERLAP
 	for index = 2, #points do
 		local p0 = points[index - 1]
 		local p1 = points[index]
 		local chord = p1 - p0
-		local length = math.max(chord.Magnitude + 0.3, 0.8)
-		local mid = p0:Lerp(p1, 0.5) + Vector3.new(0, yOffset, 0)
 		local tangent = chord.Magnitude > 0 and chord.Unit or Vector3.zAxis
+		local length = math.max(chord.Magnitude + joinOverlap, 0.8)
+		local mid = p0:Lerp(p1, 0.5) + Vector3.new(0, yOffset, 0)
 		makeAdornmentPart(
 			parent,
 			string.format("%s_%02d", namePrefix, index - 1),
@@ -228,6 +239,78 @@ local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffs
 			CFrame.lookAt(mid, mid + tangent),
 			color,
 			material
+		)
+	end
+end
+
+local addPathEdgeLines
+
+function TrackVisuals.renderPathSurface(visualFolder, points, width, showEdgeLines: boolean?)
+	addPathRibbon(
+		visualFolder,
+		"RoadSurfaceUnderlay",
+		points,
+		width + PATH_UNDERLAY_EXTRA_WIDTH,
+		ROAD_SURFACE_THICKNESS + PATH_UNDERLAY_EXTRA_THICKNESS,
+		ROAD_SURFACE_LIFT + PATH_UNDERLAY_LIFT_OFFSET,
+		ROAD_COLOR,
+		Enum.Material.SmoothPlastic,
+		PATH_UNDERLAY_OVERLAP
+	)
+	addPathRibbon(
+		visualFolder,
+		"RoadSurface",
+		points,
+		width,
+		ROAD_SURFACE_THICKNESS,
+		ROAD_SURFACE_LIFT,
+		ROAD_COLOR,
+		Enum.Material.SmoothPlastic,
+		PATH_RIBBON_OVERLAP
+	)
+	if showEdgeLines ~= false then
+		addPathEdgeLines(visualFolder, points, width)
+	end
+end
+
+local function offsetPathPoints(points, lateralOffset)
+	local offsetPoints = table.create(#points)
+	for index, point in ipairs(points) do
+		local prevPoint = points[math.max(index - 1, 1)]
+		local nextPoint = points[math.min(index + 1, #points)]
+		local tangent = nextPoint - prevPoint
+		if tangent.Magnitude <= 0.001 then
+			tangent = Vector3.xAxis
+		else
+			tangent = tangent.Unit
+		end
+		local lateral = tangent:Cross(Vector3.yAxis)
+		if lateral.Magnitude <= 0.001 then
+			lateral = Vector3.zAxis
+		else
+			lateral = lateral.Unit
+		end
+		offsetPoints[index] = point + lateral * lateralOffset
+	end
+	return offsetPoints
+end
+
+addPathEdgeLines = function(parent, points, usableWidth)
+	if usableWidth < 2 or #points < 2 then
+		return
+	end
+
+	for sideIndex, offset in ipairs({ -EDGE_LINE_OFFSET, EDGE_LINE_OFFSET }) do
+		addPathRibbon(
+			parent,
+			if sideIndex == 1 then "EdgeLine_L" else "EdgeLine_R",
+			offsetPathPoints(points, offset),
+			0.18,
+			LINE_THICKNESS,
+			LINE_LIFT,
+			LINE_COLOR,
+			Enum.Material.SmoothPlastic,
+			PATH_EDGE_OVERLAP
 		)
 	end
 end
@@ -300,20 +383,67 @@ function TrackVisuals.makeCollisionPart(parent, name, size, cframe, sectorId, se
 	return part
 end
 
-function TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize, name)
+function TrackVisuals.renderTrackFoundation(trackFolder, sectors)
+	local foundationFolder = ensureFolder(trackFolder, FOUNDATION_FOLDER)
+	clearFolder(foundationFolder)
+
+	local sectorById = {}
+	for _, sector in ipairs(sectors) do
+		sectorById[sector.id] = sector
+	end
+
+	local topLeft = sectorById[1]
+	local topRight = sectorById[5]
+	local bottomRight = sectorById[6]
+	local bottomLeft = sectorById[10]
+	assert(topLeft and topRight and bottomRight and bottomLeft, "TrackVisuals.renderTrackFoundation: missing perimeter sectors")
+
+	local rowSpanX = (topRight.center.X - topLeft.center.X) + CELL_WIDTH
+	local columnSpanZ = (bottomLeft.center.Z - topLeft.center.Z) + CELL_WIDTH
+	local foundationY = topLeft.center.Y - SHELL_DROP
+	local rowCenterX = (topLeft.center.X + topRight.center.X) * 0.5
+	local columnCenterZ = (topLeft.center.Z + bottomLeft.center.Z) * 0.5
+
 	makeAdornmentPart(
-		visualFolder,
-		name or "CellShell",
-		Vector3.new(cellSize.X, SHELL_THICKNESS, cellSize.Z),
-		cellCFrame * CFrame.new(0, -SHELL_DROP, 0),
+		foundationFolder,
+		"TopFoundation",
+		Vector3.new(rowSpanX, SHELL_THICKNESS, CELL_WIDTH),
+		CFrame.new(rowCenterX, foundationY, topLeft.center.Z),
+		BASE_COLOR,
+		Enum.Material.Concrete
+	)
+	makeAdornmentPart(
+		foundationFolder,
+		"BottomFoundation",
+		Vector3.new(rowSpanX, SHELL_THICKNESS, CELL_WIDTH),
+		CFrame.new(rowCenterX, foundationY, bottomLeft.center.Z),
+		BASE_COLOR,
+		Enum.Material.Concrete
+	)
+	makeAdornmentPart(
+		foundationFolder,
+		"LeftFoundation",
+		Vector3.new(CELL_WIDTH, SHELL_THICKNESS, columnSpanZ),
+		CFrame.new(topLeft.center.X, foundationY, columnCenterZ),
+		BASE_COLOR,
+		Enum.Material.Concrete
+	)
+	makeAdornmentPart(
+		foundationFolder,
+		"RightFoundation",
+		Vector3.new(CELL_WIDTH, SHELL_THICKNESS, columnSpanZ),
+		CFrame.new(topRight.center.X, foundationY, columnCenterZ),
 		BASE_COLOR,
 		Enum.Material.Concrete
 	)
 end
 
+function TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize, name)
+	return
+end
+
 function TrackVisuals.renderStraightFlatVisuals(visualFolder, cellCFrame, cellSize, entryFrame, exitFrame)
 	clearFolder(visualFolder)
-	TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize)
 
 	local center = roadSurfaceCenter(entryFrame, exitFrame)
 	local road = makeAdornmentPart(
@@ -322,7 +452,7 @@ function TrackVisuals.renderStraightFlatVisuals(visualFolder, cellCFrame, cellSi
 		Vector3.new(Constants.TRACK_WIDTH, ROAD_SURFACE_THICKNESS, (exitFrame.Position - entryFrame.Position).Magnitude),
 		CFrame.lookAt(center, center + exitFrame.LookVector),
 		ROAD_COLOR,
-		Enum.Material.Asphalt
+		Enum.Material.SmoothPlastic
 	)
 	addEdgeLines(road, road.Size.X, road.Size.Z)
 	addCenterDashes(road, road.Size.Z)
@@ -330,32 +460,23 @@ end
 
 function TrackVisuals.renderCornerFlatVisuals(visualFolder, cellCFrame, cellSize, entryFrame, exitFrame)
 	clearFolder(visualFolder)
-	TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize)
 	local points = CornerPath.buildWorldCenterlinePoints(
 		entryFrame,
 		exitFrame,
 		visualFolder.Parent:GetAttribute("CornerEntryShoulderLength"),
-		visualFolder.Parent:GetAttribute("CornerExitShoulderLength")
+		visualFolder.Parent:GetAttribute("CornerExitShoulderLength"),
+		CORNER_VISUAL_ARC_SAMPLES,
+		CORNER_VISUAL_SHOULDER_SAMPLE_SPACING
 	)
-	addPathRibbon(
-		visualFolder,
-		"RoadSurface",
-		points,
-		Constants.TRACK_WIDTH,
-		ROAD_SURFACE_THICKNESS,
-		ROAD_SURFACE_LIFT,
-		ROAD_COLOR,
-		Enum.Material.Asphalt
-	)
+	TrackVisuals.renderPathSurface(visualFolder, points, Constants.TRACK_WIDTH)
 end
 
 function TrackVisuals.renderStraightMechanicShell(visualFolder, cellCFrame, cellSize, name)
 	clearFolder(visualFolder)
-	TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize, name or "StraightShell")
 end
 
 function TrackVisuals.styleRoadPiece(part)
-	part.Material = Enum.Material.Asphalt
+	part.Material = Enum.Material.SmoothPlastic
 	part.Color = ROAD_COLOR
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth

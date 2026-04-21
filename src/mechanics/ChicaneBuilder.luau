@@ -11,6 +11,7 @@ local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 type SectorState = Types.SectorState
 
 local ChicaneBuilder = {}
+local VISUAL_TURN_SEGMENTS = 64
 
 local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 	return entryFrame.Position
@@ -23,22 +24,8 @@ local function getSectorFolder(sector_id: number): Folder
 	return TrackVisuals.getCollisionFolder(sector_id)
 end
 
-local function makePart(name: string, size: Vector3, cf: CFrame, color: BrickColor, parent: Instance): Part
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Size = size
-	part.CFrame = cf
-	part.Anchored = true
-	part.CanCollide = true
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.Material = Enum.Material.SmoothPlastic
-	part.BrickColor = color
-	part.Parent = parent
-	TrackVisuals.styleRoadPiece(part)
-	TrackVisuals.addCurbs(part)
-	TrackVisuals.addAlternatingStripes(part, Constants.CAR_WIDTH * 0.2)
-	return part
+local function makePart(name: string, size: Vector3, cf: CFrame, sectorId: number, parent: Instance): Part
+	return TrackVisuals.makeCollisionPart(parent, name, size, cf, sectorId, "Straight")
 end
 
 function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
@@ -59,8 +46,8 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	local amplitude = p.amplitude
 	local transitionLength = p.transition_length
 	local width = math.min(p.corridor_width, Constants.TRACK_WIDTH)
+	local visualWidth = Constants.TRACK_WIDTH
 	local folder = getSectorFolder(state.sector_id)
-	local color = BrickColor.new("Bright blue")
 	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
 
@@ -70,10 +57,11 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		local delta = worldEnd - worldStart
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart("ChicEntryFlat", Vector3.new(width, Constants.TRACK_THICKNESS, startOffset), cf, color, folder)
+		makePart("ChicEntryFlat", Vector3.new(width, Constants.TRACK_THICKNESS, startOffset), cf, state.sector_id, folder)
 	end
 
 	local points = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength)
+	local visualPoints = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength, VISUAL_TURN_SEGMENTS)
 	local featureStartIndex = if startOffset > 0 then 2 else 1
 	local featurePointCount = #points - featureStartIndex
 
@@ -96,7 +84,7 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		assert(length > 0, "ChicaneBuilder.build: zero-length segment")
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart(name, Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, color, folder)
+		makePart(name, Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, state.sector_id, folder)
 	end
 
 	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalLength - startOffset
@@ -108,8 +96,15 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		local delta = worldEnd - worldStart
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart("ChicExitFlat", Vector3.new(width, Constants.TRACK_THICKNESS, exitFlatLength), cf, color, folder)
+		makePart("ChicExitFlat", Vector3.new(width, Constants.TRACK_THICKNESS, exitFlatLength), cf, state.sector_id, folder)
 	end
+
+	local visualFolder = TrackVisuals.getVisualFolder(state.sector_id)
+	local worldVisualPoints = table.create(#visualPoints)
+	for index, point in ipairs(visualPoints) do
+		worldVisualPoints[index] = worldPoint(entryFrame, point)
+	end
+	TrackVisuals.renderPathSurface(visualFolder, worldVisualPoints, visualWidth, false)
 end
 
 return ChicaneBuilder

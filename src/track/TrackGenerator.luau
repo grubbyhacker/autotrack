@@ -53,7 +53,7 @@ local function straightSector(id, center, lookVector)
 		exit = edgeCFrame(center, edgeOffset, lookVector),
 		partGroup = nil,
 		cellCFrame = CFrame.lookAt(center, center + lookVector),
-		cellSize = Vector3.new(CORNER_SPAN, Constants.TRACK_THICKNESS, Constants.STRAIGHT_LENGTH),
+		cellSize = Vector3.new(CORNER_CORE_SPAN, Constants.TRACK_THICKNESS, Constants.STRAIGHT_LENGTH),
 		center = center,
 		size = Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, Constants.STRAIGHT_LENGTH),
 	}
@@ -329,6 +329,8 @@ function TrackGenerator.buildParts(sectors)
 	local trackFolder = Instance.new("Folder")
 	trackFolder.Name = "Track"
 	trackFolder.Parent = workspace
+
+	TrackVisuals.renderTrackFoundation(trackFolder, sectors)
 
 	for _, rawSector in ipairs(sectors) do
 		local sector = rawSector

@@ -422,6 +422,7 @@ end
 function UIState.publishCommit(sectorMeta)
 	UIState.setBusy(false)
 	UIState.setPhase("Commit", "Committed")
+	UIState.setAttempt(0, Constants.MAX_REPAIR_ATTEMPTS)
 	setAttributes({
 		final_status = "committed",
 	})
@@ -435,6 +436,7 @@ function UIState.publishRevert()
 	if ensureStateFolder():GetAttribute("endurance_hotfix_active") ~= true then
 		UIState.setPhase("Revert", "Reverted")
 	end
+	UIState.setAttempt(0, Constants.MAX_REPAIR_ATTEMPTS)
 	setAttributes({
 		final_status = "reverted",
 	})
@@ -508,6 +510,7 @@ function UIState.setEnduranceTerminal(sectorId: number?)
 		endurance_hotfix_sector = sectorId or 0,
 		busy = false,
 	})
+	UIState.setAttempt(0, Constants.HOTFIX_MAX_ATTEMPTS)
 end
 
 function UIState.publishReady()

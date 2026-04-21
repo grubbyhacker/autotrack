@@ -208,10 +208,19 @@ Current supported demo commands:
 
 - `/demo camera`
 - `/demo rampitup`
+- `/demo repair`
+- `/demo llmerror`
+- `/demo ui-hotfix`
 
 `/demo camera` toggles the default camera demo on and off. It exists to help evaluate spectator-camera behavior without changing the normal boot workflow. The default camera demo loops playable `RampJump` obstacles in sectors `3` and `7`.
 
 `/demo rampitup` toggles a dedicated ramp demo on and off. It applies playable `RampJump` obstacles in sectors `3` and `8` so two working ramps can be observed in the same loop.
+
+`/demo repair` toggles a HUD-only repair-state preview on and off. It does not modify track geometry; it only populates the top-right repair attempt UI, request context, explanation, action text, and realistic recent log lines so repair presentation can be reviewed quickly.
+
+`/demo llmerror` toggles a HUD-only LLM warning preview on and off. It does not modify track geometry; it sets a realistic repair-context request, selects a real model id, and publishes a representative rate-limit error so the LLM warning strip above the selector can be reviewed.
+
+`/demo ui-hotfix` toggles a HUD-only endurance-plus-hotfix preview on and off. It does not modify track geometry; it only enables the `Endurance Mode` and `Hotfix Mode` badges, sets representative endurance counters, and populates recent escalation log lines so those UI surfaces can be reviewed quickly.
 
 `/test <suite>` is allowed as a **session-local convenience shortcut** into the existing server-side suite dispatcher. It must reuse the same suite names handled by `src/orchestrator/TestDispatcher.luau`.
 
@@ -359,6 +368,24 @@ A failure in a non-target sector is only a `downstream_failure` (repairable) if 
 
 The RampJump has two gate conditions: (1) becomes airborne, (2) reacquires within `RAMPJUMP_REACQUIRE_MAX` studs after the gap. "Jumped cleanly but integrity failed" almost always means reacquire failed — the car overshot or landed off the landing tiles. Repair levers: shorten `gap_length` or lengthen `landing_length`.
 
+### RampJump acceptance must include the real demo lap
+
+A green target-sector RampJump suite is not enough to call the mechanic stable. The isolated target-sector path can pass while a committed full-lap demo still fails from entry, airborne heading, or post-landing recovery behavior.
+
+When changing RampJump geometry, pads, or verifier stabilization, also validate the actual `/demo rampitup` preset path, not only `phase4_rampjump` / `phase15` / `phase16` target-sector checks.
+
+### Straight-sector stabilization is intentionally stronger than corner stabilization
+
+Non-corner straights intentionally damp yaw/roll harder and pin the car toward forward heading more aggressively than corners. This is part of the current demo-reliability contract, especially around ramps and brake-pad ingress.
+
+Do not "simplify" this away without checking ramp demos. Preserve pitch freedom so the car can still climb ramps; the stabilization is mainly about yaw/roll control on straights.
+
+### The verifier is guided, not a hard rail
+
+Visible body or nose excursions do not automatically mean the controller is off the path. The important measurements are the emitted containment / path metrics, not camera intuition alone.
+
+When debugging steering or cornering regressions, prefer the verifier's planar heading, cross-track, and containment telemetry over visual judgment from the spectator camera.
+
 ### Luau type annotation syntax
 
 Table field assignments cannot have type annotations:
@@ -380,6 +407,10 @@ Always pass `targetSectorId` (the job's intended target) as the 4th argument —
 ### Rojo client sync requires Play restart
 
 Local file edits are not live in a running Play session. Stop Play → edit → Start Play → wait for boot → test. If camera or client behavior appears unchanged, verify whether `PlayerScripts` is still serving a stale copy.
+
+### Runtime build/profile stamps are the stale-session sanity check
+
+The HUD/UI runtime build stamp and controller profile exist specifically to catch stale Studio sessions and mismatched client/server code. If live behavior does not match the local diff, confirm those stamps before retuning the mechanic again.
 
 ### `/demo maximize` suppresses Stage B challenge-up
 
