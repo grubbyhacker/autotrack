@@ -285,6 +285,18 @@ local function formatDecisionSummary(decision: OrchestratorDecision): string
 	return summary
 end
 
+local function commitLapSlowdownRatio(previous: number, job): number
+	if job
+		and job.final_status == "committed"
+		and job.final_result
+		and job.final_result.metrics
+		and type(job.final_result.metrics.slowdown_ratio) == "number"
+	then
+		return job.final_result.metrics.slowdown_ratio
+	end
+	return previous
+end
+
 local function formatLedgerEntry(entry): string
 	local sectorId = entry.sector_id or 0
 	local mechanic = tostring(entry.mechanic or "Flat")
@@ -657,9 +669,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				local success = job.final_status == "committed"
 				local latestAttempt = job.attempts[#job.attempts]
 				local result = job.final_result or (latestAttempt and latestAttempt.result or nil)
-				if result and result.metrics and result.metrics.slowdown_ratio then
-					slowdownRatio = result.metrics.slowdown_ratio
-				end
+				slowdownRatio = commitLapSlowdownRatio(slowdownRatio, job)
 				if success and result and result.score then
 					scoresBySector[sectorId] = result.score.total
 				end
@@ -734,6 +744,10 @@ function OrchestratorAgent.run(args): (boolean, string?)
 	end
 
 	return runOk, runReason
+end
+
+function OrchestratorAgent._commitLapSlowdownRatio(previous: number, job)
+	return commitLapSlowdownRatio(previous, job)
 end
 
 return OrchestratorAgent

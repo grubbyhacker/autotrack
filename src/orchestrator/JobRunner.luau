@@ -39,6 +39,18 @@ type DesignIntent = Types.DesignIntent
 type ChallengeUpContext = Types.ChallengeUpContext
 type MemoryEntry = Types.MemoryEntry
 type RunMemory = Types.RunMemory
+type SectorState = Types.SectorState
+type RunResult = Types.RunResult
+type VerificationStage = "lap" | "isolated" | "commit_lap"
+type VerificationProfileResult = {
+	result: RunResult,
+	hints: { string },
+	updated_state: SectorState,
+	verification_stage: VerificationStage,
+	run_scope: "lap" | "isolated_sector",
+	isolated_passes_required: number?,
+	isolated_passes_completed: number?,
+}
 
 local JobRunner = {}
 local _lastJob: CIJob? = nil
@@ -78,6 +90,70 @@ local function cloneState(state)
 			egress = state.pads.egress,
 		},
 		version = state.version,
+	}
+end
+
+local function isEnduranceVerificationProfileEnabled(request: Request): boolean
+	return request.origin == "endurance"
+end
+
+local function runVerificationProfile(args): VerificationProfileResult
+	local runAttempt = args.runAttempt
+	local onStageStart = args.onStageStart
+	local onStageResult = args.onStageResult
+	local useIsolatedProfile = args.use_isolated_profile == true
+	local isolatedPassesRequired = math.max(1, Constants.ENDURANCE_ISOLATED_PASSES or 3)
+
+	local workingState = cloneState(args.working_state)
+	local nextAction = args.action
+
+	if useIsolatedProfile then
+		for passIndex = 1, isolatedPassesRequired do
+			if onStageStart then
+				onStageStart("isolated", passIndex, isolatedPassesRequired)
+			end
+			local result, hints, updatedState = runAttempt("isolated_sector", workingState, nextAction)
+			workingState = cloneState(updatedState)
+			nextAction = nil
+
+			if onStageResult then
+				onStageResult("isolated", "isolated_sector", passIndex, isolatedPassesRequired, result, hints)
+			end
+
+			if not result.success then
+				return {
+					result = result,
+					hints = hints,
+					updated_state = workingState,
+					verification_stage = "isolated",
+					run_scope = "isolated_sector",
+					isolated_passes_required = isolatedPassesRequired,
+					isolated_passes_completed = passIndex,
+				}
+			end
+		end
+	end
+
+	local lapStage: VerificationStage = if useIsolatedProfile then "commit_lap" else "lap"
+	if onStageStart then
+		onStageStart(lapStage, 1, 1)
+	end
+
+	local result, hints, updatedState = runAttempt("full_lap", workingState, nextAction)
+	workingState = cloneState(updatedState)
+
+	if onStageResult then
+		onStageResult(lapStage, "lap", 1, 1, result, hints)
+	end
+
+	return {
+		result = result,
+		hints = hints,
+		updated_state = workingState,
+		verification_stage = lapStage,
+		run_scope = "lap",
+		isolated_passes_required = if useIsolatedProfile then isolatedPassesRequired else nil,
+		isolated_passes_completed = if useIsolatedProfile then isolatedPassesRequired else nil,
 	}
 end
 
@@ -570,25 +646,62 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 	local lastAction = nil
 	local nextAction = nil
 	local attemptIndex = 0
+	local useIsolatedProfile = isEnduranceVerificationProfileEnabled(request)
 
 	while true do
 		local proposedState = cloneState(workingState)
-		local result, hints, updatedState = AttemptRunner.run({
-			workingState = workingState,
+		local verification = runVerificationProfile({
+			use_isolated_profile = useIsolatedProfile,
+			working_state = workingState,
 			action = nextAction,
-			targetSectorId = targetSectorId,
-			entryFrame = targetSector.entry,
-			exitFrame = targetSector.exit,
-			sectors = RuntimeContext.getSectors(),
-			car = RuntimeContext.getCar(),
-			canonicalStart = RuntimeContext.getCanonicalStart(),
-			onSectorChange = function(id: number, entering: boolean)
-				if entering then
-					UIState.setCurrentSector(id)
+			runAttempt = function(mode: string, stateForRun, actionForRun)
+				local runArgs = {
+					workingState = stateForRun,
+					action = actionForRun,
+					targetSectorId = targetSectorId,
+					entryFrame = targetSector.entry,
+					exitFrame = targetSector.exit,
+					sectors = RuntimeContext.getSectors(),
+					car = RuntimeContext.getCar(),
+					canonicalStart = RuntimeContext.getCanonicalStart(),
+					onSectorChange = function(id: number, entering: boolean)
+						if entering then
+							UIState.setCurrentSector(id)
+						end
+					end,
+				}
+				if mode == "isolated_sector" then
+					runArgs.mode = "isolated_sector"
 				end
+				return AttemptRunner.run(runArgs)
+			end,
+			onStageStart = function(stage: VerificationStage, passIndex: number, passTotal: number)
+				if stage == "isolated" then
+					UIState.setPhase(
+						"ChallengeUpIsolated",
+						string.format("Challenge-up isolated check %d/%d...", passIndex, passTotal)
+					)
+				elseif stage == "commit_lap" then
+					UIState.setPhase("ChallengeUpCommitLap", "Challenge-up commit lap...")
+				else
+					UIState.setPhase("ChallengeUpRunVerification", "Challenge-up verification...")
+				end
+				Tracer.log(string.format(
+					"challenge_up_stage index=%d target_sector=%d stage=%s pass=%d/%d",
+					attemptIndex,
+					targetSectorId,
+					stage,
+					passIndex,
+					passTotal
+				))
+			end,
+			onStageResult = function(_stage: VerificationStage, runScope: "lap" | "isolated_sector", _passIndex: number, _passTotal: number, stageResult, _stageHints)
+				UIState.publishAttemptResult(stageResult, runScope)
 			end,
 		})
-		workingState = cloneState(updatedState)
+		local result = verification.result
+		local hints = verification.hints
+		workingState = cloneState(verification.updated_state)
 		table.insert(job.challenge_up_attempts, {
 			attempt_index = attemptIndex,
 			action = nextAction,
@@ -596,12 +709,19 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 			result = result,
 			hints = hints,
 			memory_note = nil,
+			verification_stage = verification.verification_stage,
+			run_scope = verification.run_scope,
+			isolated_passes_required = verification.isolated_passes_required,
+			isolated_passes_completed = verification.isolated_passes_completed,
 		})
-		UIState.publishAttemptResult(result)
 		Tracer.log(string.format(
-			"challenge_up_attempt index=%d target_sector=%d success=%s failure_type=%s failure_sector=%s failure_detail=%s target_progress=%.2f score=%s",
+			"challenge_up_attempt index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_progress=%.2f score=%s",
 			attemptIndex,
 			targetSectorId,
+			verification.verification_stage,
+			verification.run_scope,
+			tostring(verification.isolated_passes_completed or "-"),
+			tostring(verification.isolated_passes_required or "-"),
 			boolString(result.success),
 			tostring(result.failure and result.failure.type or "none"),
 			tostring(result.failure and result.failure.sector_id or "-"),
@@ -916,6 +1036,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		local lastAction = nil
 		local upstreamFailCount = 0
 		local upstreamFailSectorId: number? = nil
+		local useIsolatedProfile = isEnduranceVerificationProfileEnabled(request)
 
 		while true do
 			sm:transition("ApplyWorkingSector")
@@ -932,24 +1053,56 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			))
 
 			local proposedState = cloneState(job.working_state)
-			local result, hints, updatedState = AttemptRunner.run({
-				workingState = job.working_state,
+			local verification = runVerificationProfile({
+				use_isolated_profile = useIsolatedProfile,
+				working_state = job.working_state,
 				action = nextAction,
-				targetSectorId = targetSectorId,
-				entryFrame = targetSector.entry,
-				exitFrame = targetSector.exit,
-				sectors = RuntimeContext.getSectors(),
-				car = RuntimeContext.getCar(),
-				canonicalStart = RuntimeContext.getCanonicalStart(),
-				onSectorChange = function(id: number, entering: boolean)
-					if entering then
-						UIState.setCurrentSector(id)
+				runAttempt = function(mode: string, stateForRun, actionForRun)
+					local runArgs = {
+						workingState = stateForRun,
+						action = actionForRun,
+						targetSectorId = targetSectorId,
+						entryFrame = targetSector.entry,
+						exitFrame = targetSector.exit,
+						sectors = RuntimeContext.getSectors(),
+						car = RuntimeContext.getCar(),
+						canonicalStart = RuntimeContext.getCanonicalStart(),
+						onSectorChange = function(id: number, entering: boolean)
+							if entering then
+								UIState.setCurrentSector(id)
+							end
+						end,
+					}
+					if mode == "isolated_sector" then
+						runArgs.mode = "isolated_sector"
 					end
+					return AttemptRunner.run(runArgs)
+				end,
+				onStageStart = function(stage: VerificationStage, passIndex: number, passTotal: number)
+					if stage == "isolated" then
+						UIState.setPhase("RunVerificationIsolated", string.format("Running isolated check %d/%d...", passIndex, passTotal))
+					elseif stage == "commit_lap" then
+						UIState.setPhase("RunVerificationCommitLap", "Running commit lap...")
+					else
+						UIState.setPhase("RunVerification", "Running simulation...")
+					end
+					Tracer.log(string.format(
+						"attempt_stage index=%d target_sector=%d stage=%s pass=%d/%d",
+						attemptIndex,
+						targetSectorId,
+						stage,
+						passIndex,
+						passTotal
+					))
+				end,
+				onStageResult = function(_stage: VerificationStage, runScope: "lap" | "isolated_sector", _passIndex: number, _passTotal: number, stageResult, _stageHints)
+					UIState.publishAttemptResult(stageResult, runScope)
 				end,
 			})
 
-			job.working_state = cloneState(updatedState)
-			UIState.publishAttemptResult(result)
+			local result = verification.result
+			local hints = verification.hints
+			job.working_state = cloneState(verification.updated_state)
 			table.insert(job.attempts, {
 				attempt_index = attemptIndex,
 				action = nextAction,
@@ -957,11 +1110,19 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				result = result,
 				hints = hints,
 				memory_note = nil,
+				verification_stage = verification.verification_stage,
+				run_scope = verification.run_scope,
+				isolated_passes_required = verification.isolated_passes_required,
+				isolated_passes_completed = verification.isolated_passes_completed,
 			})
 			Tracer.log(string.format(
-				"attempt_result index=%d target_sector=%d success=%s failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f score=%s",
+				"attempt_result index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f score=%s",
 				attemptIndex,
 				targetSectorId,
+				verification.verification_stage,
+				verification.run_scope,
+				tostring(verification.isolated_passes_completed or "-"),
+				tostring(verification.isolated_passes_required or "-"),
 				boolString(result.success),
 				tostring(result.failure and result.failure.type or "none"),
 				tostring(result.failure and result.failure.sector_id or "-"),
@@ -1394,6 +1555,10 @@ end
 
 function JobRunner._invalidAgentResponseWarning(errText: string?): string?
 	return invalidAgentResponseWarning(errText)
+end
+
+function JobRunner._runVerificationProfile(args)
+	return runVerificationProfile(args)
 end
 
 return JobRunner

@@ -2,7 +2,7 @@
 -- Tuning constants and fixed thresholds shared across AutoTrack modules.
 
 local Constants = {}
-Constants.BUILD_STAMP = "u23-endurance-tuning"
+Constants.BUILD_STAMP = "u24-endurance-isolated-verification"
 
 -- Track generator defaults
 Constants.TRACK_ROWS = 2
@@ -207,6 +207,7 @@ Constants.UI_SUCCESS_DWELL = 2.0
 -- Endurance / Hotfix Mode (phase 14)
 Constants.ENDURANCE_ATTEMPT_BUDGET = 12         -- total orchestrator sector placements
 Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO = 0.48 -- modestly wider endurance budget so balanced-risk tracks can survive long enough to be repaired
+Constants.ENDURANCE_ISOLATED_PASSES = 3          -- endurance proposal/repair vetting runs this many isolated passes before the commit lap gate
 Constants.ENDURANCE_CHALLENGE_UP_MIN_HEADROOM = 0.22 -- skip proposer do-over when a clean pass already spent most of the budget
 Constants.ENDURANCE_CHALLENGE_UP_HIGH_HEADROOM = 0.4 -- large remaining headroom means the last clean pass likely undershot the car
 Constants.ENDURANCE_CHALLENGE_UP_MAX_REPAIRS = 2   -- short repair leash for aggressive do-over branches; baseline commit already stands

@@ -227,6 +227,10 @@ export type AttemptRecord = {
 	result: RunResult,
 	hints: { string }?,
 	memory_note: MemoryEntry?,
+	verification_stage: "lap" | "isolated" | "commit_lap"?,
+	run_scope: "lap" | "isolated_sector"?,
+	isolated_passes_required: number?,
+	isolated_passes_completed: number?,
 }
 
 export type OrchestratorAttempt = {

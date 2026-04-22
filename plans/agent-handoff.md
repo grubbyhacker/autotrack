@@ -31,6 +31,7 @@
 | 21 | Complete — isolated tune mode plus agent-operable experimental lab and structured pass telemetry |
 | 22 | Complete — command router extraction, HUD preview extraction, dedicated `startEndurance()` seam, legacy alias cleanup while preserving `/demo endurance` |
 | 23 | Complete — balanced-risk tuning milestone, production-baseline compare/promote tune controls, proposer-owned endurance challenge-up, reliability-as-telemetry objective |
+| 24 | Complete — endurance isolated proposal/repair verification (3-pass isolated + commit-lap gate), challenge-up profile alignment, commit-only budget refresh |
 
 ## Current state
 
@@ -39,6 +40,7 @@
 - Maintained endurance tooling starts through `JobRunner.startEndurance()`, while `/demo endurance` remains the public trigger.
 - Tune mode remains the Phase 21 lab: staged-by-default, controlled run batches, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
 - Phase 23 production baseline remains balanced-risk (faster entries, less conservative pads, wider score/budget headroom, proposer-owned do-over branching in endurance).
+- Phase 24 endurance verification profile is now two-stage for endurance-origin jobs: isolated sector vetting first, then one commit-lap gate before commit.
 - RampJump launch-outlier observability is now first-class:
   - `RunMetrics` now carries `launch_outlier` and `launch_outlier_reasons`
   - traces emit `[TRACE] launch_outlier ...` and `[TRACE] tune_launch_outlier ...` when detected
@@ -62,6 +64,7 @@
 - `/tune reset` is a production-baseline restore, not a raw lab-default restore. `/tune revert` is still the committed-state restore.
 - Endurance entry for maintained tooling now goes through `JobRunner.startEndurance()`, but `/demo endurance` remains a required public command. Keep both paths consistent.
 - The old maximize campaign code path has been removed. Challenge-up now means deterministic Stage B for player/extreme requests or proposer do-over in endurance. In `JobRunner`, forward-declare helper locals used by earlier local functions (`pauseForUI`, `pauseOnFailure`) or the endurance challenge-up path will crash with nil calls. Do not reintroduce maximize-specific helpers or tests unless product direction changes explicitly.
+- Endurance build-time budget/slowdown refresh should come from committed full-lap results only. Isolated-stage proposal/repair vetting telemetry is intentionally non-authoritative for budget state.
 - RampJump airborne guidance must not keep re-injecting positive Y velocity each frame. Preserve ballistic vertical motion and only cap extreme upward spikes.
 - RampJump target-sector stability vertical/angular caps must apply in any RampJump sector context, not only when that sector is the explicit target.
 - Launch-outlier classification should require prolonged hang-time gating; high airtime-distance alone can false-positive at high forward speeds.
@@ -84,6 +87,7 @@
 - `make test TEST=phase22_command_surface`
 - `make test TEST=phase22_endurance_entry`
 - `make test TEST=phase23`
+- `make test TEST=phase24`
 - `make test TEST=llm_trace_export`
 
 ## Recommended next focus
@@ -91,4 +95,5 @@
 - Use the Phase 23 tune surface one mechanic at a time: `compare`, pause for lessons learned, then `promote` only after the new baseline is clearly better in both tune telemetry and full-lap validation.
 - After any RampJump verifier/control change, rerun `phase21_unit`, `phase21_experiment`, and `phase21_rampjump_torture` before full-lap/endurance validation.
 - After any further production tuning pass, rerun `phase21`, `phase23`, and `phase14_integration` sequentially through the maintained bridge.
+- After changes to endurance proposal/repair verification flow, rerun `phase24`, `phase22_endurance_entry`, and `phase23` sequentially through the maintained bridge.
 - Keep `phase22`, `phase20`, and `phase21_unit` in the gate set for future command-routing, endurance-entry, or tune-surface refactors.
