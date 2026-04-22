@@ -92,6 +92,8 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase21).runIntegration()
 	elseif cmd == "phase21_experiment" then
 		require(script.Parent.TestPhase21).runExperiment()
+	elseif cmd == "phase21_rampjump_torture" then
+		require(script.Parent.TestPhase21).runRampJumpTorture()
 	elseif cmd == "phase22" then
 		require(script.Parent.TestPhase22).run()
 	elseif cmd == "phase22_command_surface" then

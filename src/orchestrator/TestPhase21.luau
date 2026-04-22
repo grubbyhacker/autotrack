@@ -3,12 +3,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LaunchOutlier = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LaunchOutlier"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local HotfixAgent = require(script.Parent.HotfixAgent)
 local JobRunner = require(script.Parent.JobRunner)
 local RuntimeContext = require(script.Parent.RuntimeContext)
+local Tracer = require(script.Parent.Tracer)
 local TuneExperiment = require(script.Parent.TuneExperiment)
 local TuneLab = require(script.Parent.TuneLab)
 local TuneMode = require(script.Parent.TuneMode)
@@ -334,6 +336,34 @@ local function testRuntimeIntegrityAndContainmentAttrs()
 	workspace:SetAttribute("AutoTrack_CrestDipComfortApexSpeedMargin", nil)
 end
 
+local function testLaunchOutlierClassifier()
+	local normal = LaunchOutlier.classify({
+		hang_time = 0.45,
+		airtime_distance = 18,
+		vertical_displacement = 4,
+		target_airtime_distance = 18,
+		target_vertical_displacement = 4,
+	})
+	T.expect(
+		"phase21_launch_outlier_classifier_ignores_normal_jump",
+		normal.detected == false and #normal.reasons == 0,
+		HttpService:JSONEncode(normal)
+	)
+
+	local extreme = LaunchOutlier.classify({
+		hang_time = Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME + 0.2,
+		airtime_distance = Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE + 15,
+		vertical_displacement = Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT + 5,
+		target_airtime_distance = Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE + 15,
+		target_vertical_displacement = Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT + 5,
+	})
+	T.expect(
+		"phase21_launch_outlier_classifier_flags_extreme_launch",
+		extreme.detected == true and #extreme.reasons >= 2,
+		HttpService:JSONEncode(extreme)
+	)
+end
+
 local function testTuneLifecycle()
 	local stateFolder = UIState.getStateFolder()
 
@@ -636,7 +666,7 @@ local function testExperimentHarness()
 	local comparison = runComparison()
 	local flatControl = comparison.results[1]
 	if comparison.best == nil
-		or comparison.best.label ~= "flat_control"
+		or comparison.best_production == nil
 		or (flatControl and flatControl.aggregate and (flatControl.aggregate.failure_count or 0) > 0)
 	then
 		resetEditableSectors()
@@ -657,14 +687,150 @@ local function testExperimentHarness()
 		comparison.results[1].aggregate.pass_count == 2 and comparison.results[2].aggregate.pass_count == 2,
 		encoded
 	)
+	local launchMetrics = comparison.results[2].records[1].metrics or {}
+	T.expect(
+		"phase21_experiment_harness_exposes_launch_outlier_metrics",
+		type(launchMetrics.hang_time) == "number"
+			and type(launchMetrics.airtime_distance) == "number"
+			and type(launchMetrics.vertical_displacement) == "number"
+			and type(launchMetrics.launch_outlier) == "boolean"
+			and type(launchMetrics.launch_outlier_reasons) == "table",
+		HttpService:JSONEncode(launchMetrics)
+	)
 	T.expect(
 		"phase21_experiment_harness_distinguishes_better_candidate",
-		comparison.best.label == "flat_control"
+		comparison.best_production ~= nil
+			and comparison.best_production.label == "flat_control"
 			and comparison.results[1].aggregate.score ~= comparison.results[2].aggregate.score,
 		encoded
 	)
 	T.expect(
 		"phase21_experiment_harness_restores_speed_override",
+		workspace:GetAttribute("AutoTrack_CarTargetSpeed") == nil,
+		tostring(workspace:GetAttribute("AutoTrack_CarTargetSpeed"))
+	)
+end
+
+local function testRampJumpTorture()
+	local passesPerCandidate = 30
+	local candidates = {
+		{
+			label = "launch_probe_high_arc",
+			passes = passesPerCandidate,
+			state = makeState(3, "RampJump", {
+				ramp_angle = 18,
+				ramp_length = 54,
+				gap_length = 20,
+				landing_length = 24,
+			}, "Boost50", "None"),
+			attr_overrides = {
+				car_target_speed = 160,
+				rampjump_target_sector_stability_max_angular_speed = 20,
+				rampjump_target_sector_stability_max_vertical_speed = 80,
+			},
+			clear_all_attrs = true,
+		},
+		{
+			label = "launch_probe_kicker",
+			passes = passesPerCandidate,
+			state = makeState(3, "RampJump", {
+				ramp_angle = 16,
+				ramp_length = 24,
+				gap_length = 22,
+				landing_length = 24,
+			}, "Boost50", "None"),
+			attr_overrides = {
+				car_target_speed = 160,
+				rampjump_target_sector_stability_max_angular_speed = 20,
+				rampjump_target_sector_stability_max_vertical_speed = 80,
+			},
+			clear_all_attrs = true,
+		},
+		{
+			label = "launch_probe_reacquire_edge",
+			passes = passesPerCandidate,
+			state = makeState(3, "RampJump", {
+				ramp_angle = 14,
+				ramp_length = 32,
+				gap_length = 24,
+				landing_length = 24,
+			}, "Boost50", "None"),
+			attr_overrides = {
+				car_target_speed = 160,
+				rampjump_target_sector_stability_max_angular_speed = 20,
+				rampjump_target_sector_stability_max_vertical_speed = 80,
+			},
+			clear_all_attrs = true,
+		},
+	}
+
+	local comparison = TuneExperiment.compareCandidates(candidates)
+	local totalExpectedPasses = passesPerCandidate * #candidates
+	local totalObservedPasses = 0
+	local outlierCount = 0
+	local maxHangTime = 0
+	local maxAirtime = 0
+	local maxVertical = 0
+	local metricsSchemaOk = true
+
+	for _, candidateResult in ipairs(comparison.results or {}) do
+		for _, record in ipairs(candidateResult.records or {}) do
+			totalObservedPasses += 1
+			local metrics = record.metrics or {}
+			if type(metrics.hang_time) ~= "number"
+				or type(metrics.airtime_distance) ~= "number"
+				or type(metrics.vertical_displacement) ~= "number"
+				or type(metrics.launch_outlier) ~= "boolean"
+				or type(metrics.launch_outlier_reasons) ~= "table" then
+				metricsSchemaOk = false
+			end
+			maxHangTime = math.max(maxHangTime, metrics.hang_time or 0)
+			maxAirtime = math.max(maxAirtime, math.max(metrics.airtime_distance or 0, metrics.target_airtime_distance or 0))
+			maxVertical = math.max(maxVertical, metrics.vertical_displacement or 0)
+			if metrics.launch_outlier == true then
+				outlierCount += 1
+			end
+		end
+	end
+
+	local summary = {
+		expected_passes = totalExpectedPasses,
+		observed_passes = totalObservedPasses,
+		outlier_count = outlierCount,
+		max_hang_time = maxHangTime,
+		max_airtime_distance = maxAirtime,
+		max_vertical_displacement = maxVertical,
+		candidate_labels = {
+			candidates[1].label,
+			candidates[2].label,
+			candidates[3].label,
+		},
+	}
+	Tracer.log(string.format("tune_rampjump_torture_summary %s", HttpService:JSONEncode(summary)))
+	T.pass(string.format(
+		"phase21_rampjump_torture_summary outliers=%d max_hang=%.2f max_air=%.1f max_vertical=%.1f",
+		outlierCount,
+		maxHangTime,
+		maxAirtime,
+		maxVertical
+	))
+	T.expect(
+		"phase21_rampjump_torture_runs_expected_pass_volume",
+		totalObservedPasses == totalExpectedPasses,
+		HttpService:JSONEncode(summary)
+	)
+	T.expect(
+		"phase21_rampjump_torture_publishes_launch_observability_fields",
+		metricsSchemaOk and maxHangTime > 0 and maxAirtime > 0 and maxVertical > 0,
+		HttpService:JSONEncode(summary)
+	)
+	if outlierCount > 0 then
+		T.pass("phase21_rampjump_torture_observed_launch_outlier")
+	else
+		T.pass("phase21_rampjump_torture_no_outlier_observed_this_run")
+	end
+	T.expect(
+		"phase21_rampjump_torture_restores_speed_override",
 		workspace:GetAttribute("AutoTrack_CarTargetSpeed") == nil,
 		tostring(workspace:GetAttribute("AutoTrack_CarTargetSpeed"))
 	)
@@ -686,6 +852,7 @@ local function runUnitBody()
 	testIsolatedEntrySnapUsesBaseSpeedOverride()
 	testProductionNormalizerStaysConservative()
 	testRuntimeIntegrityAndContainmentAttrs()
+	testLaunchOutlierClassifier()
 end
 
 local function runIntegrationBody()
@@ -727,6 +894,15 @@ function TestPhase21.runExperiment()
 		return
 	end
 	testExperimentHarness()
+	cleanup()
+	TuneExperiment.restoreCommittedState(3)
+end
+
+function TestPhase21.runRampJumpTorture()
+	if not ensureReady() then
+		return
+	end
+	testRampJumpTorture()
 	cleanup()
 	TuneExperiment.restoreCommittedState(3)
 end

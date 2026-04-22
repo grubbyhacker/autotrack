@@ -92,6 +92,7 @@ Constants.STRAIGHT_PIN_ORIENTATION_MAX_TORQUE = 70000
 Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED = true -- once airborne on a ramp, hold takeoff heading instead of steering toward future waypoints
 Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING = 12            -- resist spin/yaw while airborne on a RampJump
 Constants.RAMPJUMP_AIRBORNE_ORIENTATION_MAX_TORQUE = 3500 -- lower airborne torque in ramp context so the verifier does not twist itself mid-flight
+Constants.RAMPJUMP_AIRBORNE_MAX_UPWARD_SPEED = 36       -- cap extreme upward seam impulses while still allowing playable jump arcs
 Constants.SECTOR_ENTRY_SNAP_ENABLED = true              -- authoritative state reset on every sector entry to stop upstream physics bleed
 Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR = Constants.CORNER_SPEED_FACTOR
 Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR = 1.0
@@ -156,6 +157,9 @@ Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN = 0.5
 Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN = 2.0
 Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED = 2.5
 Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 10.0
+Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME = 1.25 -- seconds airborne in one segment; unusually long launches should be highlighted explicitly in traces
+Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE = 90 -- studs airborne in one segment; catches rare "launched hundreds of feet" failures
+Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT = 18 -- studs above baseline while airborne; helps flag catapult-like launches
 
 -- Chicane integrity thresholds
 Constants.CHICANE_MIN_LATERAL_DISPLACEMENT = 4  -- studs

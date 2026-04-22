@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local LaunchOutlier = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LaunchOutlier"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
@@ -425,6 +426,7 @@ end
 
 local function buildPassRecord(passIndex: number, runId: number, candidateVersion: number, stateSnapshot, attrSnapshot, result)
 	local metrics = result.metrics or {}
+	local launchOutlier = LaunchOutlier.classify(metrics)
 	local record = {
 		pass_index = passIndex,
 		run_id = runId,
@@ -441,6 +443,11 @@ local function buildPassRecord(passIndex: number, runId: number, candidateVersio
 			exit_speed = metrics.exit_speed or 0,
 			lap_time = metrics.lap_time or 0,
 			slowdown_ratio = metrics.slowdown_ratio or 0,
+			air_distance = metrics.air_distance or 0,
+			vertical_displacement = metrics.vertical_displacement or 0,
+			airtime_distance = metrics.airtime_distance or 0,
+			target_airtime_distance = metrics.target_airtime_distance,
+			hang_time = metrics.hang_time or 0,
 			target_min_speed = metrics.target_min_speed,
 			target_apex_min_speed = metrics.target_apex_min_speed,
 			target_reacquired = metrics.target_reacquired,
@@ -449,6 +456,8 @@ local function buildPassRecord(passIndex: number, runId: number, candidateVersio
 			target_exit_angular_speed = metrics.target_exit_angular_speed,
 			target_exit_vertical_speed = metrics.target_exit_vertical_speed,
 			lateral_error = metrics.lateral_error or 0,
+			launch_outlier = launchOutlier.detected,
+			launch_outlier_reasons = cloneTable(launchOutlier.reasons),
 		},
 	}
 	record.challenge_score = TuneLab.productionChallengeScore(stateSnapshot, result)
@@ -654,6 +663,28 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 			local record = buildPassRecord(passIndex, runId, candidateVersion, stateSnapshot, attrSnapshot, result)
 			table.insert(records, record)
 			recordPass(record)
+			if record.metrics and record.metrics.launch_outlier == true then
+				local reasons = table.concat(record.metrics.launch_outlier_reasons or {}, ",")
+				UIState.appendLog(string.format(
+					"Tune launch outlier pass %d: hang=%.2fs airtime=%.1f vertical=%.1f [%s]",
+					passIndex,
+					record.metrics.hang_time or 0,
+					math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
+					record.metrics.vertical_displacement or 0,
+					reasons
+				))
+				Tracer.log(string.format(
+					"tune_launch_outlier sector=%d run=%d candidate=%d pass=%d hang=%.2f airtime=%.1f vertical=%.1f reasons=%s",
+					_sectorId,
+					runId,
+					candidateVersion,
+					passIndex,
+					record.metrics.hang_time or 0,
+					math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
+					record.metrics.vertical_displacement or 0,
+					reasons
+				))
+			end
 			Tracer.log(string.format(
 				"tune_pass_record sector=%d run=%d candidate=%d pass=%d %s",
 				_sectorId,

@@ -30,6 +30,7 @@ TuneLab.ATTR_SPECS = {
 	target_sector_stability_max_vertical_speed = rangedAttr("AutoTrack_TargetSectorStabilityMaxVerticalSpeed", 0, 120),
 	rampjump_target_sector_stability_max_angular_speed = rangedAttr("AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed", 0, 20),
 	rampjump_target_sector_stability_max_vertical_speed = rangedAttr("AutoTrack_RampJumpTargetSectorStabilityMaxVerticalSpeed", 0, 80),
+	rampjump_airborne_max_upward_speed = rangedAttr("AutoTrack_RampJumpAirborneMaxUpwardSpeed", 0, 80),
 	straight_pin_yaw_damping = rangedAttr("AutoTrack_StraightPinYawDamping", 0, 120),
 	straight_pin_roll_damping = rangedAttr("AutoTrack_StraightPinRollDamping", 0, 120),
 	straight_pin_orientation_max_torque = rangedAttr("AutoTrack_StraightPinOrientationMaxTorque", 0, 160000),

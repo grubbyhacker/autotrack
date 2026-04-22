@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LaunchOutlier = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LaunchOutlier"))
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
@@ -13,6 +14,7 @@ local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
+local Tracer = require(script.Parent.Tracer)
 
 type SectorState  = Types.SectorState
 type RunResult    = Types.RunResult
@@ -56,6 +58,31 @@ local function getSectorMeta(sectors, targetSectorId: number)
 		end
 	end
 	error("AttemptRunner.getSectorMeta: unknown sector " .. tostring(targetSectorId))
+end
+
+local function annotateLaunchOutlier(rawResult, runMode: string, targetSectorId: number, workingState)
+	local metrics = rawResult.metrics or {}
+	local classification = LaunchOutlier.classify(metrics)
+	metrics.launch_outlier = classification.detected
+	metrics.launch_outlier_reasons = classification.reasons
+	rawResult.metrics = metrics
+
+	if not classification.detected then
+		return
+	end
+
+	Tracer.log(string.format(
+		"launch_outlier mode=%s target_sector=%d target_mechanic=%s hang=%.2f airtime=%.1f vertical=%.1f reasons=%s failure_type=%s failure_detail=%s",
+		runMode,
+		targetSectorId,
+		tostring(workingState and workingState.mechanic),
+		classification.hang_time or 0,
+		classification.airtime_distance or 0,
+		classification.vertical_displacement or 0,
+		LaunchOutlier.reasonSummary(classification),
+		tostring(rawResult.failure and rawResult.failure.type or ""),
+		tostring(rawResult.failure and rawResult.failure.detail or "")
+	))
 end
 
 function AttemptRunner.run(args): (RunResult, { string }, SectorState)
@@ -108,6 +135,7 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 			isolated_sector = runMode == "isolated_sector",
 		}
 	)
+	annotateLaunchOutlier(rawResult, runMode, args.targetSectorId, workingState)
 
 	local result, hints = LapEvaluator.evaluate(
 		rawResult.failure,

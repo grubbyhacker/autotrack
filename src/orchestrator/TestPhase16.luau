@@ -220,6 +220,22 @@ function TestPhase16.run()
 			next_frozen = nextFrozen and { x = nextFrozen.X, y = nextFrozen.Y, z = nextFrozen.Z } or nil,
 		})
 	)
+	local _, cappedVelocity = VerifierController._resolveRampJumpAirborneGuidance(
+		true,
+		true,
+		true,
+		nil,
+		Vector3.zAxis,
+		Vector3.xAxis,
+		42,
+		80,
+		14
+	)
+	T.expect(
+		"phase16_ramp_airborne_guidance_caps_upward_velocity",
+		cappedVelocity ~= nil and math.abs(cappedVelocity.Y - 14) < 1e-4,
+		HttpService:JSONEncode(cappedVelocity and { x = cappedVelocity.X, y = cappedVelocity.Y, z = cappedVelocity.Z } or {})
+	)
 
 	local pinnedAngularVelocity = VerifierController._resolveStraightPinnedAngularVelocity(
 		false,

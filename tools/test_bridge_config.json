@@ -54,6 +54,7 @@
     "phase21_unit": { "boot_mode": "skip_baseline" },
     "phase21_integration": { "boot_mode": "skip_baseline" },
     "phase21_experiment": { "boot_mode": "skip_baseline" },
+    "phase21_rampjump_torture": { "boot_mode": "skip_baseline" },
     "phase22": { "boot_mode": "skip_baseline" },
     "phase22_command_surface": { "boot_mode": "skip_baseline" },
     "phase22_endurance_entry": { "boot_mode": "skip_baseline" },

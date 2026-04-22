@@ -141,6 +141,9 @@ export type RunMetrics = {
 	peak_lateral_g: number?,
 	target_min_speed: number?,
 	target_apex_min_speed: number?,
+	-- Phase 24 observability additions for rare RampJump catapult launches.
+	launch_outlier: boolean?,
+	launch_outlier_reasons: { string }?,
 }
 
 -- Phase 11 fitness signal. See plans/phase11.md §3.1, §10 and

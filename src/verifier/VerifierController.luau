@@ -341,7 +341,8 @@ local function resolveRampJumpAirborneGuidance(
 	desiredDirection: Vector3,
 	carLookVector: Vector3,
 	verticalSpeed: number,
-	commandedSpeed: number
+	commandedSpeed: number,
+	maxUpwardSpeed: number?
 ): (Vector3, Vector3?, Vector3?)
 	if not isAirborne then
 		return desiredDirection, nil, nil
@@ -355,9 +356,13 @@ local function resolveRampJumpAirborneGuidance(
 		lockedDirection = horizontalDirectionOrFallback(desiredDirection, carLookVector)
 	end
 
+	local cappedVerticalSpeed = if type(maxUpwardSpeed) == "number"
+		then math.min(verticalSpeed, maxUpwardSpeed)
+		else verticalSpeed
+
 	return lockedDirection, Vector3.new(
 		lockedDirection.X * commandedSpeed,
-		verticalSpeed,
+		cappedVerticalSpeed,
 		lockedDirection.Z * commandedSpeed
 	), lockedDirection
 end
@@ -1094,7 +1099,7 @@ function VerifierController.runLap(
 				"AutoTrack_TargetSectorStabilityMaxVerticalSpeed",
 				Constants.TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
 			))
-			if isTargetRampJump then
+			if isTargetRampJump or inRampJumpSector then
 				maxAngularSpeed = math.max(0, runtimeNumberAttr(
 					"AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed",
 					Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
@@ -1138,6 +1143,10 @@ function VerifierController.runLap(
 			"AutoTrack_RampJumpAirborneHeadingFreezeEnabled",
 			Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED
 		)
+		local rampJumpMaxUpwardSpeed = runtimeNumberAttr(
+			"AutoTrack_RampJumpAirborneMaxUpwardSpeed",
+			Constants.RAMPJUMP_AIRBORNE_MAX_UPWARD_SPEED
+		)
 		local forcedAirborneVectorVelocity
 		orientationDirection, forcedAirborneVectorVelocity, airborneFrozenDirection = resolveRampJumpAirborneGuidance(
 			isAirborne,
@@ -1147,8 +1156,17 @@ function VerifierController.runLap(
 			orientationDirection,
 			carCFrame.LookVector,
 			car.AssemblyLinearVelocity.Y,
-			commandedSpeed
+			commandedSpeed,
+			rampJumpMaxUpwardSpeed
 		)
+		if forcedAirborneVectorVelocity ~= nil then
+			local ballisticVertical = car.AssemblyLinearVelocity.Y - (workspace.Gravity * controlDt)
+			forcedAirborneVectorVelocity = Vector3.new(
+				forcedAirborneVectorVelocity.X,
+				math.min(ballisticVertical, rampJumpMaxUpwardSpeed),
+				forcedAirborneVectorVelocity.Z
+			)
+		end
 		forwardDot = horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection):Dot(orientationDirection)
 		local lateralOffset = projectedPoint - carPosition
 		local lateralError = lateralOffset.Magnitude

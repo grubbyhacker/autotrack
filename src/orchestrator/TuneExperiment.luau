@@ -2,6 +2,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local LaunchOutlier = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LaunchOutlier"))
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
@@ -85,6 +86,7 @@ end
 
 local function passRecord(passIndex: number, sectorId: number, candidate, result)
 	local metrics = result.metrics or {}
+	local launchOutlier = LaunchOutlier.classify(metrics)
 	local normalizedState = candidate.state
 	local record = {
 		pass_index = passIndex,
@@ -99,6 +101,11 @@ local function passRecord(passIndex: number, sectorId: number, candidate, result
 			exit_speed = metrics.exit_speed or 0,
 			lap_time = metrics.lap_time or 0,
 			slowdown_ratio = metrics.slowdown_ratio or 0,
+			air_distance = metrics.air_distance or 0,
+			vertical_displacement = metrics.vertical_displacement or 0,
+			airtime_distance = metrics.airtime_distance or 0,
+			target_airtime_distance = metrics.target_airtime_distance,
+			hang_time = metrics.hang_time or 0,
 			target_min_speed = metrics.target_min_speed,
 			target_apex_min_speed = metrics.target_apex_min_speed,
 			target_reacquired = metrics.target_reacquired,
@@ -107,6 +114,8 @@ local function passRecord(passIndex: number, sectorId: number, candidate, result
 			target_exit_angular_speed = metrics.target_exit_angular_speed,
 			target_exit_vertical_speed = metrics.target_exit_vertical_speed,
 			lateral_error = metrics.lateral_error or 0,
+			launch_outlier = launchOutlier.detected,
+			launch_outlier_reasons = cloneTable(launchOutlier.reasons),
 		},
 	}
 	record.challenge_score = TuneLab.productionChallengeScore(normalizedState, result)
