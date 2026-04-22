@@ -119,12 +119,19 @@ function StatusPanel.setRuntimeIdentity(buildStamp: string, controllerProfile: s
 end
 
 function StatusPanel.setExplanation(text: string)
+	if _detailState.explanation == (text or "") then
+		return
+	end
 	_detailState.explanation = text or ""
 	renderDetailLine()
 end
 
 function StatusPanel.setRepairAction(text: string)
-	_detailState.action = if text ~= "" then "→ " .. text else ""
+	local nextAction = if text ~= "" then "→ " .. text else ""
+	if _detailState.action == nextAction then
+		return
+	end
+	_detailState.action = nextAction
 	renderDetailLine()
 end
 

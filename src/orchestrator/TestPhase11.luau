@@ -574,6 +574,29 @@ local function runUnit()
 			string.format("expected maximize suppression, got shouldRun=%s why=%s", tostring(shouldRun), tostring(why)))
 	end
 
+	-- 31b. Endurance build submits never run Stage B challenge-up.
+	do
+		local request, err = RequestParser.parse("add an extreme jump in sector 3", "phase11-endurance-suppress")
+		assert(request ~= nil, "expected request: " .. tostring(err))
+		local result = {
+			success = true,
+			metrics = metrics(),
+			score = {
+				total = 5,
+				air = 2,
+				lateral = 0,
+				near_miss = 3,
+				time_cost = 0,
+				budget_used = 0.2,
+				over_budget = false,
+			},
+		}
+		local shouldRun, why = JobRunner._shouldRunChallengeUp(request, result, true)
+		T.expect("phase11_challenge_up_suppressed_during_endurance",
+			shouldRun == false and why == "endurance_orchestrated",
+			string.format("expected endurance suppression, got shouldRun=%s why=%s", tostring(shouldRun), tostring(why)))
+	end
+
 	-- 32. Pre-target failures must revert instead of repairing the target sector.
 	do
 		local result = {

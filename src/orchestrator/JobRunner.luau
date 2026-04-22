@@ -164,12 +164,18 @@ local function maximizeCampaignActive(): boolean
 	return workspace:GetAttribute("AutoTrack_MaximizeCampaignActive") == true
 end
 
-local function shouldRunChallengeUp(request, result): (boolean, string?)
+local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?): (boolean, string?)
 	if result == nil or result.score == nil then
 		return false, "no_score"
 	end
 	if maximizeCampaignActive() then
 		return false, "maximize_campaign"
+	end
+	local enduranceBuildActive = if enduranceBuildActiveOverride ~= nil
+		then enduranceBuildActiveOverride
+		else OrchestratorAgent.isActive()
+	if enduranceBuildActive then
+		return false, "endurance_orchestrated"
 	end
 
 	for _, q in ipairs(request.qualifiers) do
@@ -1253,8 +1259,8 @@ function JobRunner.getLastJob(): CIJob?
 	return _lastJob
 end
 
-function JobRunner._shouldRunChallengeUp(request, result)
-	return shouldRunChallengeUp(request, result)
+function JobRunner._shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?)
+	return shouldRunChallengeUp(request, result, enduranceBuildActiveOverride)
 end
 
 function JobRunner._shouldRevertPreTargetFailure(result, targetSectorId: number): boolean

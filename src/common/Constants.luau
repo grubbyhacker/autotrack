@@ -2,7 +2,7 @@
 -- Tuning constants and fixed thresholds shared across AutoTrack modules.
 
 local Constants = {}
-Constants.BUILD_STAMP = "fc4749e-local"
+Constants.BUILD_STAMP = "u18-followup-local"
 
 -- Track generator defaults
 Constants.TRACK_ROWS = 2
@@ -20,7 +20,7 @@ Constants.CORNER_SPEED_FACTOR = 0.20      -- slower fixed-corner target; baselin
 Constants.CORNER_ENTRY_SHOULDER_FRACTION = 0.40 -- brake earlier into corners so the straight→corner handoff is settled before apex
 Constants.CORNER_EXIT_SHOULDER_FRACTION = 0.22  -- hold corner speed longer and delay re-accel until later in corner exit
 Constants.CORNER_CORNER_SHOULDER_LENGTH = 10 -- compact shoulder on fixed corner-to-corner joins
-Constants.CORNER_EDITABLE_SHOULDER_LENGTH = 60 -- fixed corners own at least half a straight before handing off to an editable sector
+Constants.CORNER_EDITABLE_SHOULDER_LENGTH = 10 -- sector-entry snapping removed the need for a long slow recovery shoulder before editable straights
 Constants.CORNER_SHOULDER_SAMPLE_SPACING = 12 -- dense fixed guidance along long corner-owned recovery straights
 Constants.CORNER_CURVE_HANDLE_LENGTH = 8   -- bezier handle length between the two corner shoulders
 Constants.CORNER_ENTRY_BRAKE_RATE = 340    -- brake assertively on the fixed entry shoulder so corner approach is deterministic

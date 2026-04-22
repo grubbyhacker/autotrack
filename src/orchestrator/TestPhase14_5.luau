@@ -220,6 +220,12 @@ function TestPhase14_5.runUnit()
 			and string.find(telemetryPayloads[#telemetryPayloads].failure_signature, "no_progress", 1, true) ~= nil,
 		HttpService:JSONEncode(telemetryPayloads[#telemetryPayloads] or {})
 	)
+	T.expect(
+		"phase14_5_begin_loop_telemetry_uses_player_facing_copy",
+		#telemetryPayloads >= 1
+			and telemetryPayloads[#telemetryPayloads].last_decision == "TRACK READY",
+		HttpService:JSONEncode(telemetryPayloads[#telemetryPayloads] or {})
+	)
 end
 
 function TestPhase14_5.run()

@@ -81,3 +81,19 @@ Additional:
   name of continuity without checking deterministic replay quality first.
 - Borderline authored sectors should fail early rather than quietly commit and
   create flaky downstream behavior.
+
+## Post-Ship Follow-Up
+
+- Endurance build passes should not run Stage B challenge-up even when their
+  request text still includes `extreme`; endurance needs deterministic build
+  cadence, not extra post-commit escalation laps.
+- The long corner-owned editable shoulder is no longer required after sector
+  entry snapping. Shrink it aggressively so fixed corner exits stop consuming a
+  large slow-speed straight before handing off to the editable sector.
+- Repair callout text must not re-trigger forever just because unrelated HUD
+  attributes keep rendering while the same explanation/action strings remain in
+  state.
+- Endurance HUD copy should avoid exposing the internal `begin_loop` control
+  token to the player-facing request banner.
+- Normal startup should always come up on `Heuristic`; only explicit harness /
+  automation boot commands should honor workspace LLM override attributes.

@@ -47,6 +47,7 @@
   - endurance and hotfix are independent left-side badges above `Live`, not overloaded into repair UI
   - LLM backend/model failures now surface as an amber warning strip above the `LLM` panel, not in the old attempt cluster
   - repair explanation/action copy is now a transient callout below the top ribbon and must not be fed from endurance/orchestrator telemetry each render
+  - `StatusPanel` now de-duplicates repeated explanation/action payloads so the same repair callout does not reappear forever after fading just because unrelated HUD attributes keep changing
 - Demo/HUD commands in active use:
   - `/demo camera`, `/demo rampitup`, `/demo repair`, `/demo llmerror`, `/demo ui-hotfix`
 - Endurance policy/objective work lives in:
@@ -73,6 +74,7 @@
   - canonical entry speed is sector-kind / mechanic-specific; upstream drift, spin, and pad carry-over are intentionally discarded at the boundary
   - the snap now anchors to exact sector `entry` frames when runtime sector metadata is available, and a short post-snap settle window reduces visible controller jitter
   - corner-to-corner handoffs intentionally skip the snap and remain continuous at corner speed
+  - the old long corner-owned editable shoulder was shortened from `60` studs to `10`; fixed corners no longer hold a large slow recovery straight before handing off to editable sectors
   - comfort-margin telemetry now exists in `RunMetrics`:
     - `target_reacquire_distance`
     - `target_peak_body_distance`
@@ -85,8 +87,11 @@
 - Working objective is still demo reliability over pure physics fidelity.
 - Sector-entry normalization is now unconditional at every boundary; simulation continuity is no longer a goal when it conflicts with repeatability.
 - Non-corner straights currently use stronger yaw/roll damping and forward-heading pinning than corners.
+- Endurance build passes now skip Stage B challenge-up even if their request text contains `extreme`; the orchestrator build loop should spend budget on placements, not on post-commit escalation laps.
 - Corner-exit acceleration is now heading-gated: on the exit shoulder and first `0.15` of the following straight, target speed stays pinned until forward alignment exceeds `0.992`, which removes the visible slide-before-rotate handoff from S1 into S2.
 - `VerifierController.runLap` now explicitly settles the verifier at lap completion (zero linear/angular velocity, align to final heading) so completed laps do not drift or steer off the track after control teardown.
+- Normal non-harness boot now force-resets the LLM config to `Heuristic`; workspace boot attrs are only honored for explicit harness / automation runs (or when `AutoTrack_HonorBootLLMOverride=true`).
+- Player-facing endurance telemetry no longer surfaces the raw `BEGIN LOOP` control token; the HUD now shows `TRACK READY` when the orchestrator finishes the build pass.
 - RampJump full-lap stability depends on both geometry and verifier behavior:
   - calmer entry normalization
   - airborne heading freeze to ramp/path heading
@@ -96,6 +101,7 @@
 ## Maintained verification snapshot
 
 - `make test TEST=phase14_5`
+- `make test TEST=phase11_unit`
 - `make test TEST=phase14_unit`
 - `make test TEST=phase14_integration`
 - `make test TEST=phase14_crestdip_pair`

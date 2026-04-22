@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local StudioTestService = game:GetService("StudioTestService")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
@@ -22,13 +23,32 @@ local cameraLoopDemo = workspace:GetAttribute("AutoTrack_CameraLoopDemo") == tru
 -- does not silently leak into later Play sessions.
 workspace:SetAttribute("AutoTrack_SkipBootBaseline", false)
 
--- LLM config: read workspace attributes set by the test harness or prior session.
+local function shouldHonorBootLLMOverrides(): boolean
+	if workspace:GetAttribute("AutoTrack_HonorBootLLMOverride") == true then
+		return true
+	end
+
+	local ok, args = pcall(function()
+		return StudioTestService:GetTestArgs()
+	end)
+	return ok and type(args) == "table"
+end
+
+-- Default to heuristic on normal startup. Only explicit harness / automation
+-- runs should inherit workspace boot overrides.
 do
-	local llmEnabled = workspace:GetAttribute("AutoTrack_LLMEnabled") == true
-	local llmModel = workspace:GetAttribute("AutoTrack_LLMModel")
-	LLMConfig.setEnabled(llmEnabled)
-	if type(llmModel) == "string" and llmModel ~= "" then
-		LLMConfig.setModel(llmModel)
+	if shouldHonorBootLLMOverrides() then
+		local llmEnabled = workspace:GetAttribute("AutoTrack_LLMEnabled") == true
+		local llmModel = workspace:GetAttribute("AutoTrack_LLMModel")
+		LLMConfig.setEnabled(llmEnabled)
+		if type(llmModel) == "string" and llmModel ~= "" then
+			LLMConfig.setModel(llmModel)
+		end
+	else
+		workspace:SetAttribute("AutoTrack_LLMEnabled", false)
+		workspace:SetAttribute("AutoTrack_LLMModel", "heuristic")
+		LLMConfig.setEnabled(false)
+		LLMConfig.setModel("heuristic")
 	end
 end
 

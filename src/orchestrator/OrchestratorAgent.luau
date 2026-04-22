@@ -258,7 +258,7 @@ end
 
 local function formatDecisionSummary(decision: OrchestratorDecision): string
 	if decision.action == "begin_loop" then
-		return "BEGIN LOOP"
+		return "TRACK READY"
 	end
 
 	local summary = string.format("S%d %s", decision.sector_id or 0, tostring(decision.mechanic or ""))
@@ -410,8 +410,8 @@ function OrchestratorAgent.run(args): (boolean, string?)
 						budget_target = trackIntent.target_budget_used,
 						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
 						decision_index = decisionIndex,
-						last_decision = "BEGIN LOOP",
-						last_rationale = if rationale ~= "" then rationale else "budget stable; start the live loop",
+						last_decision = formatDecisionSummary(decision),
+						last_rationale = if rationale ~= "" then rationale else "track balanced; continuous loop armed",
 						memory_depth = #attemptHistory,
 						repeat_penalties = summarizeRepeatPressure(repeatPressure),
 						failure_signature = if #attemptHistory > 0 then (attemptHistory[1].failure_signature or "") else "",
@@ -424,7 +424,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 						),
 					})
 				end
-				deps.appendLog("Orchestrator: begin loop")
+				deps.appendLog("Orchestrator: track ready")
 				deps.trace("endurance_begin_loop")
 				break
 			end

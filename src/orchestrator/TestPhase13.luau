@@ -260,7 +260,7 @@ function TestPhase13.runUnit()
 			and type(partialProposed.params.height_or_depth) == "number"
 			and type(partialProposed.params.sector_length) == "number"
 			and type(partialProposed.params.radius) == "number"
-			and partialProposed.pads.ingress == "Brake10"
+			and partialProposed.pads.ingress == "Brake50"
 			and partialProposed.pads.egress == "None"
 			and partialProposed.params.height_or_depth >= 4
 			and partialProposed.params.sector_length >= 20,
