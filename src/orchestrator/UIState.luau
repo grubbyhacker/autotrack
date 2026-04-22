@@ -40,6 +40,36 @@ local function defaultOrchestratorAttributes()
 	}
 end
 
+local function defaultTuneAttributes()
+	return {
+		tune_mode_active = false,
+		tune_sector_id = 0,
+		tune_mechanic = "",
+		tune_pass_count = 0,
+		tune_last_result = "",
+		tune_last_failure = "",
+		tune_param_summary = "",
+		tune_attr_summary = "",
+		tune_bounds_summary = "",
+		tune_active_target_speed = 0,
+		tune_best_score = 0,
+		tune_auto_run = false,
+		tune_run_in_flight = false,
+		tune_candidate_version = 0,
+		tune_last_run_id = 0,
+		tune_last_pass_json = "",
+		tune_best_pass_json = "",
+		tune_last_batch_json = "",
+		tune_best_batch_json = "",
+		tune_history_json = "",
+		tune_history_1 = "",
+		tune_history_2 = "",
+		tune_history_3 = "",
+		tune_history_4 = "",
+		tune_promotion_snapshot = "",
+	}
+end
+
 local function sectorAttr(sectorId: number, suffix: string): string
 	return string.format("sector_%d_%s", sectorId, suffix)
 end
@@ -119,6 +149,7 @@ function UIState.init(baselineLapTime: number)
 		repair_action_text = "",
 		baseline_lap_time = baselineLapTime,
 		last_lap_time = -1,
+		last_run_scope = "",
 		slowdown_ratio = 1,
 		current_speed = 0,
 		current_target_speed = 0,
@@ -166,6 +197,7 @@ function UIState.init(baselineLapTime: number)
 		controller_profile = "",
 	})
 	setAttributes(defaultOrchestratorAttributes())
+	setAttributes(defaultTuneAttributes())
 	setLogs()
 	FailureMarker.hide()
 	SuccessMarker.clear()
@@ -339,9 +371,10 @@ function UIState.rejectRequest(rawText: string, reason: string, warningText: str
 	UIState.appendLog(label .. ": " .. reason)
 end
 
-function UIState.publishAttemptResult(result)
+function UIState.publishAttemptResult(result, runScope: string?)
 	setAttributes({
 		last_lap_time = result.metrics.lap_time,
+		last_run_scope = runScope or "lap",
 		slowdown_ratio = result.metrics.slowdown_ratio,
 	})
 end
@@ -392,6 +425,7 @@ end
 function UIState.setLastLapTime(seconds: number)
 	setAttributes({
 		last_lap_time = seconds,
+		last_run_scope = "lap",
 		slowdown_ratio = 1,
 	})
 end
@@ -550,6 +584,40 @@ function UIState.clearOrchestratorTelemetry()
 	setAttributes(defaultOrchestratorAttributes())
 end
 
+function UIState.setTuneTelemetry(payload)
+	setAttributes({
+		tune_mode_active = payload and payload.active == true,
+		tune_sector_id = payload and payload.sector_id or 0,
+		tune_mechanic = payload and payload.mechanic or "",
+		tune_pass_count = payload and payload.pass_count or 0,
+		tune_last_result = payload and payload.last_result or "",
+		tune_last_failure = payload and payload.last_failure or "",
+		tune_param_summary = payload and payload.param_summary or "",
+		tune_attr_summary = payload and payload.attr_summary or "",
+		tune_bounds_summary = payload and payload.bounds_summary or "",
+		tune_active_target_speed = payload and payload.active_target_speed or 0,
+		tune_best_score = payload and payload.best_score or 0,
+		tune_auto_run = payload and payload.auto_run == true,
+		tune_run_in_flight = payload and payload.run_in_flight == true,
+		tune_candidate_version = payload and payload.candidate_version or 0,
+		tune_last_run_id = payload and payload.last_run_id or 0,
+		tune_last_pass_json = payload and payload.last_pass_json or "",
+		tune_best_pass_json = payload and payload.best_pass_json or "",
+		tune_last_batch_json = payload and payload.last_batch_json or "",
+		tune_best_batch_json = payload and payload.best_batch_json or "",
+		tune_history_json = payload and payload.history_json or "",
+		tune_history_1 = payload and payload.history_1 or "",
+		tune_history_2 = payload and payload.history_2 or "",
+		tune_history_3 = payload and payload.history_3 or "",
+		tune_history_4 = payload and payload.history_4 or "",
+		tune_promotion_snapshot = payload and payload.promotion_snapshot or "",
+	})
+end
+
+function UIState.clearTuneTelemetry()
+	setAttributes(defaultTuneAttributes())
+end
+
 function UIState.setHotfixActive(active: boolean, sectorId: number?)
 	local values = {
 		endurance_hotfix_active = active == true,
@@ -591,6 +659,7 @@ function UIState.publishReady()
 		current_sector_id = 0,
 	})
 	UIState.clearOrchestratorTelemetry()
+	UIState.clearTuneTelemetry()
 end
 
 return UIState

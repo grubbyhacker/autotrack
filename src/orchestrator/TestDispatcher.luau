@@ -3,7 +3,9 @@ local TestSession = require(script.Parent.TestSession)
 local TestDispatcher = {}
 
 local function runSuiteBody(cmd)
-	if cmd == "phase1" then
+	if cmd == "boot_smoke" then
+		require(script.Parent.TestBootSmoke).run()
+	elseif cmd == "phase1" then
 		require(script.Parent.TestPhase1).run()
 	elseif cmd == "phase2" then
 		require(script.Parent.TestPhase2).run()
@@ -81,6 +83,10 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase19).run()
 	elseif cmd == "phase20" then
 		require(script.Parent.TestPhase20).run()
+	elseif cmd == "phase21" then
+		require(script.Parent.TestPhase21).run()
+	elseif cmd == "phase21_experiment" then
+		require(script.Parent.TestPhase21).runExperiment()
 	elseif cmd == "llm_trace_export" then
 		require(script.Parent.TestPhase17).runExport()
 	else

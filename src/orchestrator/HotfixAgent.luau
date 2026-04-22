@@ -32,11 +32,16 @@ type SectorState = Types.SectorState
 type RunResult = Types.RunResult
 
 local HotfixAgent = {}
+local HOTFIX_ATTEMPT_MODE = "isolated_sector"
 
 local _active = false
 
 function HotfixAgent.isActive(): boolean
 	return _active
+end
+
+function HotfixAgent.attemptMode(): string
+	return HOTFIX_ATTEMPT_MODE
 end
 
 local function cloneState(state: SectorState): SectorState
@@ -186,6 +191,7 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		UIState.appendLog(string.format("Hotfix attempt %d: %s", attemptIndex + 1, explanation or "repair"))
 
 		local result, evalHints, updatedState = AttemptRunner.run({
+			mode = HOTFIX_ATTEMPT_MODE,
 			workingState = workingState,
 			action = nextAction,
 			targetSectorId = sectorId,

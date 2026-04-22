@@ -398,6 +398,7 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
         "suite": suite_name,
         "boot_mode": suites[suite_name]["boot_mode"],
         "runner_ready_seconds": defaults["runner_ready_seconds"],
+        "boot_ready_seconds": defaults.get("boot_ready_seconds", 30),
         "baseline_ready_seconds": defaults["baseline_ready_seconds"],
         "suite_seconds": defaults["suite_seconds"],
     }
@@ -436,7 +437,13 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
     start = time.time()
     plugin_connected = False
     plugin_timeout = defaults["plugin_connect_seconds"]
-    suite_timeout = defaults["suite_seconds"] + defaults["baseline_ready_seconds"] + defaults["runner_ready_seconds"] + 20
+    suite_timeout = (
+        defaults["suite_seconds"]
+        + defaults["baseline_ready_seconds"]
+        + defaults["runner_ready_seconds"]
+        + defaults.get("boot_ready_seconds", 30)
+        + 20
+    )
     exit_code = 3
 
     try:
@@ -493,6 +500,7 @@ def export_llm_trace(config: dict[str, Any]) -> int:
         "suite": "llm_trace_export",
         "boot_mode": "live_session",
         "runner_ready_seconds": defaults["runner_ready_seconds"],
+        "boot_ready_seconds": defaults.get("boot_ready_seconds", 30),
         "baseline_ready_seconds": 0,
         "suite_seconds": 30,
     }

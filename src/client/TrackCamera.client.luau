@@ -6,7 +6,9 @@ local Workspace = game:GetService("Workspace")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
-local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState")
+local RUNTIME_BOOT_TIMEOUT = 30
+local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState", RUNTIME_BOOT_TIMEOUT)
+assert(stateFolder ~= nil and stateFolder:IsA("Folder"), "TrackCamera: AutoTrackUIState missing after boot timeout")
 
 local camera: Camera? = nil
 local car: BasePart? = nil

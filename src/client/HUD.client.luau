@@ -6,8 +6,13 @@ local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local StatusPanel = require(AutoTrackUI:WaitForChild("StatusPanel"))
 local StatsPanel = require(AutoTrackUI:WaitForChild("StatsPanel"))
 
-local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState")
-local submitEvent = ReplicatedStorage:WaitForChild("AutoTrack_SubmitRequest")
+local RUNTIME_BOOT_TIMEOUT = 30
+
+local stateFolder = ReplicatedStorage:WaitForChild("AutoTrackUIState", RUNTIME_BOOT_TIMEOUT)
+assert(stateFolder ~= nil and stateFolder:IsA("Folder"), "HUD: AutoTrackUIState missing after boot timeout")
+
+local submitEvent = ReplicatedStorage:WaitForChild("AutoTrack_SubmitRequest", RUNTIME_BOOT_TIMEOUT)
+assert(submitEvent ~= nil and submitEvent:IsA("RemoteEvent"), "HUD: AutoTrack_SubmitRequest missing after boot timeout")
 local setLLMConfigEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SetLLMConfig")
 
 local player = Players.LocalPlayer

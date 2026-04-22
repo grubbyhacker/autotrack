@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("RuntimeTuning"))
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 
 type RunMetrics = Types.RunMetrics
@@ -19,7 +20,10 @@ function ChicaneIntegrity.preflight(
 	local p = state.params
 
 	-- Geometry-based checks (evaluable without runtime path telemetry)
-	if (p.amplitude or 0) < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT then
+	if (p.amplitude or 0) < RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneMinLateralDisplacement",
+		Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
+	) then
 		table.insert(hints, "amplitude below minimum lateral displacement")
 	end
 	if (p.amplitude or 0) > Constants.TRACK_WIDTH * 0.5 then
@@ -29,7 +33,10 @@ function ChicaneIntegrity.preflight(
 	local transitionLength = p.transition_length or 0
 	if transitionLength <= 0 then
 		table.insert(hints, "transition_length must be positive")
-	elseif (p.amplitude or 0) / transitionLength < Constants.CHICANE_MIN_CURVATURE then
+	elseif (p.amplitude or 0) / transitionLength < RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneMinCurvature",
+		Constants.CHICANE_MIN_CURVATURE
+	) then
 		table.insert(hints, "effective curvature below minimum")
 	end
 
@@ -49,15 +56,29 @@ function ChicaneIntegrity.evaluateRuntime(
 	local rightOffset = metrics.target_right_offset or 0
 	local bandChanges = metrics.target_lateral_band_changes or 0
 	local peakBodyDistance = metrics.target_peak_body_distance or 0
-	local minRuntimeExcursion = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
-		+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
-	local maxBodyDistance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE - Constants.CHICANE_COMFORT_BODY_MARGIN
+	local minRuntimeExcursion = (RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneMinLateralDisplacement",
+		Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
+	) * 0.5) + RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneComfortLateralMargin",
+		Constants.CHICANE_COMFORT_LATERAL_MARGIN
+	)
+	local maxBodyDistance = RuntimeTuning.numberAttr(
+		"AutoTrack_FrontBodyContainmentDistance",
+		Constants.FRONT_BODY_CONTAINMENT_DISTANCE
+	) - RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneComfortBodyMargin",
+		Constants.CHICANE_COMFORT_BODY_MARGIN
+	)
 
 	if leftOffset < minRuntimeExcursion or rightOffset < minRuntimeExcursion then
 		table.insert(hints, "runtime lateral excursion too small")
 	end
 
-	if bandChanges < Constants.CHICANE_MIN_ALTERNATIONS then
+	if bandChanges < RuntimeTuning.numberAttr(
+		"AutoTrack_ChicaneMinAlternations",
+		Constants.CHICANE_MIN_ALTERNATIONS
+	) then
 		table.insert(hints, "runtime lateral alternation too small")
 	end
 	if peakBodyDistance > maxBodyDistance then

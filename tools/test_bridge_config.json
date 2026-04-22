@@ -5,10 +5,12 @@
   "timeouts": {
     "plugin_connect_seconds": 20,
     "runner_ready_seconds": 20,
+    "boot_ready_seconds": 30,
     "baseline_ready_seconds": 60,
     "suite_seconds": 240
   },
   "suites": {
+    "boot_smoke": { "boot_mode": "skip_baseline" },
     "phase1": { "boot_mode": "baseline" },
     "phase2": { "boot_mode": "baseline" },
     "phase3": { "boot_mode": "baseline" },
@@ -58,6 +60,8 @@
     "phase18": { "boot_mode": "baseline" },
     "phase19": { "boot_mode": "skip_baseline" },
     "phase20": { "boot_mode": "skip_baseline" },
+    "phase21": { "boot_mode": "baseline" },
+    "phase21_experiment": { "boot_mode": "baseline" },
     "llm_trace_export": { "boot_mode": "skip_baseline" }
   }
 }

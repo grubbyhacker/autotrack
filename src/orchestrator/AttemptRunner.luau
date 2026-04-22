@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
@@ -48,8 +49,18 @@ local function applyAction(state: SectorState, action: AgentAction)
 	end
 end
 
+local function getSectorMeta(sectors, targetSectorId: number)
+	for _, sector in ipairs(sectors) do
+		if sector.id == targetSectorId then
+			return sector
+		end
+	end
+	error("AttemptRunner.getSectorMeta: unknown sector " .. tostring(targetSectorId))
+end
+
 function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 	local workingState = cloneState(args.workingState)
+	local runMode = args.mode or "full_lap"
 	if args.action then
 		applyAction(workingState, args.action)
 	end
@@ -61,18 +72,28 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 
 	SectorApplier.apply(workingState, args.entryFrame, args.exitFrame)
 
-	local stateOverrides = {}
-	for _, state in ipairs(SectorRegistry.getStraights()) do
-		if state.mechanic ~= nil then
-			stateOverrides[state.sector_id] = state
+	local waypoints, waypointSectors, sectorKinds
+	if runMode == "isolated_sector" then
+		local targetSector = getSectorMeta(args.sectors, args.targetSectorId)
+		waypoints, waypointSectors, sectorKinds = TrackGenerator.getSectorPath(targetSector, workingState)
+		VerifierCar.reset(
+			CFrame.new(
+				targetSector.entry.Position + Vector3.new(0, (Constants.TRACK_THICKNESS * 0.5) + (Constants.CAR_HEIGHT * 0.5), 0)
+			) * (targetSector.entry - targetSector.entry.Position)
+		)
+	else
+		local stateOverrides = {}
+		for _, state in ipairs(SectorRegistry.getStraights()) do
+			if state.mechanic ~= nil then
+				stateOverrides[state.sector_id] = state
+			end
 		end
+		if workingState.mechanic ~= nil then
+			stateOverrides[workingState.sector_id] = workingState
+		end
+		waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(args.sectors, stateOverrides)
+		VerifierCar.reset(args.canonicalStart)
 	end
-	if workingState.mechanic ~= nil then
-		stateOverrides[workingState.sector_id] = workingState
-	end
-
-	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(args.sectors, stateOverrides)
-	VerifierCar.reset(args.canonicalStart)
 
 	local rawResult = VerifierController.runLap(
 		args.car,
@@ -82,7 +103,10 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		args.onSectorChange,
 		args.targetSectorId,
 		workingState,
-		args.entryFrame
+		args.entryFrame,
+		{
+			isolated_sector = runMode == "isolated_sector",
+		}
 	)
 
 	local result, hints = LapEvaluator.evaluate(

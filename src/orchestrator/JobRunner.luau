@@ -27,6 +27,7 @@ local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
+local TuneMode = require(script.Parent.TuneMode)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
 local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local HotfixAgent = require(script.Parent.HotfixAgent)
@@ -565,6 +566,30 @@ local function activeDemoReason(targetCommand: string?): string
 	return string.format("demo '%s' is running; use /demo %s to toggle it off", preset, preset)
 end
 
+local function activeTuneReason(targetCommand: string?): string
+	if targetCommand and targetCommand ~= "" then
+		return string.format("tune mode is running; stop it before %s", targetCommand)
+	end
+	return "tune mode is running; use /tune stop to exit it"
+end
+
+local function canonicalTuneMechanic(text: string): string?
+	local normalized = trim(string.lower(text))
+	if normalized == "rampjump" then
+		return "RampJump"
+	elseif normalized == "crestdip" then
+		return "CrestDip"
+	elseif normalized == "chicane" then
+		return "Chicane"
+	end
+	return LevelMappings.MECHANIC_SYNONYMS[normalized]
+end
+
+local function parseTuneCommand(arg: string)
+	local head, tail = string.match(arg, "^(%S+)%s*(.-)%s*$")
+	return head or "", tail or ""
+end
+
 local function captureHUDDemoSnapshot()
 	local folder = UIState.getStateFolder()
 	local snapshot = {}
@@ -695,11 +720,145 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 	local trimmed = trim(rawText)
 	local lowered = string.lower(trimmed)
 	local slashCommand, slashArg = nil, nil
+	local rawSlashArg = nil
 	local traceOwnedByThisJob = false
 	local request = requestOverride
 
 	if requestOverride == nil then
 		slashCommand, slashArg = parseSlashCommand(lowered)
+		_, rawSlashArg = parseSlashCommand(trimmed)
+	end
+
+	if requestOverride == nil and slashCommand == "tune" then
+		local tuneCommand, tuneRest = parseTuneCommand(rawSlashArg or slashArg)
+		local canonicalMechanic = canonicalTuneMechanic(slashArg)
+		if canonicalMechanic ~= nil and tuneCommand ~= "set" and tuneCommand ~= "pad" and tuneCommand ~= "attr" and tuneCommand ~= "run" and tuneCommand ~= "auto" then
+			if CameraDemo.isActive() then
+				local reason = activeDemoReason("/tune")
+				UIState.rejectRequest(rawText, reason)
+				return false, reason
+			end
+			if MaximizerAgent.isActive() or OrchestratorAgent.isActive() or HotfixAgent.isActive() then
+				UIState.rejectRequest(rawText, "track is busy; try again shortly")
+				return false, "track is busy; try again shortly"
+			end
+			local ok, reason = TuneMode.start(canonicalMechanic)
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		end
+
+		if tuneCommand == "show" then
+			local ok, reason = TuneMode.show()
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "set" then
+			local lever, valueText = string.match(tuneRest, "^(%S+)%s*(.-)%s*$")
+			local value = tonumber(valueText)
+			if lever == nil or value == nil then
+				UIState.rejectRequest(rawText, "usage: /tune set <lever> <value>")
+				return false, "usage: /tune set <lever> <value>"
+			end
+			local ok, reason = TuneMode.setLever(lever, value)
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "pad" then
+			local side, value = string.match(tuneRest, "^(%S+)%s*(%S+)%s*$")
+			if side == nil or value == nil then
+				UIState.rejectRequest(rawText, "usage: /tune pad <ingress|egress> <PadValue>")
+				return false, "usage: /tune pad <ingress|egress> <PadValue>"
+			end
+			local ok, reason = TuneMode.setPad(side, value)
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "attr" then
+			local name, valueText = string.match(tuneRest, "^(%S+)%s*(.-)%s*$")
+			local value = tonumber(valueText)
+			if name == nil or value == nil then
+				UIState.rejectRequest(rawText, "usage: /tune attr <name> <value>")
+				return false, "usage: /tune attr <name> <value>"
+			end
+			local ok, reason = TuneMode.setAttr(name, value)
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "run" then
+			local attempts = tonumber(trim(tuneRest))
+			if attempts == nil then
+				UIState.rejectRequest(rawText, "usage: /tune run <n>")
+				return false, "usage: /tune run <n>"
+			end
+			local ok, reason = TuneMode.runAttempts(attempts)
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "auto" then
+			local mode = trim(string.lower(tuneRest))
+			if mode ~= "on" and mode ~= "off" then
+				UIState.rejectRequest(rawText, "usage: /tune auto <on|off>")
+				return false, "usage: /tune auto <on|off>"
+			end
+			local ok, reason = TuneMode.setAuto(mode == "on")
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "reset" then
+			local ok, reason = TuneMode.reset()
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "revert" then
+			local ok, reason = TuneMode.revert()
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "commit" then
+			local ok, reason = TuneMode.commit()
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		elseif tuneCommand == "stop" then
+			local ok, reason = TuneMode.stop()
+			if not ok then
+				UIState.rejectRequest(rawText, tostring(reason))
+				return false, reason
+			end
+			return true, nil
+		end
+
+		local supportedAttrs = table.concat(TuneMode.supportedAttrs(), ", ")
+		local usage = "usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune stop"
+		UIState.rejectRequest(rawText, usage, "Supported tune attrs: " .. supportedAttrs)
+		return false, usage
+	end
+
+	if requestOverride == nil and TuneMode.isActive() then
+		local reason = activeTuneReason(if slashCommand ~= nil then "/" .. slashCommand else nil)
+		UIState.rejectRequest(rawText, reason)
+		return false, reason
 	end
 
 		if requestOverride == nil and slashCommand == "demo" then

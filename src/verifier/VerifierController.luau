@@ -76,6 +76,10 @@ local function runtimeBoolAttr(name: string, fallback: boolean): boolean
 	return fallback
 end
 
+local function baseTargetSpeed(): number
+	return math.max(5, runtimeNumberAttr("AutoTrack_CarTargetSpeed", Constants.CAR_TARGET_SPEED))
+end
+
 local function buildSectorWaypointRanges(waypointSectors: { number }?): { [number]: { first: number, last: number } }
 	local ranges = {}
 	if waypointSectors == nil then
@@ -137,7 +141,7 @@ local function cornerProfileTarget(
 	previousSectorIsCorner: boolean,
 	nextSectorIsCorner: boolean
 ): number
-	local cornerSpeed = math.min(baseSpeed, Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR)
+	local cornerSpeed = math.min(baseSpeed, baseTargetSpeed() * Constants.CORNER_SPEED_FACTOR)
 	if baseSpeed <= cornerSpeed then
 		return baseSpeed
 	end
@@ -471,16 +475,22 @@ local function mechanicEntryTarget(baseSpeed: number, progress: number, targetSt
 		blendPower = runtimeNumberAttr("AutoTrack_RampJumpEntryBlendPower", Constants.RAMPJUMP_ENTRY_BLEND_POWER)
 	end
 
-	local entryCap = math.min(baseSpeed, Constants.CAR_TARGET_SPEED * entryFactor)
+	local entryCap = math.min(baseSpeed, baseTargetSpeed() * entryFactor)
 	local blend = math.clamp(progress / leadInProgress, 0, 1) ^ blendPower
 	return lerp(entryCap, baseSpeed, blend)
 end
 
-local function sectorEntrySnapSpeedFactor(sectorKind: string?, sectorState): number
+local function sectorEntrySnapSpeedFactor(sectorKind: string?, sectorState, isolatedSectorMode: boolean?): number
 	if sectorKind == "Corner" then
 		return runtimeNumberAttr(
 			"AutoTrack_SectorEntrySnapCornerSpeedFactor",
 			Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR
+		)
+	end
+	if isolatedSectorMode then
+		return runtimeNumberAttr(
+			"AutoTrack_SectorEntrySnapStraightSpeedFactor",
+			Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR
 		)
 	end
 	if sectorState ~= nil and sectorState.mechanic == "RampJump" then
@@ -541,12 +551,13 @@ local function buildSectorEntrySnap(
 	referenceWaypoint: CFrame,
 	sectorKind: string?,
 	sectorState,
-	exactEntryFrame: CFrame?
+	exactEntryFrame: CFrame?,
+	isolatedSectorMode: boolean?
 )
 	local snapOrigin = if exactEntryFrame ~= nil then exactEntryFrame.Position else entryPosition
 	local sourceDirection = if exactEntryFrame ~= nil then exactEntryFrame.LookVector else referenceWaypoint.LookVector
 	local direction = horizontalDirectionOrFallback(sourceDirection, referenceWaypoint.LookVector)
-	local speed = math.max(5, Constants.CAR_TARGET_SPEED * sectorEntrySnapSpeedFactor(sectorKind, sectorState))
+	local speed = math.max(5, baseTargetSpeed() * sectorEntrySnapSpeedFactor(sectorKind, sectorState, isolatedSectorMode))
 	local snapCFrame = CFrame.lookAt(snapOrigin, snapOrigin + direction)
 	return snapCFrame, direction * speed, speed, direction
 end
@@ -659,7 +670,8 @@ function VerifierController.runLap(
 	onSectorChange: ((id: number, entering: boolean) -> ())?,
 	targetSectorId: number?,
 	targetState,
-	targetEntryFrame: CFrame?
+	targetEntryFrame: CFrame?,
+	runtimeOptions
 ): RunResult
 	assert(#waypoints >= 2, "VerifierController.runLap: expected at least two waypoints")
 
@@ -725,8 +737,8 @@ function VerifierController.runLap(
 	local lastWaypointAdvanceTime = startTime
 	local lastControlTime = startTime
 	local wasAirborne = false
-	local persistentTargetSpeed = Constants.CAR_TARGET_SPEED
-	local commandedSpeed = Constants.CAR_TARGET_SPEED
+	local persistentTargetSpeed = baseTargetSpeed()
+	local commandedSpeed = baseTargetSpeed()
 	local activePadToken = nil
 	local padEffectSectorHopsRemaining = 0
 	local sectorPeakCenterlineDistance: { [number]: number } = {}
@@ -743,6 +755,7 @@ function VerifierController.runLap(
 	local airborneFrozenDirection = nil
 	local postSnapSettleDeadline = 0
 	local postSnapDirection = nil
+	local isolatedSectorMode = type(runtimeOptions) == "table" and runtimeOptions.isolated_sector == true
 
 	local function recordSectorPeak(
 		sectorId: number?,
@@ -804,7 +817,8 @@ function VerifierController.runLap(
 			referenceWaypoint,
 			sectorKind,
 			sectorState,
-			exactEntryFrame
+			exactEntryFrame,
+			isolatedSectorMode
 		)
 		car.CFrame = snapCFrame
 		car.AssemblyLinearVelocity = snapVelocity
@@ -813,10 +827,10 @@ function VerifierController.runLap(
 	end
 
 	if currentSectorId ~= nil and sectorKinds and sectorKinds[currentSectorId] == "Corner" then
-		commandedSpeed = Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR
+		commandedSpeed = baseTargetSpeed() * Constants.CORNER_SPEED_FACTOR
 		publishDebugState(commandedSpeed, "Corner")
 	else
-		publishDebugState(Constants.CAR_TARGET_SPEED, if currentSectorId ~= nil then "Straight" else "")
+		publishDebugState(baseTargetSpeed(), if currentSectorId ~= nil then "Straight" else "")
 	end
 
 	if currentSectorId ~= nil
@@ -972,7 +986,7 @@ function VerifierController.runLap(
 					if padEffectSectorHopsRemaining > 0 then
 						padEffectSectorHopsRemaining -= 1
 						if padEffectSectorHopsRemaining <= 0 then
-							persistentTargetSpeed = Constants.CAR_TARGET_SPEED
+							persistentTargetSpeed = baseTargetSpeed()
 						end
 					end
 					local previousSectorId = currentSectorId
@@ -1207,7 +1221,10 @@ function VerifierController.runLap(
 			end
 		end
 
-		if not isAirborne and bodyDistance > Constants.FRONT_BODY_CONTAINMENT_DISTANCE then
+		if not isAirborne and bodyDistance > runtimeNumberAttr(
+			"AutoTrack_FrontBodyContainmentDistance",
+			Constants.FRONT_BODY_CONTAINMENT_DISTANCE
+		) then
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 			metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
 			metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
@@ -1229,7 +1246,7 @@ function VerifierController.runLap(
 		local padToken, padType, padName = getActivePad(currentSectorId)
 		if padToken ~= nil then
 			if padToken ~= activePadToken then
-				persistentTargetSpeed = math.max(5, Constants.CAR_TARGET_SPEED + PadValueUtils.speedDelta(tostring(padType)))
+				persistentTargetSpeed = math.max(5, baseTargetSpeed() + PadValueUtils.speedDelta(tostring(padType)))
 				commandedSpeed = persistentTargetSpeed
 				car.AssemblyLinearVelocity = pathDirection * persistentTargetSpeed
 				if padName == "EgressPad" then
@@ -1256,14 +1273,14 @@ function VerifierController.runLap(
 				previousSectorIsCorner,
 				nextSectorIsCorner
 			)
-		elseif currentSectorId == targetSectorId and targetState ~= nil then
+		elseif not isolatedSectorMode and currentSectorId == targetSectorId and targetState ~= nil then
 			targetSpeed = mechanicEntryTarget(targetSpeed, sectorProgress, targetState, targetSectorId)
-		elseif currentSectorState ~= nil and currentSectorState.mechanic == "RampJump" then
+		elseif not isolatedSectorMode and currentSectorState ~= nil and currentSectorState.mechanic == "RampJump" then
 			targetSpeed = mechanicEntryTarget(targetSpeed, sectorProgress, currentSectorState, currentSectorId)
 		elseif rampJumpRecoveryActive then
 			targetSpeed = math.min(
 				targetSpeed,
-				Constants.CAR_TARGET_SPEED * runtimeNumberAttr(
+				baseTargetSpeed() * runtimeNumberAttr(
 					"AutoTrack_RampJumpRecoverySpeedFactor",
 					Constants.RAMPJUMP_RECOVERY_SPEED_FACTOR
 				)

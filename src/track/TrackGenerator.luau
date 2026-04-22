@@ -261,6 +261,40 @@ local function buildStraightWaypoints(
 	end
 end
 
+local function appendSectorWaypoints(
+	waypoints,
+	waypointSectorIds,
+	sectorKinds,
+	sector,
+	overrideState
+)
+	local function ridePos(p)
+		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
+	end
+
+	sectorKinds[sector.id] = sector.kind
+
+	if sector.kind == "Corner" then
+		local points = CornerPath.buildWorldCenterlinePoints(
+			sector.entry,
+			sector.exit,
+			sector.entryShoulderLength,
+			sector.exitShoulderLength
+		)
+		for index = 1, #points do
+			local current = points[index]
+			local previous = points[math.max(index - 1, 1)]
+			local forward = (current - previous).Magnitude > 0
+				and (current - previous).Unit
+				or sector.entry.LookVector
+			table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
+			table.insert(waypointSectorIds, sector.id)
+		end
+	else
+		buildStraightWaypoints(waypoints, waypointSectorIds, sector, overrideState)
+	end
+end
+
 function TrackGenerator.generate(rows, cols)
 	rows = rows or Constants.TRACK_ROWS
 	cols = cols or Constants.TRACK_COLS
@@ -280,38 +314,50 @@ function TrackGenerator.getLapPath(
 	local waypoints = {}
 	local waypointSectorIds = {}
 	local sectorKinds = {}
-
 	local function ridePos(p)
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
 
 	for _, rawSector in ipairs(sectors) do
 		local sector = rawSector
-		sectorKinds[sector.id] = sector.kind
-
-		if sector.kind == "Corner" then
-			local points = CornerPath.buildWorldCenterlinePoints(
-				sector.entry,
-				sector.exit,
-				sector.entryShoulderLength,
-				sector.exitShoulderLength
-			)
-			for index = 1, #points do
-				local current = points[index]
-				local previous = points[math.max(index - 1, 1)]
-				local forward = (current - previous).Magnitude > 0
-					and (current - previous).Unit
-					or sector.entry.LookVector
-				table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
-				table.insert(waypointSectorIds, sector.id)
-			end
-		else
-			buildStraightWaypoints(waypoints, waypointSectorIds, sector, stateOverrides and stateOverrides[sector.id] or nil)
-		end
+		appendSectorWaypoints(waypoints, waypointSectorIds, sectorKinds, sector, stateOverrides and stateOverrides[sector.id] or nil)
 	end
 
 	table.insert(waypoints, buildLapWaypoint(ridePos(sectors[1].entry.Position), sectors[1].entry.LookVector))
 	table.insert(waypointSectorIds, sectors[1].id)
+	return waypoints, waypointSectorIds, sectorKinds
+end
+
+function TrackGenerator.getSectorPath(sector, overrideState)
+	local waypoints = {}
+	local waypointSectorIds = {}
+	local sectorKinds = {}
+	local function ridePos(p)
+		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
+	end
+
+	sectorKinds[sector.id] = sector.kind
+	table.insert(waypoints, buildLapWaypoint(ridePos(sector.entry.Position), sector.entry.LookVector))
+	table.insert(waypointSectorIds, sector.id)
+	if sector.kind == "Corner" then
+		local points = CornerPath.buildWorldCenterlinePoints(
+			sector.entry,
+			sector.exit,
+			sector.entryShoulderLength,
+			sector.exitShoulderLength
+		)
+		for index = 2, #points do
+			local current = points[index]
+			local previous = points[index - 1]
+			local forward = (current - previous).Magnitude > 0
+				and (current - previous).Unit
+				or sector.entry.LookVector
+			table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
+			table.insert(waypointSectorIds, sector.id)
+		end
+	else
+		buildStraightWaypoints(waypoints, waypointSectorIds, sector, overrideState)
+	end
 	return waypoints, waypointSectorIds, sectorKinds
 end
 

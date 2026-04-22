@@ -132,6 +132,8 @@ When a mechanic builder does not consume the full straight-sector length, it mus
 
 Every phase must include a `TestPhaseN.luau` module (in `src/orchestrator/`) with named assertions that cover the phase deliverable. The test suite must pass before the phase is considered complete.
 
+Smoke test new features before handing control back to the human.
+
 ### Verification approach
 
 `execute_luau` runs **client-side** in the Studio MCP context. The test pipeline is:
@@ -151,6 +153,7 @@ Every phase must include a `TestPhaseN.luau` module (in `src/orchestrator/`) wit
 For normal local development, prefer the checked-in terminal runner over Claude/MCP:
 
 ```sh
+make boot_smoke
 make phase6_integration
 make phase7_unit
 make test TEST=phase6_integration
@@ -170,11 +173,19 @@ This workflow is now a maintained project contract, not an optional convenience.
 - Do not add new test flows that are only reachable through Claude/MCP unless there is a strong technical reason and that exception is documented.
 - Preserve the terminal contract:
   - `make test-list` lists every supported suite
+  - `make boot_smoke` is the fast startup sanity check for server boot completion
   - unit/synthetic suites choose `skip_baseline` automatically
   - integration/live-lap suites choose `baseline` automatically
 - Keep the local runner sequential. Do not assume parallel `make phase...` invocations on the same Studio session are supported.
 - If a future change breaks the local plugin bridge, fix that before considering the phase complete.
 - Prefer this `make` path for Roblox/Studio-backed verification by default, especially for milestone-complete validation and final end-of-phase test runs.
+- The bridge startup contract now includes a boot-readiness gate before suite dispatch:
+  - `RuntimeContext` must be initialized
+  - `ReplicatedStorage.AutoTrackUIState` must exist
+  - `ReplicatedStorage.AutoTrack_SubmitRequest` must exist
+  - `Workspace.Track` must exist
+  - `Workspace.VerifierCar` must exist
+- If this gate fails, treat it as a startup regression first, before assuming a suite-specific bug.
 - It is still fine to use direct local shell commands for very small pure file/static checks that do not require Studio, such as:
   - syntax checks
   - sourcemap generation
@@ -203,6 +214,8 @@ The in-experience HUD command bar supports a small slash-command surface for con
   - `/demo <name>`
 - Test command shape:
   - `/test <suite>`
+- Tune command shape:
+  - `/tune <verb>`
 
 Current supported demo commands:
 
@@ -223,6 +236,35 @@ Current supported demo commands:
 `/demo ui-hotfix` toggles a HUD-only endurance-plus-hotfix preview on and off. It does not modify track geometry; it only enables the `Endurance Mode` and `Hotfix Mode` badges, sets representative endurance counters, and populates recent escalation log lines so those UI surfaces can be reviewed quickly.
 
 `/test <suite>` is allowed as a **session-local convenience shortcut** into the existing server-side suite dispatcher. It must reuse the same suite names handled by `src/orchestrator/TestDispatcher.luau`.
+
+`/tune ...` is the isolated single-sector mechanic workspace added in Phase 21. It owns the session while active.
+
+Current supported tune commands:
+
+- `/tune rampjump`
+- `/tune crestdip`
+- `/tune chicane`
+- `/tune show`
+- `/tune run <n>`
+- `/tune auto <on|off>`
+- `/tune set <lever> <value>`
+- `/tune pad <ingress|egress> <PadValue>`
+- `/tune attr <name> <value>`
+- `/tune reset`
+- `/tune revert`
+- `/tune commit`
+- `/tune stop`
+
+Important constraints for `/tune`:
+
+- It targets the isolated tune lane in sector `3` in Phase 21.
+- It keeps the sector centered on screen and runs repeated entry-to-exit passes through that sector only.
+- It now starts in staged mode by default; use `/tune run <n>` for exact multi-attempt candidate evaluation.
+- `/tune auto on` restores the continuous spectator loop; `/tune auto off` returns to staged control.
+- Tune mutation commands should not modify the candidate while a run batch is in flight.
+- Full-lap verification is still required elsewhere for scoring and authoritative track evaluation.
+- Tune-mode verifier attributes are a curated server-side whitelist. Do not add arbitrary workspace-attribute writes.
+- Tune mode blocks normal submit/demo/test flows until `/tune stop`.
 
 Important constraints for `/test`:
 

@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("RuntimeTuning"))
 
 type RunMetrics = Types.RunMetrics
 type SectorState = Types.SectorState
@@ -39,9 +40,20 @@ function RampJumpIntegrity.evaluateRuntime(
 		else metrics.vertical_displacement
 	local exitAngularSpeed = metrics.target_exit_angular_speed or 0
 	local exitVerticalSpeed = metrics.target_exit_vertical_speed or 0
-	local minVerticalDisplacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
-		+ Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN
-	local maxReacquireDistance = math.max(0, Constants.RAMPJUMP_REACQUIRE_MAX - Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN)
+	local minVerticalDisplacement = RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpMinVerticalDisplacement",
+		Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
+	) + RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpComfortVerticalMargin",
+		Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN
+	)
+	local maxReacquireDistance = math.max(0, RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpReacquireMax",
+		Constants.RAMPJUMP_REACQUIRE_MAX
+	) - RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpComfortReacquireMargin",
+		Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN
+	))
 
 	if type(verticalDisplacement) ~= "number" then
 		table.insert(hints, "vertical displacement missing")
@@ -55,10 +67,16 @@ function RampJumpIntegrity.evaluateRuntime(
 	if type(reacquireDistance) == "number" and reacquireDistance > maxReacquireDistance then
 		table.insert(hints, "reacquire margin too small after landing")
 	end
-	if exitAngularSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED then
+	if exitAngularSpeed > RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpComfortExitMaxAngularSpeed",
+		Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
+	) then
 		table.insert(hints, "exit angular speed too high after landing")
 	end
-	if exitVerticalSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED then
+	if exitVerticalSpeed > RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpComfortExitMaxVerticalSpeed",
+		Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED
+	) then
 		table.insert(hints, "exit vertical speed too high after landing")
 	end
 

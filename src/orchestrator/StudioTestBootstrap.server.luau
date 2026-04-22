@@ -1,7 +1,65 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StudioTestService = game:GetService("StudioTestService")
 
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local JobRunner = require(script.Parent.JobRunner)
+local RuntimeContext = require(script.Parent.RuntimeContext)
+
+local function bootFailureSnapshot(message: string, detailLine: string?)
+	return {
+		ok = false,
+		status = "error",
+		message = message,
+		pass_count = 0,
+		fail_count = 0,
+		error_count = 1,
+		lines = {
+			"[TEST ERROR] " .. message,
+			detailLine or "[TEST ERROR] Main.server.luau did not complete startup",
+		},
+	}
+end
+
+local function waitForBootReady(timeoutSeconds: number): (boolean, string?)
+	local deadline = os.clock() + timeoutSeconds
+	while os.clock() < deadline do
+		local stateFolder = ReplicatedStorage:FindFirstChild("AutoTrackUIState")
+		local submitEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SubmitRequest")
+		local track = workspace:FindFirstChild("Track")
+		local car = workspace:FindFirstChild("VerifierCar")
+		if RuntimeContext.isReady()
+			and stateFolder ~= nil and stateFolder:IsA("Folder")
+			and submitEvent ~= nil and submitEvent:IsA("RemoteEvent")
+			and track ~= nil and track:IsA("Folder")
+			and car ~= nil and car:IsA("BasePart") then
+			return true, nil
+		end
+		task.wait(0.25)
+	end
+
+	local missing = {}
+	if not RuntimeContext.isReady() then
+		table.insert(missing, "runtime_context")
+	end
+	local stateFolder = ReplicatedStorage:FindFirstChild("AutoTrackUIState")
+	if stateFolder == nil or not stateFolder:IsA("Folder") then
+		table.insert(missing, "ui_state")
+	end
+	local submitEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SubmitRequest")
+	if submitEvent == nil or not submitEvent:IsA("RemoteEvent") then
+		table.insert(missing, "submit_event")
+	end
+	local track = workspace:FindFirstChild("Track")
+	if track == nil or not track:IsA("Folder") then
+		table.insert(missing, "track")
+	end
+	local car = workspace:FindFirstChild("VerifierCar")
+	if car == nil or not car:IsA("BasePart") then
+		table.insert(missing, "verifier_car")
+	end
+
+	return false, "boot not ready: missing " .. table.concat(missing, ",")
+end
 
 local args = StudioTestService:GetTestArgs()
 
@@ -11,10 +69,19 @@ if args ~= nil then
 			local commandType = tostring(args.command_type or "run_suite")
 			local suite = tostring(args.suite or "")
 			local bootMode = args.boot_mode
+			local bootReadyTimeout = tonumber(args.boot_ready_seconds) or 30
 			local baselineTimeout = tonumber(args.baseline_ready_seconds) or 60
 
 			if commandType == "export_llm_trace" or suite == "llm_trace_export" or bootMode == "live_session" then
 				return TestDispatcher.runSuite("llm_trace_export")
+			end
+
+			local bootOk, bootErr = waitForBootReady(bootReadyTimeout)
+			if not bootOk then
+				return bootFailureSnapshot(
+					tostring(bootErr),
+					"[TEST ERROR] Boot readiness contract failed before suite dispatch"
+				)
 			end
 
 			if bootMode == "baseline" then

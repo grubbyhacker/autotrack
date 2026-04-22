@@ -317,8 +317,8 @@ setBaselineEvent.Parent = ReplicatedStorage
 setBaselineEvent.OnServerEvent:Connect(function(_player)
 	local stateFolder = UIState.getStateFolder()
 	local lastLap = stateFolder:GetAttribute("last_lap_time") or -1
-	local bootBaseline = stateFolder:GetAttribute("baseline_lap_time") or -1
-	local lapTime = if lastLap > 0 then lastLap else bootBaseline
+	local lastRunScope = tostring(stateFolder:GetAttribute("last_run_scope") or "")
+	local lapTime = if lastRunScope == "lap" and lastLap > 0 then lastLap else -1
 	if lapTime > 0 then
 		UIState.setBaselineLapTime(lapTime)
 		RuntimeContext.setBaselineLapTime(lapTime)

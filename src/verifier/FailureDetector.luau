@@ -11,6 +11,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("RuntimeTuning"))
 
 type FailureInfo = Types.FailureInfo
 
@@ -66,7 +67,10 @@ function FailureDetector.check(
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "fell_below_kill_plane" }
 	end
 
-	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > Constants.OFF_TRACK_FAILURE_DISTANCE then
+	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > RuntimeTuning.numberAttr(
+		"AutoTrack_OffTrackFailureDistance",
+		Constants.OFF_TRACK_FAILURE_DISTANCE
+	) then
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "off_track" }
 	end
 
