@@ -1,4 +1,5 @@
 local TestSession = require(script.Parent.TestSession)
+local TestGates = require(script.Parent.TestGates)
 
 local TestDispatcher = {}
 
@@ -85,8 +86,16 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase20).run()
 	elseif cmd == "phase21" then
 		require(script.Parent.TestPhase21).run()
+	elseif cmd == "phase21_unit" then
+		require(script.Parent.TestPhase21).runUnit()
+	elseif cmd == "phase21_integration" then
+		require(script.Parent.TestPhase21).runIntegration()
 	elseif cmd == "phase21_experiment" then
 		require(script.Parent.TestPhase21).runExperiment()
+	elseif cmd == "refactor_fast" then
+		TestGates.runRefactorFast()
+	elseif cmd == "mechanics_regression" then
+		TestGates.runMechanicsRegression()
 	elseif cmd == "llm_trace_export" then
 		require(script.Parent.TestPhase17).runExport()
 	else

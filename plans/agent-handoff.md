@@ -66,6 +66,13 @@
     - smoke-result note: `RampJump` produced a mixed 2-pass batch, while the chosen `CrestDip` and `Chicane` smoke candidates both ran successfully as batches but failed integrity on both attempts; this is acceptable because the smoke goal was control-surface validation, not finding a good candidate yet
 - Demo/HUD commands in active use: `/demo camera`, `/demo rampitup`, `/demo repair`, `/demo llmerror`, `/demo ui-hotfix`
 - Chicane visual cleanup baseline remains: collision is gameplay-facing, visible surface is visual-only, and the accepted capture harness is still `phase4_chicane_capture`
+- Test surface hardening is now in place for upcoming refactors:
+  - stale public suite targets (`phase7*`, `phase8*`, `phase10*`, `phase12`) were removed from the maintained `make`/bridge surface
+  - dead legacy `src/test/` files were removed
+  - `make test-contracts` now checks dispatcher/config/Makefile suite alignment without Studio
+  - `make refactor_fast` is the maintained one-boot skip-baseline refactor gate
+  - `make mechanics_regression` is the maintained one-boot baseline mechanics gate
+  - `phase21` is now split into `phase21_unit` and `phase21_integration`, while `phase21` remains the combined gate
 
 ## Current reliability posture
 
@@ -83,7 +90,9 @@
 - Trimming corner visual shoulders to zero creates V-shaped corners.
 - The local Studio bridge is sequential. Do not start multiple `make test ...` runs at once.
 - The local Studio bridge has a boot-readiness gate before suite dispatch. If it reports missing `runtime_context`, `ui_state`, `submit_event`, `track`, or `verifier_car`, treat that as a startup regression first.
+- Aggregate test gate modules must lazy-require their child suites. Eager top-level requires can create bootstrap cycles like `TestDispatcher -> TestGates -> TestPhase6 -> JobRunner -> TestDispatcher`, which collapse boot before the track/UI spawn.
 - `make boot_smoke` is the maintained fast path for startup sanity checks before deeper suite debugging.
+- `phase21` isolated-sector smoke is sensitive to a fresh-boot settle window. Keep the short settle/retry in `TestPhase21` unless the underlying startup race is removed more directly.
 - Mid-session Rojo reconnects remain untrustworthy for client validation. For tune/HUD/camera work, use the strict loop: stop Play, restart Play, then retest.
 - Tune-lab observability is for the coding agent first. If a useful signal only exists in the camera/HUD visually and not in structured state or trace lines, the lab surface is incomplete.
 - Keep tune-only experimental bounds separate from production bounds. Proposal/repair/endurance should stay conservative until a later explicit promotion changes code defaults.
@@ -111,6 +120,9 @@
 
 ## Maintained verification snapshot
 
+- `make test-contracts`
+- `make refactor_fast`
+- `make mechanics_regression`
 - `make test TEST=phase4_chicane`
 - `make test TEST=phase4_chicane_capture`
 - `make test TEST=phase14_5` and `make test TEST=phase14_integration`
@@ -120,6 +132,8 @@
 - `make test TEST=phase19`
 - `make test TEST=phase20`
 - `make test TEST=phase21`
+- `make test TEST=phase21_unit`
+- `make test TEST=phase21_integration`
 - `make test TEST=phase21_experiment`
 - manual live `/tune rampjump` smoke:
   - changed every RampJump lever once

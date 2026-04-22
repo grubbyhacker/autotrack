@@ -481,6 +481,18 @@ function TestPhase14.runUnit()
 				sector_id = 8,
 				mechanic = "Chicane",
 				params_hint = "extreme wide",
+				rationale = "spread spectacle across the back straight",
+				target_score_band = "high",
+				target_budget_tolerance = "medium",
+				target_reliability = "balanced",
+				spectacle_priority = "high",
+				novelty_priority = "medium",
+				replacement_intent = "open_slot_preferred",
+				desired_feel = "broad visible weave with stable exits",
+				constraints = {
+					"preserve downstream stability",
+					"stay within endurance budget",
+				},
 			})
 		end,
 	}

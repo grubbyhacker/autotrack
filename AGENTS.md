@@ -155,7 +155,8 @@ For normal local development, prefer the checked-in terminal runner over Claude/
 ```sh
 make boot_smoke
 make phase6_integration
-make phase7_unit
+make phase21_unit
+make refactor_fast
 make test TEST=phase6_integration
 ```
 
@@ -188,6 +189,7 @@ This workflow is now a maintained project contract, not an optional convenience.
 - If this gate fails, treat it as a startup regression first, before assuming a suite-specific bug.
 - It is still fine to use direct local shell commands for very small pure file/static checks that do not require Studio, such as:
   - syntax checks
+  - `make test-contracts`
   - sourcemap generation
   - lint/format validation
   - listing available suites or config

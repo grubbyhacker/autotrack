@@ -4,7 +4,8 @@ AutoTrack now supports terminal-triggered Studio test runs through:
 
 ```sh
 make phase6_integration
-make phase7_unit
+make phase21_unit
+make refactor_fast
 make test TEST=phase6_integration
 make test-list
 ```
@@ -42,6 +43,24 @@ or:
 
 ```sh
 make test TEST=phase6_integration
+```
+
+Fast non-Studio contract check:
+
+```sh
+make test-contracts
+```
+
+Fast one-boot refactor gate:
+
+```sh
+make refactor_fast
+```
+
+Mechanic-focused regression gate:
+
+```sh
+make mechanics_regression
 ```
 
 ## Boot mode behavior

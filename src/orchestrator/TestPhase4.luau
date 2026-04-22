@@ -5,6 +5,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local T = require(script.Parent.TestUtils)
 local TestSession = require(script.Parent.TestSession)
@@ -94,6 +95,11 @@ local function runLapOnCurrentTrack(stateOverrides: { [number]: SectorState }?):
 	VerifierCar.reset(TrackGenerator.canonicalStart())
 	local car = VerifierCar.getPart()
 	return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, nil)
+end
+
+local function toSectorLocal(entryFrame: CFrame, worldPoint: Vector3): Vector3
+	local localPoint = entryFrame:PointToObjectSpace(worldPoint)
+	return Vector3.new(localPoint.X, localPoint.Y, -localPoint.Z)
 end
 
 local function waitForBaseline(): (boolean, number?)
@@ -218,6 +224,32 @@ function TestPhase4.runCrestDip()
 		crestLap.success == true,
 		"crestdip lap failed: " .. tostring(crestLap.failure and crestLap.failure.type))
 
+	local crestSector = getSectorMeta(TARGET_SECTOR_ID)
+	local crestWaypoints = TrackGenerator.getSectorPath(crestSector, crestState)
+	local crestExitLocal = nil
+	local maxCrestWaypointY = -math.huge
+	for _, waypoint in ipairs(crestWaypoints) do
+		maxCrestWaypointY = math.max(maxCrestWaypointY, waypoint.Position.Y)
+	end
+	if crestWaypoints[#crestWaypoints] ~= nil then
+		crestExitLocal = toSectorLocal(crestSector.entry, crestWaypoints[#crestWaypoints].Position)
+	end
+	local rideY = Constants.TRACK_THICKNESS + (Constants.CAR_HEIGHT * 0.5)
+	T.expect(
+		"crestdip_sector_path_reaches_exit",
+		crestExitLocal ~= nil
+			and math.abs(crestExitLocal.Z - Constants.STRAIGHT_LENGTH) <= 0.5
+			and math.abs(crestWaypoints[#crestWaypoints].Position.Y - rideY) <= 0.25
+			and maxCrestWaypointY > rideY + 1,
+		crestExitLocal and string.format(
+			"last=(%.2f, %.2f, %.2f) maxY=%.2f",
+			crestExitLocal.X,
+			crestExitLocal.Y,
+			crestExitLocal.Z,
+			maxCrestWaypointY
+		) or "no crest waypoints built"
+	)
+
 	resetToFlat()
 end
 
@@ -280,6 +312,31 @@ function TestPhase4.runChicane()
 	end
 	assert(targetSector, "chicane sector missing")
 	SectorApplier.apply(chicaneState, targetSector.entry, targetSector.exit)
+
+	local chicaneWaypoints = TrackGenerator.getSectorPath(targetSector, chicaneState)
+	local chicaneExitLocal = nil
+	local maxAbsLateral = 0
+	for _, waypoint in ipairs(chicaneWaypoints) do
+		local localPoint = toSectorLocal(targetSector.entry, waypoint.Position)
+		maxAbsLateral = math.max(maxAbsLateral, math.abs(localPoint.X))
+	end
+	if chicaneWaypoints[#chicaneWaypoints] ~= nil then
+		chicaneExitLocal = toSectorLocal(targetSector.entry, chicaneWaypoints[#chicaneWaypoints].Position)
+	end
+	T.expect(
+		"chicane_sector_path_reaches_exit",
+		chicaneExitLocal ~= nil
+			and math.abs(chicaneExitLocal.Z - Constants.STRAIGHT_LENGTH) <= 0.5
+			and math.abs(chicaneExitLocal.X) <= 0.5
+			and maxAbsLateral >= 3.5,
+		chicaneExitLocal and string.format(
+			"last=(%.2f, %.2f, %.2f) maxAbsLateral=%.2f",
+			chicaneExitLocal.X,
+			chicaneExitLocal.Y,
+			chicaneExitLocal.Z,
+			maxAbsLateral
+		) or "no chicane waypoints built"
+	)
 
 	local visualFolder = getSectorFolder(chicaneSectorId):FindFirstChild("Visual")
 	assert(visualFolder and visualFolder:IsA("Folder"), "chicane visual folder missing")

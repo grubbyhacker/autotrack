@@ -299,10 +299,10 @@ function TestPhase9.runUnit()
 	assert(crestRequest ~= nil, "expected crest request: " .. tostring(crestRequestErr))
 	local initialCrestState, initialCrestErr = MinimalProposer.initial(crestRequest)
 	T.expect(
-		"phase9_initial_crestdip_starts_braked",
+		"phase9_initial_crestdip_plain_request_uses_strong_ingress_brake",
 		initialCrestErr == nil
 			and initialCrestState ~= nil
-			and initialCrestState.pads.ingress == "Brake25"
+			and initialCrestState.pads.ingress == "Brake50"
 			and initialCrestState.pads.egress == "None",
 		tostring(initialCrestErr or initialCrestState and initialCrestState.pads.ingress or "nil")
 	)
