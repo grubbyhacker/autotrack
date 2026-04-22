@@ -17,6 +17,7 @@
     "phase4_rampjump": { "boot_mode": "baseline" },
     "phase4_crestdip": { "boot_mode": "baseline" },
     "phase4_chicane": { "boot_mode": "baseline" },
+    "phase4_chicane_capture": { "boot_mode": "skip_baseline" },
     "phase4_5": { "boot_mode": "baseline" },
     "phase4_5_geometry": { "boot_mode": "skip_baseline" },
     "phase4_5_lap": { "boot_mode": "baseline" },

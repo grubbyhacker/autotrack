@@ -40,7 +40,7 @@ LevelMappings.LEVER_BOUNDS = {
 	},
 	Chicane = {
 		amplitude        = { min = 2,  max = 24  },
-		transition_length = { min = 6,  max = 30  },
+		transition_length = { min = 6,  max = 40  },
 		corridor_width   = { min = 8,  max = 22  },
 	},
 	CrestDip = {

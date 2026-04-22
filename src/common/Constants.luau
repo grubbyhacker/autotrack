@@ -2,7 +2,7 @@
 -- Tuning constants and fixed thresholds shared across AutoTrack modules.
 
 local Constants = {}
-Constants.BUILD_STAMP = "u18-followup-local"
+Constants.BUILD_STAMP = "u18-chicane-wave-local"
 
 -- Track generator defaults
 Constants.TRACK_ROWS = 2

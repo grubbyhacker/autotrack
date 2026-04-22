@@ -74,6 +74,7 @@ Primary:
 Additional:
 
 - `make test TEST=phase4_rampjump`
+- `make test TEST=phase4_chicane_capture`
 
 ## Notes For Handoff
 
@@ -97,3 +98,13 @@ Additional:
   token to the player-facing request banner.
 - Normal startup should always come up on `Heuristic`; only explicit harness /
   automation boot commands should honor workspace LLM override attributes.
+- Chicane geometry should move away from the current stitched three-turn path
+  to a true smooth wave:
+  - keep `amplitude` as wave height
+  - keep `transition_length` as the stored field name, but reinterpret it as
+    peak-to-peak spacing
+  - preserve `corridor_width`
+  - update scoring / proposer pressure so taller waves and tighter peak spacing
+    are treated as harder, higher-value chicanes for endurance
+  - builder / verifier guidance should follow one continuous centerline wave,
+    not three independent eased offsets with a compressed middle reversal

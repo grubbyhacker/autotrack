@@ -223,15 +223,51 @@ local function addArcRibbon(
 	end
 end
 
-local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material, overlap)
+local function tangentAt(points, firstIndex: number, secondIndex: number): Vector3
+	local p0 = points[firstIndex]
+	local p1 = points[secondIndex]
+	local delta = p1 - p0
+	if delta.Magnitude <= 0.001 then
+		return Vector3.zAxis
+	end
+	return delta.Unit
+end
+
+local function joinExtension(width: number, previousTangent: Vector3, currentTangent: Vector3): number
+	local dot = math.clamp(previousTangent:Dot(currentTangent), -1, 1)
+	local angle = math.acos(dot)
+	if angle <= 0.001 then
+		return 0
+	end
+
+	-- Extend enough to cover the inner-edge wedge at a heading change, but cap
+	-- the join so very sharp local samples do not create visible self-overlap.
+	local extension = (width * 0.5) * math.tan(angle * 0.5)
+	return math.clamp(extension, 0, width * 0.35)
+end
+
+local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material, overlap, dynamicJoinCoverage: boolean?)
 	local joinOverlap = overlap or PATH_RIBBON_OVERLAP
 	for index = 2, #points do
 		local p0 = points[index - 1]
 		local p1 = points[index]
 		local chord = p1 - p0
 		local tangent = chord.Magnitude > 0 and chord.Unit or Vector3.zAxis
-		local length = math.max(chord.Magnitude + joinOverlap, 0.8)
-		local mid = p0:Lerp(p1, 0.5) + Vector3.new(0, yOffset, 0)
+		local startExtension = joinOverlap * 0.5
+		local endExtension = joinOverlap * 0.5
+		if dynamicJoinCoverage == true then
+			local previousTangent = if index > 2
+				then tangentAt(points, index - 2, index - 1)
+				else tangent
+			local nextTangent = if index < #points
+				then tangentAt(points, index - 1, index)
+				else tangent
+			startExtension += joinExtension(width, previousTangent, tangent)
+			endExtension += joinExtension(width, tangent, nextTangent)
+		end
+		local length = math.max(chord.Magnitude + startExtension + endExtension, 0.8)
+		local centerPoint = p0:Lerp(p1, 0.5) + tangent * ((endExtension - startExtension) * 0.5)
+		local mid = centerPoint + Vector3.new(0, yOffset, 0)
 		makeAdornmentPart(
 			parent,
 			string.format("%s_%02d", namePrefix, index - 1),
@@ -243,31 +279,115 @@ local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffs
 	end
 end
 
+local function turnAngleAt(points, index: number): number
+	if index <= 1 or index >= #points then
+		return 0
+	end
+
+	local previousTangent = tangentAt(points, index - 1, index)
+	local nextTangent = tangentAt(points, index, index + 1)
+	local dot = math.clamp(previousTangent:Dot(nextTangent), -1, 1)
+	return math.acos(dot)
+end
+
+local function makeFlatCylinderCFrame(position: Vector3, tangent: Vector3): CFrame
+	local axisX = Vector3.yAxis
+	local axisZ = tangent
+	if axisZ.Magnitude <= 0.001 or math.abs(axisZ:Dot(axisX)) >= 0.999 then
+		axisZ = Vector3.zAxis
+	else
+		axisZ = axisZ.Unit
+	end
+	local axisY = axisZ:Cross(axisX)
+	if axisY.Magnitude <= 0.001 then
+		axisY = Vector3.xAxis
+	else
+		axisY = axisY.Unit
+	end
+	return CFrame.fromMatrix(position, axisX, axisY, axisZ)
+end
+
+local function addPathRoundJoinCaps(parent, namePrefix, points, width, thickness, yOffset, color, material)
+	for index = 2, #points - 1 do
+		local turnAngle = turnAngleAt(points, index)
+		if turnAngle > 0.01 then
+			local previousTangent = tangentAt(points, index - 1, index)
+			local nextTangent = tangentAt(points, index, index + 1)
+			local blendTangent = previousTangent + nextTangent
+			if blendTangent.Magnitude <= 0.001 then
+				blendTangent = nextTangent
+			end
+
+			local joinPart = makeAdornmentPart(
+				parent,
+				string.format("%s_%02d", namePrefix, index - 1),
+				Vector3.new(thickness, width, width),
+				makeFlatCylinderCFrame(points[index] + Vector3.new(0, yOffset, 0), blendTangent),
+				color,
+				material
+			)
+			joinPart.Shape = Enum.PartType.Cylinder
+		end
+	end
+end
+
 local addPathEdgeLines
 
-function TrackVisuals.renderPathSurface(visualFolder, points, width, showEdgeLines: boolean?)
-	addPathRibbon(
-		visualFolder,
-		"RoadSurfaceUnderlay",
-		points,
-		width + PATH_UNDERLAY_EXTRA_WIDTH,
-		ROAD_SURFACE_THICKNESS + PATH_UNDERLAY_EXTRA_THICKNESS,
-		ROAD_SURFACE_LIFT + PATH_UNDERLAY_LIFT_OFFSET,
-		ROAD_COLOR,
-		Enum.Material.SmoothPlastic,
-		PATH_UNDERLAY_OVERLAP
-	)
+function TrackVisuals.renderPathSurface(
+	visualFolder,
+	points,
+	width,
+	showEdgeLines: boolean?,
+	showUnderlay: boolean?,
+	surfaceOverlapOverride: number?,
+	underlayOverlapOverride: number?,
+	surfaceLiftOffsetOverride: number?,
+	underlayLiftOffsetOverride: number?,
+	dynamicJoinCoverage: boolean?,
+	roundJoinCaps: boolean?
+)
+	local surfaceOverlap = surfaceOverlapOverride or PATH_RIBBON_OVERLAP
+	local underlayOverlap = underlayOverlapOverride or PATH_UNDERLAY_OVERLAP
+	local surfaceLift = ROAD_SURFACE_LIFT + (surfaceLiftOffsetOverride or 0)
+	local underlayLift = ROAD_SURFACE_LIFT + PATH_UNDERLAY_LIFT_OFFSET + (underlayLiftOffsetOverride or 0)
+	if showUnderlay ~= false then
+		addPathRibbon(
+			visualFolder,
+			"RoadSurfaceUnderlay",
+			points,
+			width + PATH_UNDERLAY_EXTRA_WIDTH,
+			ROAD_SURFACE_THICKNESS + PATH_UNDERLAY_EXTRA_THICKNESS,
+			underlayLift,
+			ROAD_COLOR,
+			Enum.Material.SmoothPlastic,
+			underlayOverlap,
+			dynamicJoinCoverage
+		)
+	end
 	addPathRibbon(
 		visualFolder,
 		"RoadSurface",
 		points,
 		width,
 		ROAD_SURFACE_THICKNESS,
-		ROAD_SURFACE_LIFT,
+		surfaceLift,
 		ROAD_COLOR,
 		Enum.Material.SmoothPlastic,
-		PATH_RIBBON_OVERLAP
+		surfaceOverlap,
+		dynamicJoinCoverage
 	)
+	if roundJoinCaps == true then
+		addPathRoundJoinCaps(
+			visualFolder,
+			"RoadSurfaceJoin",
+			points,
+			width,
+			ROAD_SURFACE_THICKNESS,
+			surfaceLift,
+			ROAD_COLOR,
+			Enum.Material.SmoothPlastic
+		)
+	end
 	if showEdgeLines ~= false then
 		addPathEdgeLines(visualFolder, points, width)
 	end

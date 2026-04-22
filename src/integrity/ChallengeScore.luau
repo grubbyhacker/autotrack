@@ -23,6 +23,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type SectorState = Types.SectorState
@@ -108,6 +109,9 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 	elseif mechanic == "Chicane" then
 		local leftOffset = metrics.target_left_offset or 0
 		local rightOffset = metrics.target_right_offset or 0
+		local amplitude = state.params.amplitude or 0
+		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length
+		local transitionBounds = LevelMappings.LEVER_BOUNDS.Chicane.transition_length
 		-- Use absolute track half-width as denominator so amplitude drives the score,
 		-- not corridor_width. amplitude=TRACK_WIDTH/2 (max swing) → occupancy=1.
 		local trackHalf = Constants.TRACK_WIDTH * 0.5
@@ -126,7 +130,16 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 			speedRatio - Constants.CHICANE_SPEED_RETENTION_FLOOR,
 			1 - Constants.CHICANE_SPEED_RETENTION_FLOOR
 		))
-		return occupancyScore * (0.6 + 0.4 * alternationScore) * (0.35 + 0.65 * speedScore)
+		local amplitudeScore = clamp01(safeDiv(amplitude, trackHalf))
+		local spacingScore = clamp01(safeDiv(
+			transitionBounds.max - transitionLength,
+			transitionBounds.max - transitionBounds.min
+		))
+		local geometrySeverity = amplitudeScore * (0.35 + 0.65 * spacingScore)
+		return occupancyScore
+			* (0.6 + 0.4 * alternationScore)
+			* (0.35 + 0.65 * speedScore)
+			* (0.4 + 0.6 * geometrySeverity)
 	end
 
 	return 0
@@ -230,8 +243,12 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 			lowestName = name
 		end
 	end
-	considerLow("air", score.air)
-	considerLow("lateral", score.lateral)
+	if mechanic ~= "Chicane" then
+		considerLow("air", score.air)
+	end
+	if mechanic ~= "RampJump" then
+		considerLow("lateral", score.lateral)
+	end
 	considerLow("near_miss", score.near_miss)
 
 	if lowestName == nil then
@@ -249,9 +266,26 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 		if lowestName == "near_miss" then return "sector_length", "compress feature for tighter margin" end
 		return "height_or_depth", "raise peak"
 	elseif mechanic == "Chicane" then
-		-- near_miss now scores amplitude vs trackHalf, so amplitude is the lever
-		-- for both near_miss and lateral. transition_length is a tiebreaker only.
-		if lowestName == "near_miss" or lowestName == "lateral" then return "amplitude", "wider swing" end
+		local amplitude = state.params.amplitude or 0
+		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length
+		local amplitudeCeiling = Constants.TRACK_WIDTH * 0.5
+		local transitionFloor = LevelMappings.LEVER_BOUNDS.Chicane.transition_length.min
+		local amplitudeCanGrow = amplitude < amplitudeCeiling
+		local spacingCanTighten = transitionLength > transitionFloor
+		if lowestName == "near_miss" or lowestName == "lateral" then
+			if amplitudeCanGrow and amplitude < amplitudeCeiling * 0.8 then
+				return "amplitude", "taller wave"
+			end
+			if spacingCanTighten then
+				return "transition_length", "compress peak spacing"
+			end
+			if amplitudeCanGrow then
+				return "amplitude", "taller wave"
+			end
+		end
+		if spacingCanTighten then
+			return "transition_length", "compress peak spacing"
+		end
 		return "amplitude", "maximize swing"
 	end
 	return nil, "unknown mechanic"

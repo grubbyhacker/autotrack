@@ -7,8 +7,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local T = require(script.Parent.TestUtils)
+local TestSession = require(script.Parent.TestSession)
+local UIState = require(script.Parent.UIState)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
+local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 
@@ -17,6 +20,9 @@ type SectorState = Types.SectorState
 local TestPhase4 = {}
 
 local TARGET_SECTOR_ID = 4
+local CHICANE_CAPTURE_SECTOR_ID = 3
+local CHICANE_CAPTURE_SETTLE_SECONDS = 2
+local CHICANE_CAPTURE_FIELD_OF_VIEW = 50
 
 local function makeState(sectorId: number, mechanic: Types.Mechanic?, params: Types.SectorParams, ingress: Types.PadValue, egress: Types.PadValue): SectorState
 	return {
@@ -60,6 +66,26 @@ end
 local function resetToFlat()
 	applyState(makeState(TARGET_SECTOR_ID, nil, {}, "None", "None"))
 	VerifierCar.reset(TrackGenerator.canonicalStart())
+	UIState.clearCameraOverride()
+end
+
+local function clearEditableSectors()
+	local sectors = TrackGenerator.generate()
+	for _, sector in ipairs(sectors) do
+		if sector.kind == "Straight" then
+			SectorApplier.apply(makeState(sector.id, nil, {}, "None", "None"), sector.entry, sector.exit)
+		end
+	end
+end
+
+local function countNamedChildren(parent: Instance, prefix: string): number
+	local count = 0
+	for _, child in ipairs(parent:GetChildren()) do
+		if string.sub(child.Name, 1, #prefix) == prefix then
+			count += 1
+		end
+	end
+	return count
 end
 
 local function runLapOnCurrentTrack(stateOverrides: { [number]: SectorState }?): Types.RunResult
@@ -198,6 +224,44 @@ end
 function TestPhase4.runChicane()
 	if not ensureBaselineOrAbort() then return end
 
+	local wavePoints = ChicanePath.buildLocalCenterlinePoints(6, 18, 64)
+	local coarsePoints = ChicanePath.buildLocalCenterlinePoints(6, 18)
+	local visualPoints = ChicanePath.buildLocalVisualCenterlinePoints(6, 18)
+	local positivePeak = nil
+	local negativePeak = nil
+	local zeroBetweenPeaks = false
+	for _, point in ipairs(wavePoints) do
+		if positivePeak == nil or point.X > positivePeak.X then
+			positivePeak = point
+		end
+		if negativePeak == nil or point.X < negativePeak.X then
+			negativePeak = point
+		end
+	end
+	for _, point in ipairs(wavePoints) do
+		if positivePeak ~= nil and negativePeak ~= nil
+			and point.Z > positivePeak.Z and point.Z < negativePeak.Z
+			and math.abs(point.X) <= 0.2 then
+			zeroBetweenPeaks = true
+			break
+		end
+	end
+	T.expect("chicane_wave_starts_and_ends_centered",
+		math.abs(wavePoints[1].X) <= 1e-4 and math.abs(wavePoints[#wavePoints].X) <= 1e-4,
+		"expected chicane wave to start/end on centerline")
+	T.expect("chicane_wave_reaches_both_extremes",
+		positivePeak ~= nil and negativePeak ~= nil and positivePeak.X >= 5.9 and negativePeak.X <= -5.9,
+		string.format("expected peaks near +/-6, got +%.2f / %.2f", positivePeak and positivePeak.X or 0, negativePeak and negativePeak.X or 0))
+	T.expect("chicane_wave_peak_spacing_matches_transition_length",
+		positivePeak ~= nil and negativePeak ~= nil and math.abs((negativePeak.Z - positivePeak.Z) - 18) <= 0.5,
+		string.format("expected peak spacing near 18, got %.2f", (negativePeak and positivePeak) and (negativePeak.Z - positivePeak.Z) or -1))
+	T.expect("chicane_wave_crosses_zero_between_extremes",
+		zeroBetweenPeaks == true,
+		"expected smooth wave to cross centerline between the two peaks")
+	T.expect("chicane_visual_overlay_is_denser_than_collision_path",
+		#visualPoints > #coarsePoints * 3,
+		string.format("expected visual path substantially denser than collision path, got %d vs %d", #visualPoints, #coarsePoints))
+
 	local chicaneSectorId = 3
 	local _, sectors = getSectorMeta(chicaneSectorId)
 	local chicaneState = {
@@ -217,6 +281,21 @@ function TestPhase4.runChicane()
 	assert(targetSector, "chicane sector missing")
 	SectorApplier.apply(chicaneState, targetSector.entry, targetSector.exit)
 
+	local visualFolder = getSectorFolder(chicaneSectorId):FindFirstChild("Visual")
+	assert(visualFolder and visualFolder:IsA("Folder"), "chicane visual folder missing")
+	T.expect("chicane_visual_has_no_segmented_edge_lines",
+		visualFolder:FindFirstChild("EdgeLine_L_01") == nil and visualFolder:FindFirstChild("EdgeLine_R_01") == nil,
+		"expected chicane visual overlay to omit segmented path edge lines")
+	T.expect("chicane_visual_has_no_underlay_ribbon",
+		visualFolder:FindFirstChild("RoadSurfaceUnderlay_01") == nil,
+		"expected chicane visual overlay to omit path underlay ribbon")
+	T.expect("chicane_visual_uses_single_surface_ribbon",
+		visualFolder:FindFirstChild("RoadSurfaceSeam") == nil and visualFolder:FindFirstChild("RoadSurfaceTop") == nil,
+		"expected chicane visual to use one mitered surface ribbon instead of stacked seam folders")
+	T.expect("chicane_visual_has_round_join_caps",
+		countNamedChildren(visualFolder, "RoadSurfaceJoin_") > 0,
+		"expected chicane visual to add explicit join caps at turning vertices")
+
 	local chicaneLap = runLapOnCurrentTrack({ [chicaneSectorId] = chicaneState })
 	T.expect("chicane_lap_succeeds",
 		chicaneLap.success == true,
@@ -230,6 +309,63 @@ function TestPhase4.runChicane()
 		version = 0,
 	}, targetSector.entry, targetSector.exit)
 	VerifierCar.reset(TrackGenerator.canonicalStart())
+end
+
+function TestPhase4.runChicaneCapture()
+	clearEditableSectors()
+
+	local sector = getSectorMeta(CHICANE_CAPTURE_SECTOR_ID)
+	local captureState = makeState(CHICANE_CAPTURE_SECTOR_ID, "Chicane", {
+		amplitude = 8,
+		transition_length = 20,
+		corridor_width = 16,
+	}, "None", "None")
+	SectorApplier.apply(captureState, sector.entry, sector.exit)
+	VerifierCar.reset(TrackGenerator.canonicalStart())
+
+	local straightCenter = sector.entry.Position:Lerp(sector.exit.Position, 0.5)
+	local look = sector.entry.LookVector
+	local right = sector.entry.RightVector
+	local focus = straightCenter + Vector3.yAxis * 3
+	local position = focus
+		+ right * 54
+		+ Vector3.yAxis * 36
+		- look * 16
+
+	UIState.setCameraOverride(position, focus, CHICANE_CAPTURE_FIELD_OF_VIEW)
+	UIState.setPhase("Capture", "Chicane capture ready")
+	task.wait(CHICANE_CAPTURE_SETTLE_SECONDS)
+
+	TestSession.setPayload({
+		chicane_capture = {
+			sector_id = CHICANE_CAPTURE_SECTOR_ID,
+			mechanic = "Chicane",
+			params = captureState.params,
+			camera = {
+				position = { x = position.X, y = position.Y, z = position.Z },
+				focus = { x = focus.X, y = focus.Y, z = focus.Z },
+				field_of_view = CHICANE_CAPTURE_FIELD_OF_VIEW,
+			},
+			settle_seconds = CHICANE_CAPTURE_SETTLE_SECONDS,
+			manual_hint = "/test phase4_chicane_capture",
+		},
+	})
+
+	local folder = getSectorFolder(CHICANE_CAPTURE_SECTOR_ID)
+	local visualFolder = folder:FindFirstChild("Visual")
+	T.expect(
+		"chicane_capture_scene_ready",
+		visualFolder ~= nil and visualFolder:IsA("Folder"),
+		"capture scene missing chicane visual folder"
+	)
+
+	local stateFolder = UIState.getStateFolder()
+	T.expect(
+		"chicane_capture_camera_override_armed",
+		stateFolder:GetAttribute("camera_override_enabled") == true
+			and stateFolder:GetAttribute("camera_override_fov") == CHICANE_CAPTURE_FIELD_OF_VIEW,
+		"capture camera override was not armed"
+	)
 end
 
 function TestPhase4.run()

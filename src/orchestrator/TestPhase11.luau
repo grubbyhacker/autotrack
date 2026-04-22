@@ -212,6 +212,31 @@ local function runUnit()
 			string.format("expected fast > slow, got %.3f vs %.3f", fast.near_miss, slow.near_miss))
 	end
 
+	-- 9b. Chicane near-miss rises for the same swing when peak spacing tightens.
+	do
+		local wideSpacing = ChallengeScore.compute(
+			stateChicane({ transition_length = 28 }),
+			metrics({
+				target_left_offset = 6.5,
+				target_right_offset = 6.5,
+				target_lateral_band_changes = Constants.CHICANE_SCORE_ALT_FULL,
+				target_min_speed = 75,
+			})
+		)
+		local tightSpacing = ChallengeScore.compute(
+			stateChicane({ transition_length = 10 }),
+			metrics({
+				target_left_offset = 6.5,
+				target_right_offset = 6.5,
+				target_lateral_band_changes = Constants.CHICANE_SCORE_ALT_FULL,
+				target_min_speed = 75,
+			})
+		)
+		T.expect("phase11_chicane_tighter_spacing_scores_higher",
+			tightSpacing.near_miss > wideSpacing.near_miss,
+			string.format("expected tight spacing > wide spacing, got %.3f vs %.3f", tightSpacing.near_miss, wideSpacing.near_miss))
+	end
+
 	-- 10. Over-budget flag fires when slowdown_ratio exceeds (1 + ratio).
 	do
 		local ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.01
@@ -378,14 +403,13 @@ local function runUnit()
 			"expected ramp_angle; got " .. tostring(lever))
 	end
 
-	-- 20. suggestEscalation always points at amplitude for a flat chicane (near_miss
-	--     and lateral both unsaturated; amplitude is the only lever that moves both).
+	-- 20. Once the wave is already tall, chicane escalation tightens peak spacing.
 	do
 		local s = ChallengeScore.compute(stateChicane(), metrics())
 		local lever = ChallengeScore.suggestEscalation(stateChicane(), s)
-		T.expect("phase11_escalation_chicane_returns_amplitude",
-			lever == "amplitude",
-			"expected amplitude; got " .. tostring(lever))
+		T.expect("phase11_escalation_chicane_prefers_spacing_after_tall_wave",
+			lever == "transition_length",
+			"expected transition_length; got " .. tostring(lever))
 	end
 
 	-- 21. Runner escalation: RampJump flat state nudges ramp_angle upward.
@@ -431,9 +455,9 @@ local function runUnit()
 	-- 24. Runner escalation respects the LEVER_FLOOR: a lever already at
 	-- floor whose delta is negative must be rejected (no underflow).
 	do
-		-- corridor_width floor is 4; delta for Chicane corridor_width is -2.
-		-- Starting at 5 yields candidate=3, below floor → rejected.
-		local st = stateChicane({ corridor_width = 5, amplitude = 20, transition_length = 20 })
+		-- corridor_width floor is 8; delta for Chicane corridor_width is -2.
+		-- Starting at 9 yields candidate=7, below floor → rejected.
+		local st = stateChicane({ corridor_width = 9, amplitude = 20, transition_length = 20 })
 		-- Build a score that would nominate corridor_width (high lateral, low near_miss).
 		local m = metrics({ peak_lateral_g = Constants.LATERAL_G_FULL_SCORE })
 		local s = ChallengeScore.compute(st, m)
@@ -443,7 +467,7 @@ local function runUnit()
 		-- the invariant we care about is "no floor underflow".
 		if next_ ~= nil then
 			T.expect("phase11_runner_no_underflow",
-				next_.params.corridor_width >= 4,
+				next_.params.corridor_width >= 8,
 				"corridor_width dropped below floor to " .. tostring(next_.params.corridor_width))
 		else
 			T.expect("phase11_runner_rejects_with_reason",

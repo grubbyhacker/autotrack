@@ -19,6 +19,8 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase4).runCrestDip()
 	elseif cmd == "phase4_chicane" then
 		require(script.Parent.TestPhase4).runChicane()
+	elseif cmd == "phase4_chicane_capture" then
+		require(script.Parent.TestPhase4).runChicaneCapture()
 	elseif cmd == "phase4_5" then
 		require(script.Parent.TestPhase4_5).run()
 	elseif cmd == "phase4_5_geometry" then

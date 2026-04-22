@@ -43,6 +43,11 @@ Primary goals:
 5. Added and updated automated coverage.
    - kept `phase1`, `phase2`, `phase4_chicane`, and `phase12` green under the maintained `make` workflow
    - updated tests away from the old flat folder-child-count assumptions where necessary
+   - later follow-up cleanup kept the smooth-wave chicane centerline but changed the visible surface contract:
+     - no chicane underlay ribbon
+     - no segmented path edge lines
+     - one visible path ribbon with explicit round join caps at turning vertices
+     - stable manual review path via `phase4_chicane_capture`
 
 ### Test coverage
 
@@ -52,6 +57,7 @@ Primary goals:
 - corner sectors expose sandstone shell + road arc + lane lines through the same sector visual layer model
 - `RampJump` creates support visuals
 - `Chicane` keeps a sector shell and uses side-band stripes instead of full-width road paint
+- `Chicane` visual follow-up coverage verifies the smooth-wave overlay remains denser than collision, omits underlay/edge lines, and includes join-cap coverage
 - `VerifierCar` root remains present while carrying child visual parts
 
 ### Non-goals

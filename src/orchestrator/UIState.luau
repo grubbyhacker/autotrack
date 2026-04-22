@@ -139,6 +139,14 @@ function UIState.init(baselineLapTime: number)
 		track_over_budget = false,
 		llm_enabled = false,
 		llm_model = "heuristic",
+		camera_override_enabled = false,
+		camera_override_pos_x = 0,
+		camera_override_pos_y = 0,
+		camera_override_pos_z = 0,
+		camera_override_focus_x = 0,
+		camera_override_focus_y = 0,
+		camera_override_focus_z = 0,
+		camera_override_fov = 70,
 		endurance_mode_active = false,
 		endurance_hotfix_active = false,
 		endurance_hotfix_sector = 0,
@@ -174,6 +182,25 @@ end
 
 function UIState.getStateFolder(): Folder
 	return ensureStateFolder()
+end
+
+function UIState.setCameraOverride(position: Vector3, focus: Vector3, fieldOfView: number?)
+	setAttributes({
+		camera_override_enabled = true,
+		camera_override_pos_x = position.X,
+		camera_override_pos_y = position.Y,
+		camera_override_pos_z = position.Z,
+		camera_override_focus_x = focus.X,
+		camera_override_focus_y = focus.Y,
+		camera_override_focus_z = focus.Z,
+		camera_override_fov = fieldOfView or 70,
+	})
+end
+
+function UIState.clearCameraOverride()
+	setAttributes({
+		camera_override_enabled = false,
+	})
 end
 
 function UIState.setPhase(phase: string, label: string)

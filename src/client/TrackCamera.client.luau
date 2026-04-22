@@ -14,6 +14,7 @@ local cameraBlendAlpha = 0
 local activeSideSectorId: number? = nil
 local overviewCFrame: CFrame? = nil
 local overviewBlend = 0
+local DEFAULT_FIELD_OF_VIEW = 70
 
 local function sectorAttr(sectorId: number, suffix: string): string
 	return string.format("sector_%d_%s", sectorId, suffix)
@@ -47,6 +48,35 @@ local function getTrackCenter(): Vector3?
 		return nil
 	end
 	return sum / count
+end
+
+local function getCameraOverrideCFrame(): (CFrame?, number?)
+	if stateFolder:GetAttribute("camera_override_enabled") ~= true then
+		return nil, nil
+	end
+
+	local posX = stateFolder:GetAttribute("camera_override_pos_x")
+	local posY = stateFolder:GetAttribute("camera_override_pos_y")
+	local posZ = stateFolder:GetAttribute("camera_override_pos_z")
+	local focusX = stateFolder:GetAttribute("camera_override_focus_x")
+	local focusY = stateFolder:GetAttribute("camera_override_focus_y")
+	local focusZ = stateFolder:GetAttribute("camera_override_focus_z")
+	if type(posX) ~= "number" or type(posY) ~= "number" or type(posZ) ~= "number" then
+		return nil, nil
+	end
+	if type(focusX) ~= "number" or type(focusY) ~= "number" or type(focusZ) ~= "number" then
+		return nil, nil
+	end
+
+	local fieldOfView = stateFolder:GetAttribute("camera_override_fov")
+	if type(fieldOfView) ~= "number" then
+		fieldOfView = nil
+	end
+
+	return CFrame.lookAt(
+		Vector3.new(posX, posY, posZ),
+		Vector3.new(focusX, focusY, focusZ)
+	), fieldOfView
 end
 
 local function normalizeSectorId(sectorId: number): number
@@ -293,6 +323,16 @@ RunService.RenderStepped:Connect(function(dt)
 	local currentCar = resolveCar()
 	currentCamera.CameraType = Enum.CameraType.Scriptable
 	currentCamera.CameraSubject = nil
+
+	local overrideCFrame, overrideFov = getCameraOverrideCFrame()
+	if overrideCFrame ~= nil then
+		if overrideFov ~= nil then
+			currentCamera.FieldOfView = overrideFov
+		end
+		currentCamera.CFrame = overrideCFrame
+		return
+	end
+	currentCamera.FieldOfView = DEFAULT_FIELD_OF_VIEW
 
 	-- Overview mode: blend toward a high isometric view, suspend chase logic
 	local wantOverview = stateFolder:GetAttribute("overview_mode") == true

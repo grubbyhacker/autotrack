@@ -33,7 +33,7 @@ function ChicaneIntegrity.preflight(
 		table.insert(hints, "effective curvature below minimum")
 	end
 
-	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
+	local totalLength = ChicanePath.totalLength(transitionLength)
 	if totalLength > Constants.STRAIGHT_LENGTH then
 		table.insert(hints, "geometry exceeds sector length")
 	end

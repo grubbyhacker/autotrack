@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 
@@ -47,6 +48,8 @@ local ESCALATION_DELTA = {
 -- so the chicane centerline never exits the sector.
 local LEVER_CEILING = {
 	amplitude = Constants.TRACK_WIDTH * 0.5,
+	transition_length = LevelMappings.LEVER_BOUNDS.Chicane.transition_length.max,
+	corridor_width = math.min(LevelMappings.LEVER_BOUNDS.Chicane.corridor_width.max, Constants.TRACK_WIDTH),
 }
 
 -- Per-lever clamps. Values below the floor are rejected so we do not ask for
@@ -57,8 +60,8 @@ local LEVER_FLOOR = {
 	gap_length = 2,
 	landing_length = 4,
 	amplitude = 1,
-	transition_length = 4,
-	corridor_width = 4,
+	transition_length = LevelMappings.LEVER_BOUNDS.Chicane.transition_length.min,
+	corridor_width = LevelMappings.LEVER_BOUNDS.Chicane.corridor_width.min,
 	height_or_depth = 2,
 	sector_length = 16,
 	radius = 1,

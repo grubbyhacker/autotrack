@@ -1,5 +1,5 @@
 -- ChicaneBuilder.luau
--- Builds Chicane as linked slow corners forming an overall S shape.
+-- Builds Chicane as a smooth sine-like wave across the straight.
 -- prd_plan.md §4.2, Phase 4
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,7 +11,7 @@ local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 type SectorState = Types.SectorState
 
 local ChicaneBuilder = {}
-local VISUAL_TURN_SEGMENTS = 64
+local CHICANE_VISUAL_SURFACE_OVERLAP = 0.18
 
 local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 	return entryFrame.Position
@@ -37,7 +37,7 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	assert(p.transition_length > 0, "ChicaneBuilder: transition_length must be positive")
 	assert(p.corridor_width > 0, "ChicaneBuilder: corridor_width must be positive")
 
-	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * p.transition_length
+	local totalLength = ChicanePath.totalLength(p.transition_length)
 	assert(
 		totalLength <= Constants.STRAIGHT_LENGTH,
 		"ChicaneBuilder: geometry exceeds STRAIGHT_LENGTH (" .. totalLength .. ")"
@@ -48,7 +48,6 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	local width = math.min(p.corridor_width, Constants.TRACK_WIDTH)
 	local visualWidth = Constants.TRACK_WIDTH
 	local folder = getSectorFolder(state.sector_id)
-	local totalLength = ChicanePath.ENTRY_STRAIGHT + ChicanePath.EXIT_STRAIGHT + 3 * transitionLength
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
 
 	if startOffset > 0 then
@@ -61,20 +60,11 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	end
 
 	local points = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength)
-	local visualPoints = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength, VISUAL_TURN_SEGMENTS)
+	local visualPoints = ChicanePath.buildLocalVisualCenterlinePoints(amplitude, transitionLength)
 	local featureStartIndex = if startOffset > 0 then 2 else 1
-	local featurePointCount = #points - featureStartIndex
+	local featureSegmentCount = (#points - featureStartIndex)
 
-	local names = { "ChicEntry" }
-	for turnIndex = 1, 3 do
-		for segmentIndex = 1, ChicanePath.TURN_SEGMENTS do
-			table.insert(names, string.format("ChicTurn%d_%02d", turnIndex, segmentIndex))
-		end
-	end
-	table.insert(names, "ChicExit")
-
-	assert(featurePointCount == #names + 1, "ChicaneBuilder: point/name count mismatch")
-	for index, name in ipairs(names) do
+	for index = 1, featureSegmentCount do
 		local startPoint = points[featureStartIndex + index - 1]
 		local endPoint = points[featureStartIndex + index]
 		local worldStart = worldPoint(entryFrame, startPoint)
@@ -84,10 +74,10 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		assert(length > 0, "ChicaneBuilder.build: zero-length segment")
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart(name, Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, state.sector_id, folder)
+		makePart(string.format("ChicSeg_%02d", index), Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, state.sector_id, folder)
 	end
 
-	local exitFlatLength = Constants.STRAIGHT_LENGTH - totalLength - startOffset
+	local exitFlatLength = Constants.STRAIGHT_LENGTH - (startOffset + totalLength)
 	if exitFlatLength > 0 then
 		local startPoint = Vector3.new(0, 0, startOffset + totalLength)
 		local endPoint = Vector3.new(0, 0, Constants.STRAIGHT_LENGTH)
@@ -104,7 +94,19 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 	for index, point in ipairs(visualPoints) do
 		worldVisualPoints[index] = worldPoint(entryFrame, point)
 	end
-	TrackVisuals.renderPathSurface(visualFolder, worldVisualPoints, visualWidth, false)
+	TrackVisuals.renderPathSurface(
+		visualFolder,
+		worldVisualPoints,
+		visualWidth,
+		false,
+		false,
+		CHICANE_VISUAL_SURFACE_OVERLAP,
+		nil,
+		nil,
+		nil,
+		false,
+		true
+	)
 end
 
 return ChicaneBuilder

@@ -31,7 +31,11 @@ local function shouldHonorBootLLMOverrides(): boolean
 	local ok, args = pcall(function()
 		return StudioTestService:GetTestArgs()
 	end)
-	return ok and type(args) == "table"
+	if not ok or type(args) ~= "table" then
+		return false
+	end
+	return type(args.llm_enabled) == "boolean"
+		or (type(args.llm_model) == "string" and args.llm_model ~= "")
 end
 
 -- Default to heuristic on normal startup. Only explicit harness / automation

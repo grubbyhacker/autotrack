@@ -15,9 +15,7 @@ type FailurePacket = Types.FailurePacket
 type AgentAction = Types.AgentAction
 
 local MinimalProposer = {}
-local MAX_CHICANE_TRANSITION_LENGTH = math.floor(
-	(Constants.STRAIGHT_LENGTH - ChicanePath.ENTRY_STRAIGHT - ChicanePath.EXIT_STRAIGHT) / 3
-)
+local MAX_CHICANE_TRANSITION_LENGTH = ChicanePath.maxTransitionLength()
 
 local QUALIFIER_BIASES = {
 	RampJump = {
@@ -85,9 +83,21 @@ local function normalizeParams(mechanic, params)
 	if mechanic == "RampJump" then
 		return RampJumpTuner.tune(params)
 	elseif mechanic == "Chicane" then
-		params.amplitude = math.clamp(params.amplitude or 1, Constants.CHICANE_MIN_LATERAL_DISPLACEMENT, Constants.TRACK_WIDTH * 0.5)
-		params.transition_length = math.clamp(params.transition_length or 1, 1, MAX_CHICANE_TRANSITION_LENGTH)
-		params.corridor_width = math.clamp(params.corridor_width or 1, 1, Constants.TRACK_WIDTH)
+		params.amplitude = math.clamp(
+			params.amplitude or 1,
+			Constants.CHICANE_MIN_LATERAL_DISPLACEMENT,
+			math.min(LevelMappings.LEVER_BOUNDS.Chicane.amplitude.max, Constants.TRACK_WIDTH * 0.5)
+		)
+		params.transition_length = math.clamp(
+			params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length,
+			LevelMappings.LEVER_BOUNDS.Chicane.transition_length.min,
+			math.min(LevelMappings.LEVER_BOUNDS.Chicane.transition_length.max, MAX_CHICANE_TRANSITION_LENGTH)
+		)
+		params.corridor_width = math.clamp(
+			params.corridor_width or LevelMappings.DEFAULTS.Chicane.corridor_width,
+			LevelMappings.LEVER_BOUNDS.Chicane.corridor_width.min,
+			math.min(LevelMappings.LEVER_BOUNDS.Chicane.corridor_width.max, Constants.TRACK_WIDTH)
+		)
 	elseif mechanic == "CrestDip" then
 		params.height_or_depth = math.clamp(
 			params.height_or_depth or LevelMappings.DEFAULTS.CrestDip.height_or_depth,
