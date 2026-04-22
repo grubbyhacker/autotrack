@@ -168,10 +168,8 @@ Constants.CHICANE_MIN_CURVATURE = 0.05          -- 1/studs
 Constants.CHICANE_LATERAL_BAND_THRESHOLD = 2    -- studs; local X threshold for left/center/right band transitions
 Constants.CHICANE_SCORE_ALT_FULL = 3            -- band changes mapping to full alternation credit
 Constants.CHICANE_SPEED_RETENTION_FLOOR = 0.65  -- chicane score falls off below this target min-speed ratio
-Constants.CHICANE_INGRESS_BRAKE_PENALTY = 3.0   -- score penalty for brake-heavy "safe" chicanes
 Constants.CHICANE_COMFORT_LATERAL_MARGIN = 0.75
 Constants.CHICANE_COMFORT_BODY_MARGIN = 1.5
-Constants.CRESTDIP_EGRESS_BRAKE_PENALTY = 3.25  -- score penalty for exit-brake crests; they sabotage downstream setup
 
 -- CrestDip integrity thresholds
 Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT = 3  -- studs
@@ -207,6 +205,14 @@ Constants.UI_SUCCESS_DWELL = 2.0
 -- Endurance / Hotfix Mode (phase 14)
 Constants.ENDURANCE_ATTEMPT_BUDGET = 12         -- total orchestrator sector placements
 Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO = 0.48 -- modestly wider endurance budget so balanced-risk tracks can survive long enough to be repaired
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_BASE_GAIN = 1.65
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_NOVELTY = 0.7
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_REPEAT = 0.55
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_BUDGET_RISK = 1.1
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_REALIZED_YIELD = 0.85
+Constants.ENDURANCE_OBJECTIVE_WEIGHT_EXPLORATION = 0.25
+Constants.ENDURANCE_OBJECTIVE_COMMITTED_SCORE_FULL = 12
+Constants.ENDURANCE_OBJECTIVE_REALIZED_YIELD_NEUTRAL = 0.55
 Constants.ENDURANCE_ISOLATED_PASSES = 3          -- endurance proposal/repair vetting runs this many isolated passes before the commit lap gate
 Constants.ENDURANCE_CHALLENGE_UP_MIN_HEADROOM = 0.22 -- skip proposer do-over when a clean pass already spent most of the budget
 Constants.ENDURANCE_CHALLENGE_UP_HIGH_HEADROOM = 0.4 -- large remaining headroom means the last clean pass likely undershot the car

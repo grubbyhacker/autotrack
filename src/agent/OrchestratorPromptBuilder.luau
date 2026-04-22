@@ -29,10 +29,11 @@ function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { r
 			content = table.concat({
 				"You are the chief circuit designer for AutoTrack endurance mode.",
 				"Return JSON only with no prose outside the JSON object.",
-				"Goal: maximize scoreable spectacle and repairable risk while keeping lap slowdown within the endurance budget.",
-				"Formal objective: prefer candidates with strong projected score gain, sustainable reliability, novelty, and manageable repair complexity.",
+				"Goal: maximize realized committed score gain while keeping lap slowdown within the endurance budget.",
+				"Formal objective: prefer candidates with strong projected score gain, strong realized yield from recent committed outcomes, novelty, and budget safety.",
 				"Do not settle for minimum-valid safe sectors when the budget still has room for a more rewarding obstacle.",
 				"Avoid repeating recently failed sector+mechanic+hint signatures when fresh alternatives exist.",
+				"Treat attempt_history committed outcomes as ground truth for ranking. If a mechanic repeatedly commits at low score, deprioritize it.",
 				"You may target any editable sector, including overwriting an existing committed mechanic.",
 				"You have a hard global attempt budget. Repairs within a chosen sector are handled elsewhere.",
 				"Return a full shared DesignIntent JSON object for the next build candidate.",

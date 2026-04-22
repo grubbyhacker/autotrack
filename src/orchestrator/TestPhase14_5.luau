@@ -237,7 +237,10 @@ function TestPhase14_5.runUnit()
 			and (orchestratorContexts[2].sector_attempt_counts[2] or 0) == 1
 			and (orchestratorContexts[2].mechanic_repeat_pressure[EnduranceObjective.signature(repeatedDecision)] or 0) == 1
 			and orchestratorContexts[2].track_intent ~= nil
-			and math.abs((orchestratorContexts[2].track_intent.target_budget_used or 0) - math.clamp((1.3 - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)) < 0.001,
+			-- Phase 24 contract: endurance budget refresh comes from committed full-lap
+			-- results only, so a reverted attempt keeps budget used unchanged.
+			and math.abs(orchestratorContexts[2].budget.used or 0) < 0.001
+			and math.abs(orchestratorContexts[2].track_intent.target_budget_used or 0) < 0.001,
 		HttpService:JSONEncode(orchestratorContexts[2] or {})
 	)
 	T.expect(

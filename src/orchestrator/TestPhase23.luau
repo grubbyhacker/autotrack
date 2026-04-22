@@ -429,8 +429,9 @@ local function testPromptAndObjectiveShift()
 	local orchestratorMessages = OrchestratorPromptBuilder.messages(makeContext())
 	local orchestratorSystem = orchestratorMessages[1].content
 	T.expect(
-		"phase23_orchestrator_prompt_rejects_minimum_valid_safe_posture",
-		string.find(orchestratorSystem, "repairable risk", 1, true) ~= nil
+		"phase23_orchestrator_prompt_targets_realized_score_gain",
+		string.find(orchestratorSystem, "maximize realized committed score gain", 1, true) ~= nil
+			and string.find(orchestratorSystem, "attempt_history committed outcomes as ground truth", 1, true) ~= nil
 			and string.find(orchestratorSystem, "minimum-valid safe sectors", 1, true) ~= nil,
 		orchestratorSystem
 	)
@@ -628,8 +629,8 @@ local function testPromptAndObjectiveShift()
 	local failureHeavyScore = select(1, EnduranceObjective.evaluateCandidate(failureHeavyContext, upsideDecision))
 	local cleanHistoryScore = select(1, EnduranceObjective.evaluateCandidate(cleanHistoryContext, upsideDecision))
 	T.expect(
-		"phase23_failure_history_reduces_reliability_index_not_total",
-		math.abs((failureHeavyScore.total or 0) - (cleanHistoryScore.total or 0)) < 1e-6
+		"phase23_failure_history_reduces_realized_yield_and_reliability",
+		(failureHeavyScore.total or 0) < (cleanHistoryScore.total or 0)
 			and (failureHeavyScore.reliability_index or 0) < (cleanHistoryScore.reliability_index or 0),
 		HttpService:JSONEncode({
 			failure_heavy = failureHeavyScore,

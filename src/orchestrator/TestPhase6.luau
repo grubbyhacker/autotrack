@@ -91,9 +91,14 @@ function TestPhase6.runUnit()
 
 	-- Initial proposal defaults and bias
 	local defaultsRequest = makeRequest(nil, "add a jump in sector 3")
-	local initialState = MinimalProposer.initial(defaultsRequest)
+	local initialState, initialErr = MinimalProposer.initial(defaultsRequest)
+	local baselineState, baselineErr = MinimalProposer.productionBaseline(3, "RampJump", {})
 	T.expect("proposer_initial_defaults",
-		initialState ~= nil and initialState.params.ramp_angle == LevelMappings.DEFAULTS.RampJump.ramp_angle,
+		initialErr == nil
+			and baselineErr == nil
+			and initialState ~= nil
+			and baselineState ~= nil
+			and initialState.params.ramp_angle == baselineState.params.ramp_angle,
 		tostring(initialState and initialState.params.ramp_angle))
 
 	local biasedRequest = makeRequest(nil, "add a tall jump in sector 3")

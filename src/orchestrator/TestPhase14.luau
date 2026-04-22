@@ -753,6 +753,15 @@ function TestPhase14.runUnit()
 					},
 				},
 				final_status = "committed",
+				final_result = {
+					success = true,
+					metrics = {
+						slowdown_ratio = 1.12,
+					},
+					score = {
+						total = 14,
+					},
+				},
 				attempts = {
 					{
 						result = {
@@ -805,14 +814,17 @@ function TestPhase14.runUnit()
 	T.expect("phase14_orchestrator_submits_hint_request",
 		orchestratorSubmits[1] == "add an extreme tall jump in sector 2",
 		tostring(orchestratorSubmits[1]))
-	T.expect("phase14_orchestrator_feeds_last_result_into_next_context",
-		#orchestratorContexts >= 2
-			and orchestratorContexts[2].last_result ~= nil
-			and orchestratorContexts[2].last_result.sector_id == 2
-			and orchestratorContexts[2].last_result.success == true
-			and orchestratorContexts[2].last_result.score == 14
-			and math.abs(orchestratorContexts[2].budget.used - 0.3) < 0.001,
-		HttpService:JSONEncode(orchestratorContexts[2] or {}))
+		T.expect("phase14_orchestrator_feeds_last_result_into_next_context",
+			#orchestratorContexts >= 2
+				and orchestratorContexts[2].last_result ~= nil
+				and orchestratorContexts[2].last_result.sector_id == 2
+				and orchestratorContexts[2].last_result.success == true
+				and orchestratorContexts[2].last_result.score == 14
+				and math.abs(
+					orchestratorContexts[2].budget.used
+						- math.clamp((1.12 - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)
+				) < 0.001,
+			HttpService:JSONEncode(orchestratorContexts[2] or {}))
 	T.expect("phase14_orchestrator_starts_continuous_loop",
 		loopStarted == true and loopInitialLapCount == 0,
 		string.format("started=%s lap_count=%s", tostring(loopStarted), tostring(loopInitialLapCount)))

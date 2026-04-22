@@ -24,7 +24,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
-local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type SectorState = Types.SectorState
 type RunMetrics = Types.RunMetrics
@@ -169,12 +168,6 @@ function ChallengeScore.compute(state: SectorState, metrics: RunMetrics)
 		+ Constants.SCORE_W_LATERAL * lateral
 		+ Constants.SCORE_W_NEAR_MISS * nearMiss
 		- Constants.SCORE_W_TIME * timeCost
-
-	if state.mechanic == "Chicane" and PadValueUtils.kind(state.pads.ingress) == "Brake" then
-		total -= Constants.CHICANE_INGRESS_BRAKE_PENALTY
-	elseif state.mechanic == "CrestDip" and PadValueUtils.kind(state.pads.egress) == "Brake" then
-		total -= Constants.CRESTDIP_EGRESS_BRAKE_PENALTY
-	end
 
 	local slowdown = metrics.slowdown_ratio or 1
 	local budgetUsed = clamp01(safeDiv(slowdown - 1, Constants.CHALLENGE_BUDGET_RATIO))

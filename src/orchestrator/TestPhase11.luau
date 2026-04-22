@@ -276,7 +276,7 @@ local function runUnit()
 				slowed.total, base.total))
 	end
 
-	-- 13. CrestDip exit brake is penalized because it harms downstream setup.
+	-- 13. CrestDip exit brake is no longer explicitly penalized by ChallengeScore.
 	do
 		local free = ChallengeScore.compute(
 			stateCrest(),
@@ -292,9 +292,9 @@ local function runUnit()
 			},
 			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
 		)
-		T.expect("phase11_crestdip_egress_brake_penalized",
-			braked.total < free.total,
-			string.format("expected braked crest score < free crest score; got %.3f vs %.3f", braked.total, free.total))
+		T.expect("phase11_crestdip_egress_brake_not_explicitly_penalized",
+			math.abs(braked.total - free.total) < 1e-6,
+			string.format("expected equal totals; got %.3f vs %.3f", braked.total, free.total))
 	end
 
 	-- 14. A challenging chicane (both sides + lateral G) totals higher than zero metrics.
@@ -325,7 +325,7 @@ local function runUnit()
 			"expected margin~0.5, got " .. tostring(m))
 	end
 
-	-- 15. Chicane ingress brake carries an explicit score penalty.
+	-- 15. Chicane ingress brake is no longer explicitly penalized by ChallengeScore.
 	do
 		local clean = ChallengeScore.compute(
 			stateChicane({ corridor_width = 14 }),
@@ -351,9 +351,9 @@ local function runUnit()
 				target_min_speed = 80,
 			})
 		)
-		T.expect("phase11_chicane_ingress_brake_penalty",
-			clean.total > braked.total,
-			string.format("expected clean > braked, got %.3f vs %.3f", clean.total, braked.total))
+		T.expect("phase11_chicane_ingress_brake_not_explicitly_penalized",
+			math.abs(clean.total - braked.total) < 1e-6,
+			string.format("expected equal totals; got %.3f vs %.3f", clean.total, braked.total))
 	end
 
 	-- 16. aggregate sums and halves over-budget totals.

@@ -32,6 +32,7 @@
 | 22 | Complete — command router extraction, HUD preview extraction, dedicated `startEndurance()` seam, legacy alias cleanup while preserving `/demo endurance` |
 | 23 | Complete — balanced-risk tuning milestone, production-baseline compare/promote tune controls, proposer-owned endurance challenge-up, reliability-as-telemetry objective |
 | 24 | Complete — endurance isolated proposal/repair verification (3-pass isolated + commit-lap gate), challenge-up profile alignment, commit-only budget refresh |
+| 25 | Complete — pad-neutral challenge scoring, realized-committed-score endurance objective, and prompt-policy shift away from repairable-risk wording |
 
 ## Current state
 
@@ -39,15 +40,10 @@
 - Legacy aliases `/demo crest`, `/demo maximize`, `/demo extreme`, `/demo hotfix`, and `/llm ...` are intentionally rejected by the router.
 - Maintained endurance tooling starts through `JobRunner.startEndurance()`, while `/demo endurance` remains the public trigger.
 - Tune mode remains the Phase 21 lab: staged-by-default, controlled run batches, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
-- Phase 23 production baseline remains balanced-risk (faster entries, less conservative pads, wider score/budget headroom, proposer-owned do-over branching in endurance).
 - Phase 24 endurance verification profile is now two-stage for endurance-origin jobs: isolated sector vetting first, then one commit-lap gate before commit.
-- RampJump launch-outlier observability is now first-class:
-  - `RunMetrics` now carries `launch_outlier` and `launch_outlier_reasons`
-  - traces emit `[TRACE] launch_outlier ...` and `[TRACE] tune_launch_outlier ...` when detected
-  - tune experiment/pass records include `hang_time`, `airtime_distance`, and `vertical_displacement`
-- A maintained stress suite now exists: `phase21_rampjump_torture`
-  - runs 90 isolated RampJump attempts across high-risk presets
-  - publishes parseable summary line: `phase21_rampjump_torture_summary outliers=... max_hang=... max_air=... max_vertical=...`
+- Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
+- RampJump launch-outlier observability is now first-class: `RunMetrics.launch_outlier`/`launch_outlier_reasons`, trace hooks (`[TRACE] launch_outlier ...`, `[TRACE] tune_launch_outlier ...`), and tune pass telemetry (`hang_time`, `airtime_distance`, `vertical_displacement`).
+- Maintained stress suite: `phase21_rampjump_torture` (90 isolated attempts; parseable summary `phase21_rampjump_torture_summary outliers=... max_hang=... max_air=... max_vertical=...`).
 
 ## Hard-won invariants
 
@@ -65,6 +61,8 @@
 - Endurance entry for maintained tooling now goes through `JobRunner.startEndurance()`, but `/demo endurance` remains a required public command. Keep both paths consistent.
 - The old maximize campaign code path has been removed. Challenge-up now means deterministic Stage B for player/extreme requests or proposer do-over in endurance. In `JobRunner`, forward-declare helper locals used by earlier local functions (`pauseForUI`, `pauseOnFailure`) or the endurance challenge-up path will crash with nil calls. Do not reintroduce maximize-specific helpers or tests unless product direction changes explicitly.
 - Endurance build-time budget/slowdown refresh should come from committed full-lap results only. Isolated-stage proposal/repair vetting telemetry is intentionally non-authoritative for budget state.
+- ChallengeScore is now pad-neutral by policy. Do not reintroduce mechanic/side-specific pad penalties unless product direction explicitly changes.
+- Endurance objective ranking is now realized-outcome-led (commit rate + committed score history), with only a small exploration nudge for underused mechanics.
 - RampJump airborne guidance must not keep re-injecting positive Y velocity each frame. Preserve ballistic vertical motion and only cap extreme upward spikes.
 - RampJump target-sector stability vertical/angular caps must apply in any RampJump sector context, not only when that sector is the explicit target.
 - Launch-outlier classification should require prolonged hang-time gating; high airtime-distance alone can false-positive at high forward speeds.
@@ -75,7 +73,10 @@
 - `make boot_smoke`
 - `make refactor_fast`
 - `make mechanics_regression`
-- `make test TEST=phase14_5`
+- `make test TEST=phase6_unit`
+- `make test TEST=phase9_unit`
+- `make test TEST=phase11_unit`
+- `make test TEST=phase14_unit`
 - `make test TEST=phase14_integration`
 - `make test TEST=phase19`
 - `make test TEST=phase20`

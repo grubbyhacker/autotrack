@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
@@ -12,6 +13,11 @@ type CandidateScore = Types.CandidateScore
 local EnduranceObjective = {}
 
 local REPEAT_SKIP_THRESHOLD = 3
+local SUPPORTED_MECHANICS = {
+	RampJump = true,
+	Chicane = true,
+	CrestDip = true,
+}
 
 local function clamp01(value: number): number
 	return math.clamp(value, 0, 1)
@@ -97,13 +103,80 @@ local function attemptRepairLoad(context: OrchestratorContext, sectorId: number)
 	return complexity
 end
 
+local function mechanicHistoryStats(context: OrchestratorContext, mechanic: string): (number, number, number)
+	if context.attempt_history == nil then
+		return 0, 0, 0
+	end
+
+	local attempts = 0
+	local commits = 0
+	local committedScoreTotal = 0
+	for _, attempt in ipairs(context.attempt_history) do
+		if attempt.mechanic == mechanic then
+			attempts += 1
+			if attempt.outcome == "committed" then
+				commits += 1
+				if type(attempt.score) == "number" then
+					committedScoreTotal += math.max(0, attempt.score)
+				end
+			end
+		end
+	end
+
+	return attempts, commits, committedScoreTotal
+end
+
+local function realizedYield(context: OrchestratorContext, mechanic: string): number
+	if not SUPPORTED_MECHANICS[mechanic] then
+		return Constants.ENDURANCE_OBJECTIVE_REALIZED_YIELD_NEUTRAL
+	end
+
+	local attempts, commits, committedScoreTotal = mechanicHistoryStats(context, mechanic)
+	if attempts == 0 then
+		return Constants.ENDURANCE_OBJECTIVE_REALIZED_YIELD_NEUTRAL
+	end
+
+	local commitRate = commits / attempts
+	local avgCommittedScore = if commits == 0 then 0 else committedScoreTotal / commits
+	local committedScoreNorm = clamp01(avgCommittedScore / math.max(1, Constants.ENDURANCE_OBJECTIVE_COMMITTED_SCORE_FULL))
+	return clamp01(commitRate * 0.65 + committedScoreNorm * 0.35)
+end
+
+local function explorationBonus(context: OrchestratorContext, mechanic: string): number
+	if not SUPPORTED_MECHANICS[mechanic] then
+		return 0
+	end
+	if context.attempt_history == nil or #context.attempt_history == 0 then
+		return 0
+	end
+
+	local totalMechanicAttempts = 0
+	local thisMechanicAttempts = 0
+	for _, attempt in ipairs(context.attempt_history) do
+		local attemptMechanic = attempt.mechanic
+		if type(attemptMechanic) == "string" and SUPPORTED_MECHANICS[attemptMechanic] then
+			totalMechanicAttempts += 1
+			if attemptMechanic == mechanic then
+				thisMechanicAttempts += 1
+			end
+		end
+	end
+	if totalMechanicAttempts == 0 then
+		return 0
+	end
+
+	local targetShare = 1 / 3
+	local actualShare = thisMechanicAttempts / totalMechanicAttempts
+	return clamp01(math.max(0, targetShare - actualShare) / targetShare)
+end
+
 local function currentSectorScore(context: OrchestratorContext, sectorId: number): number
 	local snapshot = context.sector_states and context.sector_states[sectorId]
 	if snapshot == nil then
 		return 0
 	end
 	return snapshot.score or 0
-	end
+end
 
 local function currentBudgetRisk(context: OrchestratorContext): number
 	if context == nil or context.budget == nil then
@@ -154,22 +227,25 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	local novelty_bonus = clamp01(1 - repeatPressure * 0.22)
 	local repeat_penalty = clamp01(repeatPressure * 0.22)
 	local budget_risk_penalty = currentBudgetRisk(context)
+	local mechanicName = if type(decision.mechanic) == "string" then decision.mechanic else ""
+	local realized_yield = realizedYield(context, mechanicName)
+	local exploration_bonus = explorationBonus(context, mechanicName)
 	local repair_complexity_penalty = 0
 
 	local reliability_index = clamp01(
 		(base_score_gain * 0.3)
 		+ (track_sustainability * 0.35)
-		+ (novelty_bonus * 0.2)
+		+ (novelty_bonus * 0.1)
+		+ (realized_yield * 0.1)
 		+ (1 - budget_risk_penalty) * 0.15
 	)
 
-	-- Reliability remains useful telemetry, but endurance ranking should not
-	-- hard-penalize a candidate just because earlier proposals on that sector
-	-- were unreliable. Let score upside, repeat pressure, and budget govern.
-	local total = base_score_gain * 1.65
-		+ novelty_bonus * 0.7
-		- repeat_penalty * 0.55
-		- budget_risk_penalty * 1.1
+	local total = base_score_gain * Constants.ENDURANCE_OBJECTIVE_WEIGHT_BASE_GAIN
+		+ novelty_bonus * Constants.ENDURANCE_OBJECTIVE_WEIGHT_NOVELTY
+		- repeat_penalty * Constants.ENDURANCE_OBJECTIVE_WEIGHT_REPEAT
+		- budget_risk_penalty * Constants.ENDURANCE_OBJECTIVE_WEIGHT_BUDGET_RISK
+		+ realized_yield * Constants.ENDURANCE_OBJECTIVE_WEIGHT_REALIZED_YIELD
+		+ exploration_bonus * Constants.ENDURANCE_OBJECTIVE_WEIGHT_EXPLORATION
 
 	local score: CandidateScore = {
 		base_score_gain = base_score_gain,
@@ -183,14 +259,16 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	}
 
 	local rationale = string.format(
-		"sector=%d score=%.1f openness=%.2f repeat=%d failures=%d repair_steps=%d budget=%.2f",
+		"sector=%d score=%.1f openness=%.2f repeat=%d failures=%d repair_steps=%d budget=%.2f yield=%.2f explore=%.2f",
 		sectorId,
 		sectorScore,
 		opennessBonus,
 		repeatPressure,
 		sectorFailures,
 		repairLoad,
-		context.budget and context.budget.used or 0
+		context.budget and context.budget.used or 0,
+		realized_yield,
+		exploration_bonus
 	)
 
 	return score, rationale
