@@ -57,6 +57,7 @@
     "phase22": { "boot_mode": "skip_baseline" },
     "phase22_command_surface": { "boot_mode": "skip_baseline" },
     "phase22_endurance_entry": { "boot_mode": "skip_baseline" },
+    "phase23": { "boot_mode": "skip_baseline" },
     "refactor_fast": { "boot_mode": "skip_baseline" },
     "mechanics_regression": { "boot_mode": "baseline" },
     "llm_trace_export": { "boot_mode": "skip_baseline" }

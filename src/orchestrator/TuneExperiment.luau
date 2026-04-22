@@ -40,17 +40,27 @@ local function activeSector(sectorId: number)
 	return RuntimeContext.getSectorById(sectorId)
 end
 
-local function applyAttrs(attrOverrides)
+local function applyAttrs(attrOverrides, clearOthers: boolean?)
 	local previous = {
 		values = {},
 		touched = {},
 	}
+	if clearOthers == true then
+		for _, spec in pairs(TuneLab.ATTR_SPECS) do
+			local attrName = spec.workspace_attr
+			previous.values[attrName] = workspace:GetAttribute(attrName)
+			table.insert(previous.touched, attrName)
+			workspace:SetAttribute(attrName, nil)
+		end
+	end
 	for name, value in pairs(attrOverrides or {}) do
 		local spec = TuneLab.ATTR_SPECS[name]
 		if spec ~= nil then
 			local attrName = spec.workspace_attr
-			previous.values[attrName] = workspace:GetAttribute(attrName)
-			table.insert(previous.touched, attrName)
+			if previous.values[attrName] == nil then
+				previous.values[attrName] = workspace:GetAttribute(attrName)
+				table.insert(previous.touched, attrName)
+			end
 			workspace:SetAttribute(attrName, TuneLab.normalizeAttr(name, value))
 		end
 	end
@@ -75,13 +85,14 @@ end
 
 local function passRecord(passIndex: number, sectorId: number, candidate, result)
 	local metrics = result.metrics or {}
+	local normalizedState = candidate.state
 	local record = {
 		pass_index = passIndex,
 		success = result.success == true,
 		failure_type = result.failure and result.failure.type or "",
 		failure_detail = result.failure and result.failure.detail or "",
-		params = cloneTable(candidate.state.params),
-		pads = cloneTable(candidate.state.pads),
+		params = cloneTable(normalizedState.params),
+		pads = cloneTable(normalizedState.pads),
 		attrs = cloneTable(candidate.attr_overrides),
 		metrics = {
 			entry_speed = metrics.entry_speed or 0,
@@ -98,6 +109,7 @@ local function passRecord(passIndex: number, sectorId: number, candidate, result
 			lateral_error = metrics.lateral_error or 0,
 		},
 	}
+	record.challenge_score = TuneLab.productionChallengeScore(normalizedState, result)
 	record.score = TuneLab.scorePass({
 		success = record.success,
 		failure = result.failure,
@@ -128,7 +140,7 @@ function TuneExperiment.runCandidate(candidate)
 	local sectorId = candidate.state.sector_id
 	local normalizedState = TuneLab.normalizeState(cloneState(candidate.state))
 	local passes = math.max(1, math.floor(candidate.passes or 1))
-	local previousAttrs = applyAttrs(candidate.attr_overrides)
+	local previousAttrs = applyAttrs(candidate.attr_overrides, candidate.clear_all_attrs == true)
 	local records = {}
 
 	UIState.appendLog(string.format(
@@ -178,16 +190,28 @@ end
 function TuneExperiment.compareCandidates(candidates)
 	local results = {}
 	local best = nil
+	local bestProduction = nil
 	for _, candidate in ipairs(candidates) do
 		local result = TuneExperiment.runCandidate(candidate)
 		table.insert(results, result)
 		if best == nil or (result.aggregate.score or 0) > (best.aggregate.score or 0) then
 			best = result
 		end
+		if bestProduction == nil
+			or (result.aggregate.average_challenge_total or 0) > (bestProduction.aggregate.average_challenge_total or 0)
+		then
+			bestProduction = result
+		end
+	end
+	local comparison = nil
+	if #results >= 2 then
+		comparison = TuneLab.compareAggregatePair(results[1], results[2])
 	end
 	return {
 		best = best,
+		best_production = bestProduction,
 		results = results,
+		comparison = comparison,
 	}
 end
 

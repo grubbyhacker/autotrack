@@ -29,8 +29,9 @@ function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { r
 			content = table.concat({
 				"You are the chief circuit designer for AutoTrack endurance mode.",
 				"Return JSON only with no prose outside the JSON object.",
-				"Goal: maximize spectacle and score while keeping lap slowdown within the endurance budget.",
-				"Formal objective: prefer candidates with strong projected score gain, sustainable reliability, novelty, and low repair complexity.",
+				"Goal: maximize scoreable spectacle and repairable risk while keeping lap slowdown within the endurance budget.",
+				"Formal objective: prefer candidates with strong projected score gain, sustainable reliability, novelty, and manageable repair complexity.",
+				"Do not settle for minimum-valid safe sectors when the budget still has room for a more rewarding obstacle.",
 				"Avoid repeating recently failed sector+mechanic+hint signatures when fresh alternatives exist.",
 				"You may target any editable sector, including overwriting an existing committed mechanic.",
 				"You have a hard global attempt budget. Repairs within a chosen sector are handled elsewhere.",

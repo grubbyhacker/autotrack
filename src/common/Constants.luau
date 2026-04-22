@@ -2,7 +2,7 @@
 -- Tuning constants and fixed thresholds shared across AutoTrack modules.
 
 local Constants = {}
-Constants.BUILD_STAMP = "u18-chicane-wave-local"
+Constants.BUILD_STAMP = "u23-endurance-tuning"
 
 -- Track generator defaults
 Constants.TRACK_ROWS = 2
@@ -31,13 +31,13 @@ Constants.CORNER_WAYPOINT_LOOKAHEAD = 1    -- mild path anticipation in corners;
 Constants.CORNER_ORIENTATION_LOOKAHEAD = 2 -- stronger heading anticipation than path-follow lookahead
 Constants.CORNER_ORIENTATION_BLEND = 0.45  -- blend current segment with anticipated heading in corners
 Constants.STRAIGHT_GUIDE_SPACING = 20      -- add intermediate straight waypoints so entry recovery has nearby guidance, not just a distant midpoint
-Constants.MECHANIC_ENTRY_SPEED_FACTOR = 0.62 -- default cap for non-boost mechanic lead-ins before the authored feature begins
-Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR = 0.34 -- generic post-corner cap for sectors 2/7 so mechanics inherit a stabilized entry state
-Constants.RAMPJUMP_ENTRY_SPEED_FACTOR = 0.34 -- plain ramps should enter slower so sector-3 defaults stay low-risk and recoverable
-Constants.POST_CORNER_RAMPJUMP_ENTRY_SPEED_FACTOR = 0.22 -- post-corner ramps need a very calm approach to avoid late-landing chaos
+Constants.MECHANIC_ENTRY_SPEED_FACTOR = 0.68 -- raise entry pace so default mechanics create more scoreable risk before repair
+Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR = 0.40 -- keep post-corner sectors calmer than flats, but less over-braked than the old endurance baseline
+Constants.RAMPJUMP_ENTRY_SPEED_FACTOR = 0.42 -- ramps should launch with visible intent instead of defaulting to the old low-risk posture
+Constants.POST_CORNER_RAMPJUMP_ENTRY_SPEED_FACTOR = 0.28 -- still calmer after corners, but with enough speed headroom for meaningful jump tuning
 Constants.RAMPJUMP_ENTRY_BLEND_POWER = 2.4 -- hold the lower RampJump lead-in cap longer so speed does not spike right before takeoff
-Constants.CRESTDIP_ENTRY_SPEED_FACTOR = 0.48 -- CrestDip lead-ins need a calmer pre-feature settle than RampJump to avoid flat-entry tumbles
-Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR = 0.30 -- sector-2/7 crest lead-ins need extra recovery after fixed-corner exits
+Constants.CRESTDIP_ENTRY_SPEED_FACTOR = 0.56 -- crest entries should carry more speed so airtime/apex-speed tradeoffs are visible
+Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR = 0.36 -- post-corner crests still recover first, but no longer start from an overly safe crawl
 Constants.POST_CORNER_ENTRY_BLEND_POWER = 2.2 -- keep the post-corner recovery cap active much longer before blending back to full speed
 Constants.CRESTDIP_ENTRY_BLEND_POWER = 1.8 -- keep the CrestDip recovery cap in place longer, then blend back up closer to the feature
 
@@ -58,7 +58,7 @@ Constants.ORIENTATION_BLEND = 0.7
 Constants.WAYPOINT_STALL_TIME_THRESHOLD = 3.0
 
 -- Verifier car
-Constants.CAR_TARGET_SPEED = 100    -- studs/s baseline forward speed (walked back from 130 for obstacle reliability)
+Constants.CAR_TARGET_SPEED = 108    -- modestly faster balanced-risk baseline for higher scoring ceilings without abandoning endurance recoverability
 Constants.CAR_ROOT_DENSITY = 19.5   -- 4x2x8 root at density 19.5 ≈ 1248 mass-units; closer to rally-car inertia for stability tests
 Constants.CAR_ACCEL_RATE = 90       -- studs/s^2 rise toward straight-line target speed
 Constants.CAR_BRAKE_RATE = 280      -- stronger decel for fixed-corner containment; baseline should never drift fully off track
@@ -95,16 +95,16 @@ Constants.RAMPJUMP_AIRBORNE_ORIENTATION_MAX_TORQUE = 3500 -- lower airborne torq
 Constants.SECTOR_ENTRY_SNAP_ENABLED = true              -- authoritative state reset on every sector entry to stop upstream physics bleed
 Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR = Constants.CORNER_SPEED_FACTOR
 Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR = 1.0
-Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR = 0.22
-Constants.SECTOR_ENTRY_SNAP_CRESTDIP_SPEED_FACTOR = 0.28
-Constants.SECTOR_ENTRY_SNAP_CHICANE_SPEED_FACTOR = 0.32
+Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR = 0.28
+Constants.SECTOR_ENTRY_SNAP_CRESTDIP_SPEED_FACTOR = 0.34
+Constants.SECTOR_ENTRY_SNAP_CHICANE_SPEED_FACTOR = 0.42
 Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME = 0.12         -- briefly hold snapped heading so the controller does not visibly fight the reset
 Constants.SECTOR_ENTRY_SNAP_TRANSITION_DISTANCE = 3.5  -- enter the next sector closer to the true boundary, not 10 studs early
 Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED = true   -- optional deterministic assist: normalize state at target-sector entry
-Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR = 0.34   -- normalized entry speed as a fraction of CAR_TARGET_SPEED
-Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP = 0.22
-Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CRESTDIP = 0.28
-Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CHICANE = 0.32
+Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR = 0.40   -- normalized entry speed as a fraction of CAR_TARGET_SPEED
+Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP = 0.28
+Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CRESTDIP = 0.34
+Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CHICANE = 0.42
 Constants.TARGET_ENTRY_ORIENTATION_SNAP_ENABLED = true  -- snap yaw upright toward local path direction when normalizing entry state
 Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED = true -- clamp extreme angular/vertical spikes inside target sector to reduce physics-only flake
 Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED = 16
@@ -164,10 +164,10 @@ Constants.CHICANE_MIN_CURVATURE = 0.05          -- 1/studs
 Constants.CHICANE_LATERAL_BAND_THRESHOLD = 2    -- studs; local X threshold for left/center/right band transitions
 Constants.CHICANE_SCORE_ALT_FULL = 3            -- band changes mapping to full alternation credit
 Constants.CHICANE_SPEED_RETENTION_FLOOR = 0.65  -- chicane score falls off below this target min-speed ratio
-Constants.CHICANE_INGRESS_BRAKE_PENALTY = 2.0   -- score penalty for brake-heavy "safe" chicanes
+Constants.CHICANE_INGRESS_BRAKE_PENALTY = 3.0   -- score penalty for brake-heavy "safe" chicanes
 Constants.CHICANE_COMFORT_LATERAL_MARGIN = 0.75
 Constants.CHICANE_COMFORT_BODY_MARGIN = 1.5
-Constants.CRESTDIP_EGRESS_BRAKE_PENALTY = 2.5   -- score penalty for exit-brake crests; they sabotage downstream setup
+Constants.CRESTDIP_EGRESS_BRAKE_PENALTY = 3.25  -- score penalty for exit-brake crests; they sabotage downstream setup
 
 -- CrestDip integrity thresholds
 Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT = 3  -- studs
@@ -183,12 +183,12 @@ Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 8.0
 
 -- Phase 11: ChallengeScore weights and budget
 -- See plans/phase11.md §3, §10 for the formula and motivation.
-Constants.CHALLENGE_BUDGET_RATIO   = 0.50   -- allowed lap-time slowdown vs clean baseline
+Constants.CHALLENGE_BUDGET_RATIO   = 0.58   -- allow a bit more slowdown so scoreable candidates are not over-pruned back to minimum-valid shapes
 Constants.CHALLENGE_UP_ROUNDS      = 3      -- score-escalation rounds per job
 Constants.SCORE_W_AIR              = 1.0
 Constants.SCORE_W_LATERAL          = 1.0
 Constants.SCORE_W_NEAR_MISS        = 1.5
-Constants.SCORE_W_TIME             = 0.25
+Constants.SCORE_W_TIME             = 0.18
 Constants.NEAR_MISS_ZERO_AT_MARGIN = 0.75   -- occupancy below this → near-miss component is 0
 Constants.LATERAL_G_FULL_SCORE     = 60     -- studs/s² mapping to 10 points
 Constants.HANG_TIME_FULL_SCORE     = 0.75   -- seconds mapping to 10 points
@@ -202,7 +202,10 @@ Constants.UI_SUCCESS_DWELL = 2.0
 
 -- Endurance / Hotfix Mode (phase 14)
 Constants.ENDURANCE_ATTEMPT_BUDGET = 12         -- total orchestrator sector placements
-Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO = 0.40 -- max allowed slowdown fraction vs baseline
+Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO = 0.48 -- modestly wider endurance budget so balanced-risk tracks can survive long enough to be repaired
+Constants.ENDURANCE_CHALLENGE_UP_MIN_HEADROOM = 0.22 -- skip proposer do-over when a clean pass already spent most of the budget
+Constants.ENDURANCE_CHALLENGE_UP_HIGH_HEADROOM = 0.4 -- large remaining headroom means the last clean pass likely undershot the car
+Constants.ENDURANCE_CHALLENGE_UP_MAX_REPAIRS = 2   -- short repair leash for aggressive do-over branches; baseline commit already stands
 Constants.HOTFIX_MAX_ATTEMPTS = 5               -- repair attempts before hotfix declares failure
 
 -- Camera tuning

@@ -112,7 +112,7 @@ local function currentBudgetRisk(context: OrchestratorContext): number
 	if context.budget.over_budget == true then
 		return 0.9
 	end
-	return clamp01((context.budget.used - 0.65) * 1.6)
+	return clamp01((context.budget.used - 0.78) * 2.2)
 end
 
 function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, decision: OrchestratorDecision): (CandidateScore, string)
@@ -138,7 +138,7 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	local sectorScore = currentSectorScore(context, sectorId)
 	local filled = snapshot ~= nil and snapshot.mechanic ~= nil
 	local opennessBonus = if filled then 0.25 else 0.65
-	local baseRaw = (60 - sectorScore) / 60
+	local baseRaw = (72 - sectorScore) / 72
 	if baseRaw < 0 then
 		baseRaw = 0
 	end
@@ -148,22 +148,28 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	local repairLoad = attemptRepairLoad(context, sectorId)
 	local repairRate = if sectorAttempts == 0 then 0 else sectorFailures / sectorAttempts
 	local track_sustainability = clamp01(
-		1 - (repairRate * 1.2) - (repairLoad * 0.06) - (sectorAttempts * 0.05)
+		1 - (repairRate * 1.0) - (sectorAttempts * 0.04)
 	)
 
-	local novelty_bonus = clamp01(1 - repeatPressure * 0.28)
-	local repeat_penalty = clamp01(repeatPressure * 0.33)
+	local novelty_bonus = clamp01(1 - repeatPressure * 0.22)
+	local repeat_penalty = clamp01(repeatPressure * 0.22)
 	local budget_risk_penalty = currentBudgetRisk(context)
-	local repair_complexity_penalty = clamp01(sectorAttempts * 0.2 + repairLoad * 0.08)
+	local repair_complexity_penalty = 0
 
 	local reliability_index = clamp01(
-		(base_score_gain * 0.2)
-		+ (track_sustainability * 0.45)
-		+ (novelty_bonus * 0.25)
-		+ (1 - budget_risk_penalty) * 0.1
+		(base_score_gain * 0.3)
+		+ (track_sustainability * 0.35)
+		+ (novelty_bonus * 0.2)
+		+ (1 - budget_risk_penalty) * 0.15
 	)
 
-	local total = base_score_gain + track_sustainability + novelty_bonus - repeat_penalty - budget_risk_penalty - repair_complexity_penalty
+	-- Reliability remains useful telemetry, but endurance ranking should not
+	-- hard-penalize a candidate just because earlier proposals on that sector
+	-- were unreliable. Let score upside, repeat pressure, and budget govern.
+	local total = base_score_gain * 1.65
+		+ novelty_bonus * 0.7
+		- repeat_penalty * 0.55
+		- budget_risk_penalty * 1.1
 
 	local score: CandidateScore = {
 		base_score_gain = base_score_gain,
@@ -177,8 +183,9 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	}
 
 	local rationale = string.format(
-		"sector=%d openness=%.2f repeat=%d failures=%d repair_steps=%d budget=%.2f",
+		"sector=%d score=%.1f openness=%.2f repeat=%d failures=%d repair_steps=%d budget=%.2f",
 		sectorId,
+		sectorScore,
 		opennessBonus,
 		repeatPressure,
 		sectorFailures,

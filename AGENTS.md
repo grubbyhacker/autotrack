@@ -253,6 +253,7 @@ Current supported tune commands:
 - `/tune chicane`
 - `/tune show`
 - `/tune run <n>`
+- `/tune compare <n>`
 - `/tune auto <on|off>`
 - `/tune set <lever> <value>`
 - `/tune pad <ingress|egress> <PadValue>`
@@ -260,6 +261,7 @@ Current supported tune commands:
 - `/tune reset`
 - `/tune revert`
 - `/tune commit`
+- `/tune promote`
 - `/tune stop`
 
 Important constraints for `/tune`:
@@ -267,7 +269,10 @@ Important constraints for `/tune`:
 - It targets the isolated tune lane in sector `3` in Phase 21.
 - It keeps the sector centered on screen and runs repeated entry-to-exit passes through that sector only.
 - It now starts in staged mode by default; use `/tune run <n>` for exact multi-attempt candidate evaluation.
+- `/tune compare <n>` runs the current production baseline and the staged candidate sequentially for the same isolated pass count and publishes parseable comparison output.
 - `/tune auto on` restores the continuous spectator loop; `/tune auto off` returns to staged control.
+- `/tune reset` restores the current production baseline for the active mechanic; `/tune revert` restores the committed sector state.
+- `/tune promote` publishes an explicit promotion snapshot for the staged candidate without editing tracked files.
 - Tune mutation commands should not modify the candidate while a run batch is in flight.
 - Full-lap verification is still required elsewhere for scoring and authoritative track evaluation.
 - Tune-mode verifier attributes are a curated server-side whitelist. Do not add arbitrary workspace-attribute writes.

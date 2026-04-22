@@ -66,6 +66,8 @@ local function defaultTuneAttributes()
 		tune_history_2 = "",
 		tune_history_3 = "",
 		tune_history_4 = "",
+		tune_baseline_snapshot = "",
+		tune_last_compare_json = "",
 		tune_promotion_snapshot = "",
 	}
 end
@@ -610,6 +612,8 @@ function UIState.setTuneTelemetry(payload)
 		tune_history_2 = payload and payload.history_2 or "",
 		tune_history_3 = payload and payload.history_3 or "",
 		tune_history_4 = payload and payload.history_4 or "",
+		tune_baseline_snapshot = payload and payload.baseline_snapshot or "",
+		tune_last_compare_json = payload and payload.last_compare_json or "",
 		tune_promotion_snapshot = payload and payload.promotion_snapshot or "",
 	})
 end

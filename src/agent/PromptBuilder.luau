@@ -16,6 +16,7 @@ type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
 type DesignIntent = Types.DesignIntent
 type RunMemory = Types.RunMemory
+type ChallengeUpContext = Types.ChallengeUpContext
 
 local PromptBuilder = {}
 
@@ -95,9 +96,9 @@ local function llmProposeSystemPrompt(): string
 		"IMPORTANT: Your response must contain ONLY a valid JSON object. No prose, no markdown, no code fences.",
 		"",
 		"Your goal is to design an EXCITING, CHALLENGING obstacle that pushes the limits of what the verifier car can handle.",
-		"The verifier car has fixed performance. Design for memorable obstacles, but RampJump should be the low-risk, low-reward option.",
+		"The verifier car has fixed performance. Design for scoreable, repairable risk rather than minimum-valid safe obstacles.",
 		"Use qualifiers in the request to guide ambition: 'maximize' or 'extreme' means push params toward the top of their ranges.",
-		"For RampJump specifically: prefer shallow, climbable ramps, small gaps, and generous landings. Dramatic airtime is not required.",
+		"For RampJump specifically: aim for a visible launch and meaningful recovery challenge, but keep the landing repairable and the exit recoverable.",
 		"Do NOT anchor to defaults. Choose values that create a challenging, memorable obstacle.",
 		"",
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
@@ -126,11 +127,12 @@ local function llmRepairSystemPrompt(): string
 		"  vertical_displacement high or bad landing → ramp too steep or gap too long; reduce ramp_angle and/or gap_length",
 		"  slowdown_ratio high → too much speed loss; reduce severity of all params",
 		"  target_progress < 1 → car never reached the end; reduce ALL params toward defaults",
-		"  RampJump should stay low-risk: prefer softer geometry and longer landing over chasing more airtime.",
+		"  RampJump repairs should preserve visible challenge when possible; fix dead-end launches or chaotic landings before flattening it into a trivial obstacle.",
 		"  If a RampJump behaves like a wall at entry, soften the approach; do not make the base steeper.",
 		"  downstream_failure → your sector passed but harmed a later committed sector; preserve exit speed and post-feature stability",
 		"  For downstream_failure, avoid adding egress brake unless diagnostics say exit attitude was unstable.",
 		"  For CrestDip specifically: do not add an egress brake by default. Prefer ingress brake plus softer geometry for crash repair; use egress brake only when diagnostics explicitly say the exit attitude is unstable.",
+		"  Avoid solving every failure with heavy brake pads if a geometry change can preserve more scoreable risk.",
 		"  When in doubt: move params TOWARD the defaults, not away from them.",
 		"",
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
@@ -158,6 +160,21 @@ local function compactMetrics(metrics): string
 		target_vertical_displacement = metrics.target_vertical_displacement,
 		target_apex_min_speed = metrics.target_apex_min_speed,
 		slowdown_ratio = metrics.slowdown_ratio,
+	})
+end
+
+local function compactScore(score): string
+	if type(score) ~= "table" then
+		return "{}"
+	end
+	return encode({
+		total = score.total,
+		air = score.air,
+		lateral = score.lateral,
+		near_miss = score.near_miss,
+		time_cost = score.time_cost,
+		budget_used = score.budget_used,
+		over_budget = score.over_budget,
 	})
 end
 
@@ -263,6 +280,7 @@ function PromptBuilder.proposeMessages(request: Request, designIntent: DesignInt
 			"Legal numeric levers: " .. encode(levers),
 			"Relevant memory: " .. encode(relevantMemory(memoryContext, "proposal")),
 			"Implement the shared design intent faithfully inside this one sector.",
+			"Treat target_reliability as opening bias: conservative = easier opener, balanced = score-seeking but recoverable, risky = spend more headroom and accept repairable misses.",
 			"Use shared memory for durable constraints and proposal memory for local shape lessons.",
 			"Preserve the intended feel unless hard numeric/legal constraints block it.",
 			"Return either a plain SectorState JSON or the wrapped proposal schema with optional memory_note.",
@@ -277,6 +295,47 @@ function PromptBuilder.proposeMessages(request: Request, designIntent: DesignInt
 	return {
 		{ role = "system", content = llmProposeSystemPrompt() },
 		{ role = "user", content = userContent },
+	}
+end
+
+function PromptBuilder.challengeUpMessages(
+	request: Request,
+	challengeContext: ChallengeUpContext,
+	designIntent: DesignIntent?
+): { { role: string, content: string } }
+	local sharedIntent = effectiveDesignIntent(request, nil, designIntent)
+	local memoryContext = request.memory_context
+	local mechanic = request.parsed.mechanic
+	local levers = mechanic and LevelMappings.NUMERIC_LEVERS[mechanic] or {}
+	local lines = {
+		"Challenge-up do-over.",
+		"The previous proposal succeeded, but it shot too low for the car's demonstrated capability.",
+		"Target sector: " .. tostring(request.parsed.sector_id),
+		"Target mechanic: " .. tostring(mechanic),
+		"Legal numeric levers: " .. encode(levers),
+		"Successful baseline state: " .. encode(challengeContext.baseline_state),
+		"Successful baseline score: " .. compactScore(challengeContext.baseline_result.score),
+		"Successful baseline metrics: " .. compactMetrics(challengeContext.baseline_result.metrics),
+		string.format("Budget headroom remaining: %.0f%%", challengeContext.budget_headroom * 100),
+		string.format("Target score floor for this intent: %.1f", challengeContext.target_score_floor),
+		"Challenge-up reason: " .. tostring(challengeContext.reason),
+		"Relevant memory: " .. encode(relevantMemory(memoryContext, "proposal")),
+		"This is not a repair request. Keep the same sector and mechanic.",
+		"Use the hard telemetry. Increase the primary score opportunity for this mechanic while keeping the result recoverable.",
+		string.format(
+			"If you overshoot and fail, downstream repair will get at most %d extra tries. Preserve repairable geometry.",
+			challengeContext.max_additional_repairs
+		),
+		"Return either a plain SectorState JSON or the wrapped proposal schema with optional memory_note.",
+		"If you learned something durable, include a proposal-scoped memory_note.",
+	}
+	if sharedIntent ~= nil then
+		table.insert(lines, 6, "Shared design intent: " .. encode(sharedIntent))
+	end
+
+	return {
+		{ role = "system", content = llmProposeSystemPrompt() },
+		{ role = "user", content = table.concat(lines, "\n") },
 	}
 end
 

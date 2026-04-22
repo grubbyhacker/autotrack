@@ -13,7 +13,7 @@ local UIState = require(script.Parent.UIState)
 local CommandRouter = {}
 
 local SUPPORTED_DEMO_USAGE = "/demo endurance, /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix"
-local SUPPORTED_TUNE_USAGE = "usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune stop"
+local SUPPORTED_TUNE_USAGE = "usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune compare <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune promote | /tune stop"
 local REMOVED_LLM_REASON = "LLM slash commands removed; use the HUD model selector or startup config"
 local UNKNOWN_COMMAND_REASON = "unknown command; supported: /demo, /test, /tune"
 
@@ -89,6 +89,7 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 		and tuneCommand ~= "pad"
 		and tuneCommand ~= "attr"
 		and tuneCommand ~= "run"
+		and tuneCommand ~= "compare"
 		and tuneCommand ~= "auto"
 	then
 		if CameraDemo.isActive() then
@@ -153,6 +154,16 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 			return reject(rawText, tostring(reason), nil)
 		end
 		return true, nil
+	elseif tuneCommand == "compare" then
+		local attempts = tonumber(trim(tuneRest))
+		if attempts == nil then
+			return reject(rawText, "usage: /tune compare <n>", nil)
+		end
+		local ok, reason = TuneMode.compareBaseline(attempts)
+		if not ok then
+			return reject(rawText, tostring(reason), nil)
+		end
+		return true, nil
 	elseif tuneCommand == "auto" then
 		local mode = trim(string.lower(tuneRest))
 		if mode ~= "on" and mode ~= "off" then
@@ -177,6 +188,12 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 		return true, nil
 	elseif tuneCommand == "commit" then
 		local ok, reason = TuneMode.commit()
+		if not ok then
+			return reject(rawText, tostring(reason), nil)
+		end
+		return true, nil
+	elseif tuneCommand == "promote" then
+		local ok, reason = TuneMode.promote()
 		if not ok then
 			return reject(rawText, tostring(reason), nil)
 		end

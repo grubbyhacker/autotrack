@@ -178,6 +178,15 @@ export type RunResult = {
 	score: ChallengeScore?,
 }
 
+export type ChallengeUpContext = {
+	baseline_state: SectorState,
+	baseline_result: RunResult,
+	budget_headroom: number,
+	target_score_floor: number,
+	reason: string,
+	max_additional_repairs: number,
+}
+
 export type Diagnostics = {
 	failure_sector: number,
 	hints: { string },
@@ -340,6 +349,9 @@ export type CIJob = {
 	working_state: SectorState,
 	attempts: { AttemptRecord },
 	proposal_memory_note: MemoryEntry?,
+	challenge_up_proposal_note: MemoryEntry?,
+	challenge_up_attempts: { AttemptRecord }?,
+	final_result: RunResult?,
 	final_status: FinalStatus,
 }
 

@@ -13,6 +13,7 @@ type Request = Types.Request
 type SectorState = Types.SectorState
 type FailurePacket = Types.FailurePacket
 type AgentAction = Types.AgentAction
+type DesignIntent = Types.DesignIntent
 
 local MinimalProposer = {}
 local MAX_CHICANE_TRANSITION_LENGTH = ChicanePath.maxTransitionLength()
@@ -46,6 +47,36 @@ local QUALIFIER_BIASES = {
 		short = { sector_length = -6 },
 		shallow = { height_or_depth = -3, sector_length = 4 },
 		deep = { height_or_depth = 3, sector_length = -2 },
+	},
+}
+
+local RELIABILITY_BIASES = {
+	RampJump = {
+		conservative = { ramp_angle = -1, gap_length = -1, landing_length = 2 },
+		risky = { ramp_angle = 1, gap_length = 1, landing_length = -2 },
+	},
+	Chicane = {
+		conservative = { amplitude = -1, transition_length = 2, corridor_width = 1 },
+		risky = { amplitude = 1, transition_length = -2, corridor_width = -1 },
+	},
+	CrestDip = {
+		conservative = { height_or_depth = -1, sector_length = 4 },
+		risky = { height_or_depth = 1, sector_length = -4 },
+	},
+}
+
+local SCORE_BAND_BIASES = {
+	RampJump = {
+		high = { ramp_angle = 1, gap_length = 1 },
+		extreme = { ramp_angle = 2, gap_length = 1, landing_length = -2 },
+	},
+	Chicane = {
+		high = { amplitude = 1, transition_length = -1 },
+		extreme = { amplitude = 2, transition_length = -2, corridor_width = -1 },
+	},
+	CrestDip = {
+		high = { height_or_depth = 1, sector_length = -2 },
+		extreme = { height_or_depth = 2, sector_length = -4 },
 	},
 }
 
@@ -268,6 +299,120 @@ local function isPostCornerEditableSector(sectorId: number): boolean
 	return sectorId == 2 or sectorId == 7
 end
 
+local function applyIntentBias(mechanic: string, params, pads, designIntent: DesignIntent?)
+	if designIntent == nil or designIntent.mechanic ~= mechanic then
+		return
+	end
+
+	local reliabilityBias = RELIABILITY_BIASES[mechanic] and RELIABILITY_BIASES[mechanic][designIntent.target_reliability]
+	if reliabilityBias then
+		applyParamDelta(params, reliabilityBias)
+	end
+
+	local scoreBandBias = SCORE_BAND_BIASES[mechanic] and SCORE_BAND_BIASES[mechanic][designIntent.target_score_band]
+	if scoreBandBias then
+		applyParamDelta(params, scoreBandBias)
+	end
+
+	if mechanic == "RampJump" or mechanic == "CrestDip" then
+		if designIntent.target_reliability == "conservative" then
+			pads.ingress = strongerBrake(pads.ingress)
+			if mechanic == "RampJump" then
+				pads.egress = strongerBrake(pads.egress)
+			end
+		elseif designIntent.target_reliability == "risky" then
+			pads.ingress = weakerBrake(pads.ingress)
+			if mechanic == "RampJump" then
+				pads.egress = weakerBrake(pads.egress)
+			end
+		end
+	end
+end
+
+local function buildInitialState(
+	sectorId: number,
+	mechanic: string,
+	qualifiers: { string },
+	version: number,
+	designIntent: DesignIntent?
+): SectorState?
+	local defaults = LevelMappings.DEFAULTS[mechanic]
+	if not defaults then
+		return nil
+	end
+
+	local params = cloneParams(defaults)
+	local pads = {
+		ingress = if mechanic == "CrestDip" then "Brake10" elseif mechanic == "RampJump" then "Brake10" else "None",
+		egress = "None",
+	}
+	local mechanicBiases = QUALIFIER_BIASES[mechanic] or {}
+	local hasReally = false
+	for _, qualifier in ipairs(qualifiers) do
+		if qualifier == "really" then
+			hasReally = true
+			break
+		end
+	end
+	for _, qualifier in ipairs(qualifiers) do
+		local bias = mechanicBiases[qualifier]
+		if bias then
+			applyParamDelta(params, bias)
+			if hasReally and qualifier ~= "really" and mechanic ~= "CrestDip" then
+				applyParamDelta(params, bias)
+			end
+		end
+	end
+	applyIntentBias(mechanic, params, pads, designIntent)
+	params = normalizeParams(mechanic, params)
+
+	local plainCrestRequest = mechanic == "CrestDip" and #qualifiers == 0
+	local postCornerSector = isPostCornerEditableSector(sectorId)
+	local postCornerCrest = mechanic == "CrestDip" and postCornerSector
+	if mechanic == "CrestDip" and (plainCrestRequest or postCornerCrest) then
+		params.sector_length = math.min(params.sector_length, 30)
+	end
+	if mechanic == "RampJump" then
+		params = RampJumpTuner.tune(params, {
+			postCorner = postCornerSector,
+			preferGentle = #qualifiers == 0,
+		})
+	end
+
+	if mechanic == "CrestDip" and plainCrestRequest then
+		pads.ingress = "Brake25"
+	end
+	if postCornerCrest then
+		pads.ingress = "Brake25"
+	end
+	if mechanic == "RampJump" and postCornerSector then
+		pads.ingress = "Brake25"
+	end
+	if mechanic == "RampJump" and postCornerSector then
+		pads.egress = "Brake10"
+	end
+
+	return {
+		sector_id = sectorId,
+		mechanic = mechanic,
+		params = params,
+		pads = pads,
+		version = version,
+	}
+end
+
+function MinimalProposer.productionBaseline(sectorId: number, mechanic: string, qualifiers: { string }?): (SectorState?, string?)
+	local committed = SectorRegistry.getCommitted(sectorId)
+	if not committed then
+		return nil, "sector " .. tostring(sectorId) .. " is not editable"
+	end
+	local nextState = buildInitialState(sectorId, mechanic, qualifiers or {}, committed.version, nil)
+	if nextState == nil then
+		return nil, "unsupported mechanic: " .. tostring(mechanic)
+	end
+	return nextState, nil
+end
+
 function MinimalProposer.initial(request: Request): (SectorState?, string?)
 	local committed = SectorRegistry.getCommitted(request.parsed.sector_id)
 	if not committed then
@@ -280,68 +425,17 @@ function MinimalProposer.initial(request: Request): (SectorState?, string?)
 		return nextState, nil
 	end
 
-	local mechanic = request.parsed.mechanic
-	local defaults = LevelMappings.DEFAULTS[mechanic]
-	if not defaults then
-		return nil, "unsupported mechanic: " .. tostring(mechanic)
+	local nextState = buildInitialState(
+		request.parsed.sector_id,
+		request.parsed.mechanic,
+		request.qualifiers,
+		committed.version,
+		request.design_intent
+	)
+	if nextState == nil then
+		return nil, "unsupported mechanic: " .. tostring(request.parsed.mechanic)
 	end
-
-	local params = cloneParams(defaults)
-	local mechanicBiases = QUALIFIER_BIASES[mechanic] or {}
-	local hasReally = false
-	for _, qualifier in ipairs(request.qualifiers) do
-		if qualifier == "really" then
-			hasReally = true
-			break
-		end
-	end
-	for _, qualifier in ipairs(request.qualifiers) do
-		local bias = mechanicBiases[qualifier]
-		if bias then
-			applyParamDelta(params, bias)
-			if hasReally and qualifier ~= "really" and mechanic ~= "CrestDip" then
-				applyParamDelta(params, bias)
-			end
-		end
-	end
-	params = normalizeParams(mechanic, params)
-
-	local plainCrestRequest = mechanic == "CrestDip" and #request.qualifiers == 0
-	local postCornerCrest = mechanic == "CrestDip" and isPostCornerEditableSector(request.parsed.sector_id)
-	if mechanic == "CrestDip" and (plainCrestRequest or postCornerCrest) then
-		params.sector_length = math.min(params.sector_length, 30)
-	end
-	if mechanic == "RampJump" then
-		params = RampJumpTuner.tune(params, {
-			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
-			preferGentle = #request.qualifiers == 0,
-		})
-	end
-
-	local ingressPad = if mechanic == "CrestDip" then "Brake25" elseif mechanic == "RampJump" then "Brake25" else "None"
-	if mechanic == "CrestDip" and plainCrestRequest then
-		ingressPad = "Brake50"
-	end
-	if postCornerCrest then
-		ingressPad = "Brake25"
-	end
-	if mechanic == "RampJump" and isPostCornerEditableSector(request.parsed.sector_id) then
-		ingressPad = "Brake50"
-	end
-	local egressPad = if mechanic == "RampJump"
-		then (if isPostCornerEditableSector(request.parsed.sector_id) then "Brake25" else "Brake10")
-		else "None"
-
-	return {
-		sector_id = request.parsed.sector_id,
-		mechanic = mechanic,
-		params = params,
-		pads = {
-			ingress = ingressPad,
-			egress = egressPad,
-		},
-		version = committed.version,
-	}, nil
+	return nextState, nil
 end
 
 function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, string?)

@@ -363,7 +363,11 @@ local function appendJobMemory(memory: RunMemory, job)
 		return
 	end
 	appendRoleMemory(memory, "proposal", job.proposal_memory_note)
+	appendRoleMemory(memory, "proposal", job.challenge_up_proposal_note)
 	for _, attempt in ipairs(job.attempts or {}) do
+		appendRoleMemory(memory, "repair", attempt.memory_note)
+	end
+	for _, attempt in ipairs(job.challenge_up_attempts or {}) do
 		appendRoleMemory(memory, "repair", attempt.memory_note)
 	end
 end
@@ -371,6 +375,12 @@ end
 local function latestRepairNote(job): MemoryEntry?
 	if job == nil then
 		return nil
+	end
+	for index = #(job.challenge_up_attempts or {}), 1, -1 do
+		local note = job.challenge_up_attempts[index].memory_note
+		if note ~= nil then
+			return note
+		end
 	end
 	for index = #job.attempts, 1, -1 do
 		local note = job.attempts[index].memory_note
@@ -388,7 +398,7 @@ local function buildSharedLesson(decision: OrchestratorDecision, job, result, de
 
 	local sectorId = decision.sector_id or 0
 	local mechanic = tostring(decision.mechanic or (job.working_state and job.working_state.mechanic) or "Unknown")
-	local localNote = latestRepairNote(job) or job.proposal_memory_note
+	local localNote = latestRepairNote(job) or job.challenge_up_proposal_note or job.proposal_memory_note
 	local noteText
 	local sourceType = "observed_result"
 
@@ -646,7 +656,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				local sectorId = job.request.parsed.sector_id
 				local success = job.final_status == "committed"
 				local latestAttempt = job.attempts[#job.attempts]
-				local result = latestAttempt and latestAttempt.result or nil
+				local result = job.final_result or (latestAttempt and latestAttempt.result or nil)
 				if result and result.metrics and result.metrics.slowdown_ratio then
 					slowdownRatio = result.metrics.slowdown_ratio
 				end

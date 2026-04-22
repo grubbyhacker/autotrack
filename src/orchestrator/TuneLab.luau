@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
+local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
 
 local TuneLab = {}
 
@@ -186,6 +187,16 @@ function TuneLab.normalizeState(state)
 	return normalized
 end
 
+function TuneLab.productionChallengeScore(state, result)
+	if state == nil or result == nil or result.success ~= true then
+		return nil
+	end
+	if result.score ~= nil then
+		return cloneTable(result.score)
+	end
+	return ChallengeScore.compute(state, result.metrics or {})
+end
+
 function TuneLab.clampTargetSpeed(value: number): number
 	return clampRounded(value, TuneLab.CAR_TARGET_SPEED_BOUNDS.min, TuneLab.CAR_TARGET_SPEED_BOUNDS.max)
 end
@@ -249,6 +260,9 @@ function TuneLab.aggregateCandidate(records)
 		failure_count = 0,
 		average_score = 0,
 		best_score = -math.huge,
+		challenge_success_count = 0,
+		average_challenge_total = 0,
+		best_challenge_total = -math.huge,
 		average_lap_time = 0,
 		average_entry_speed = 0,
 		average_exit_speed = 0,
@@ -258,25 +272,33 @@ function TuneLab.aggregateCandidate(records)
 	}
 	if #records == 0 then
 		summary.best_score = 0
+		summary.best_challenge_total = 0
 		summary.score = 0
 		return summary
 	end
 
 	local totalScore = 0
+	local totalChallenge = 0
 	local totalLapTime = 0
 	local totalEntry = 0
 	local totalExit = 0
 	for _, record in ipairs(records) do
 		local score = record.score or 0
+		local challengeTotal = if type(record.challenge_score) == "table" then (record.challenge_score.total or 0) else 0
 		local metrics = record.metrics or {}
 		totalScore += score
+		totalChallenge += challengeTotal
 		totalLapTime += metrics.lap_time or 0
 		totalEntry += metrics.entry_speed or 0
 		totalExit += metrics.exit_speed or 0
 		summary.best_score = math.max(summary.best_score, score)
+		summary.best_challenge_total = math.max(summary.best_challenge_total, challengeTotal)
 		summary.worst_body_distance = math.max(summary.worst_body_distance, targetBodyDistance(metrics))
 		if record.success then
 			summary.success_count += 1
+			if type(record.challenge_score) == "table" then
+				summary.challenge_success_count += 1
+			end
 		else
 			summary.failure_count += 1
 			summary.last_failure = tostring(record.failure_detail or "")
@@ -284,11 +306,37 @@ function TuneLab.aggregateCandidate(records)
 	end
 
 	summary.average_score = totalScore / #records
+	summary.average_challenge_total = totalChallenge / #records
 	summary.average_lap_time = totalLapTime / #records
 	summary.average_entry_speed = totalEntry / #records
 	summary.average_exit_speed = totalExit / #records
 	summary.score = summary.success_count * 1000 + summary.average_score - summary.failure_count * 200
 	return summary
+end
+
+function TuneLab.compareAggregatePair(baselineResult, candidateResult)
+	local baselineAggregate = baselineResult and baselineResult.aggregate or {}
+	local candidateAggregate = candidateResult and candidateResult.aggregate or {}
+	local baselineScore = baselineAggregate.score or 0
+	local candidateScore = candidateAggregate.score or 0
+	local baselineChallenge = baselineAggregate.average_challenge_total or 0
+	local candidateChallenge = candidateAggregate.average_challenge_total or 0
+	local baselineSuccess = baselineAggregate.success_count or 0
+	local candidateSuccess = candidateAggregate.success_count or 0
+
+	return {
+		baseline_label = baselineResult and baselineResult.label or "baseline",
+		candidate_label = candidateResult and candidateResult.label or "candidate",
+		heuristic_delta = candidateScore - baselineScore,
+		challenge_delta = candidateChallenge - baselineChallenge,
+		success_delta = candidateSuccess - baselineSuccess,
+		heuristic_winner = if candidateScore >= baselineScore
+			then (candidateResult and candidateResult.label or "candidate")
+			else (baselineResult and baselineResult.label or "baseline"),
+		challenge_winner = if candidateChallenge >= baselineChallenge
+			then (candidateResult and candidateResult.label or "candidate")
+			else (baselineResult and baselineResult.label or "baseline"),
+	}
 end
 
 return TuneLab

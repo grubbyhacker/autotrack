@@ -22,6 +22,7 @@ local ActionValidator = require(script.Parent.ActionValidator)
 local LLMTraceJournal = require(script.Parent.LLMTraceJournal)
 local MinimalProposer = require(script.Parent.Parent.Orchestrator.MinimalProposer)
 local MinimalOrchestrator = require(script.Parent.Parent.Orchestrator.MinimalOrchestrator)
+local ChallengeRunner = require(script.Parent.Parent.Orchestrator.ChallengeRunner)
 local EnduranceMemory = require(script.Parent.Parent.Orchestrator.EnduranceMemory)
 local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
 local RampJumpTuner = require(script.Parent.Parent.Mechanics.RampJumpTuner)
@@ -32,6 +33,7 @@ type AgentAction = Types.AgentAction
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
 type DesignIntent = Types.DesignIntent
+type ChallengeUpContext = Types.ChallengeUpContext
 type MemoryEntry = Types.MemoryEntry
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
@@ -255,6 +257,10 @@ local function mergeRepairState(currentState: SectorState, candidate): SectorSta
 	return merged
 end
 
+local function cloneSectorState(state: SectorState): SectorState
+	return mergeRepairState(state, {})
+end
+
 local function normalizeStringArray(value, fieldName: string): ({ string }?, string?)
 	if type(value) ~= "table" then
 		return nil, fieldName .. " must be an array"
@@ -392,9 +398,37 @@ local function normalizeInitialProposalForRequest(request: Request, state: Secto
 	return state
 end
 
+local function normalizeChallengeUpProposalForRequest(request: Request, state: SectorState): SectorState
+	if state.mechanic == "RampJump" then
+		state.params = RampJumpTuner.tune(state.params, {
+			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
+			preferGentle = false,
+		})
+		return state
+	end
+
+	if state.mechanic == "CrestDip" then
+		state.params.height_or_depth, state.params.sector_length = CrestDipTuner.tune(
+			state.params.height_or_depth or 0,
+			state.params.sector_length or 0
+		)
+	end
+
+	return state
+end
+
 local function mockProvider()
 	return {
 		propose = function(payload)
+			if payload.challenge_up ~= nil then
+				local challengeContext = payload.challenge_up
+				local baselineState = challengeContext.baseline_state
+				local baselineResult = challengeContext.baseline_result
+				if baselineState ~= nil and baselineResult ~= nil and baselineResult.score ~= nil then
+					local nextState = ChallengeRunner._escalateState(baselineState, baselineResult.score)
+					return HttpService:JSONEncode(nextState or cloneSectorState(baselineState))
+				end
+			end
 			local state, err = MinimalProposer.initial(payload.request)
 			if not state then error(err) end
 			return HttpService:JSONEncode(state)
@@ -604,6 +638,125 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 			})
 			return nil, nil, errText
 		end
+	end
+
+	return state, memoryNote, nil
+end
+
+function LLMAdapter.challengeUp(
+	request: Request,
+	baselineState: SectorState,
+	baselineResult,
+	designIntent: DesignIntent?,
+	challengeContext: ChallengeUpContext
+): (SectorState?, MemoryEntry?, string?)
+	local provider, providerName, traceProvider, traceModel = activeProvider()
+	local systemPrompt = PromptBuilder.systemPrompt()
+	local sharedIntent = designIntent or request.design_intent
+	local messages = PromptBuilder.challengeUpMessages(request, challengeContext, sharedIntent)
+	local userPrompt = messages[2] and messages[2].content or ""
+
+	tracePrompt("propose", traceProvider, traceModel, {
+		system_prompt = systemPrompt,
+		user_prompt = userPrompt,
+		request = request,
+		design_intent = sharedIntent,
+		memory_context = request.memory_context,
+		challenge_up = challengeContext,
+		messages = messages,
+	})
+
+	local ok, rawOrErr = pcall(function()
+		return provider.propose({
+			system_prompt = systemPrompt,
+			user_prompt = userPrompt,
+			request = request,
+			design_intent = sharedIntent,
+			memory_context = request.memory_context,
+			challenge_up = challengeContext,
+			messages = messages,
+		})
+	end)
+	if not ok then
+		local errText = "challenge-up backend failure: " .. tostring(rawOrErr)
+		traceError("propose", traceProvider, traceModel, "backend", errText)
+		return nil, nil, errText
+	end
+	traceRawResponse("propose", traceProvider, traceModel, rawOrErr)
+
+	local decodeOk, decodedOrErr = pcall(function()
+		return decodeResponse(rawOrErr, "challenge-up proposal")
+	end)
+	if not decodeOk then
+		local errText = tostring(decodedOrErr)
+		traceError("propose", traceProvider, traceModel, "decode", errText, {
+			raw_response = rawOrErr,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, errText
+	end
+	traceDecodedResponse("propose", traceProvider, traceModel, rawOrErr, decodedOrErr)
+
+	_lastExchange = {
+		kind = "propose",
+		provider = providerName,
+		model = traceModel,
+		raw_response = rawOrErr,
+		decoded_response = decodedOrErr,
+	}
+
+	local templateState = cloneSectorState(baselineState)
+	local decoded = decodedOrErr
+	local candidate = if type(decoded) == "table" and type(decoded.state) == "table" then decoded.state else decoded
+	local memoryNote, memoryErr = validateMemoryNote(
+		if type(decoded) == "table" then decoded.memory_note else nil,
+		"proposal",
+		"proposal",
+		string.format("challenge:%s", request.request_id)
+	)
+	if memoryErr ~= nil then
+		traceError("propose", traceProvider, traceModel, "validation", memoryErr, {
+			decoded_response = decodedOrErr,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, memoryErr
+	end
+	if type(candidate) ~= "table" then
+		local errText = "invalid challenge-up proposal: sector state must be a table"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, errText
+	end
+	if candidate.sector_id ~= nil and candidate.sector_id ~= baselineState.sector_id then
+		local errText = "invalid challenge-up proposal: sector_id mismatch"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, errText
+	end
+	if candidate.mechanic ~= nil and candidate.mechanic ~= baselineState.mechanic then
+		local errText = "invalid challenge-up proposal: mechanic mismatch"
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, errText
+	end
+
+	local state = mergeRepairState(templateState, candidate)
+	state = normalizeChallengeUpProposalForRequest(request, state)
+	local valid, err = ActionValidator.validateSectorState(state)
+	if not valid then
+		local errText = "invalid challenge-up proposal: " .. tostring(err)
+		traceError("propose", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+			normalized_state = state,
+			challenge_up = challengeContext,
+		})
+		return nil, nil, errText
 	end
 
 	return state, memoryNote, nil

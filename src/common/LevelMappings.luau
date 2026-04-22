@@ -33,40 +33,40 @@ LevelMappings.NUMERIC_LEVERS = {
 -- Min/max bounds per lever. Applied as a hard clamp after LLM output.
 LevelMappings.LEVER_BOUNDS = {
 	RampJump = {
-		ramp_angle     = { min = 3,  max = 14  },
-		ramp_length    = { min = 18, max = 32  },
-		gap_length     = { min = 2,  max = 6   },
-		landing_length = { min = 24, max = 48  },
+		ramp_angle     = { min = 3,  max = 16  },
+		ramp_length    = { min = 20, max = 38  },
+		gap_length     = { min = 2,  max = 8   },
+		landing_length = { min = 20, max = 52  },
 	},
 	Chicane = {
-		amplitude        = { min = 2,  max = 24  },
-		transition_length = { min = 6,  max = 40  },
-		corridor_width   = { min = 8,  max = 22  },
+		amplitude        = { min = 4,  max = 10  },
+		transition_length = { min = 5,  max = 32  },
+		corridor_width   = { min = 6,  max = 18  },
 	},
 	CrestDip = {
-		height_or_depth = { min = 4,  max = 30  },
+		height_or_depth = { min = 5,  max = 32  },
 		radius          = { min = 8,  max = 40  },
-		sector_length   = { min = 20, max = 40  },
+		sector_length   = { min = 18, max = 36  },
 	},
 }
 
 -- Default parameter values per mechanic (initial proposal baseline before qualifier biasing)
 LevelMappings.DEFAULTS = {
 	RampJump = {
-		ramp_angle      = 4,
-		ramp_length     = 24,
-		gap_length      = 2,
-		landing_length  = 34,
+		ramp_angle      = 6,
+		ramp_length     = 28,
+		gap_length      = 4,
+		landing_length  = 30,
 	},
 	Chicane = {
-		amplitude          = 5,
-		transition_length  = 15,
-		corridor_width     = 14,
+		amplitude          = 7,
+		transition_length  = 11,
+		corridor_width     = 12,
 	},
 	CrestDip = {
-		height_or_depth = 5,
-		radius          = 20,
-		sector_length   = 34,
+		height_or_depth = 8,
+		radius          = 18,
+		sector_length   = 28,
 	},
 }
 

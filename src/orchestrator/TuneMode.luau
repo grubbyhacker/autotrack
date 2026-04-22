@@ -8,8 +8,10 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local JobLock = require(script.Parent.JobLock)
+local MinimalProposer = require(script.Parent.MinimalProposer)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
+local TuneExperiment = require(script.Parent.TuneExperiment)
 local TuneLab = require(script.Parent.TuneLab)
 local UIState = require(script.Parent.UIState)
 
@@ -29,6 +31,7 @@ local _token = 0
 local _sectorId = DEFAULT_SECTOR_ID
 local _mechanic = nil
 local _workingState = nil
+local _baselineState = nil
 local _passCount = 0
 local _lastResultText = ""
 local _lastFailureText = ""
@@ -43,6 +46,7 @@ local _candidateVersion = 0
 local _runSerial = 0
 local _lastBatch = nil
 local _bestBatch = nil
+local _lastCompare = nil
 
 local function cloneTable(source)
 	local copy = {}
@@ -79,7 +83,13 @@ local function currentCommittedState()
 	return committed
 end
 
-local function defaultState(mechanic: string)
+local function productionBaselineState(mechanic: string)
+	local baseline, err = MinimalProposer.productionBaseline(_sectorId, mechanic, {})
+	if baseline ~= nil then
+		return baseline
+	end
+
+	UIState.appendLog("Tune baseline fallback: " .. tostring(err))
 	return {
 		sector_id = _sectorId,
 		mechanic = mechanic,
@@ -177,6 +187,25 @@ local function bestBatchJson(): string
 	return HttpService:JSONEncode(_bestBatch)
 end
 
+local function baselineSnapshotJson(): string
+	if _baselineState == nil then
+		return ""
+	end
+	return HttpService:JSONEncode({
+		mechanic = _baselineState.mechanic,
+		params = cloneTable(_baselineState.params),
+		pads = cloneTable(_baselineState.pads),
+		version = _baselineState.version,
+	})
+end
+
+local function lastCompareJson(): string
+	if _lastCompare == nil then
+		return ""
+	end
+	return HttpService:JSONEncode(_lastCompare)
+end
+
 local function promotionSnapshot(): string
 	return _promotionSnapshot
 end
@@ -224,6 +253,8 @@ local function syncTelemetry()
 		history_2 = history[2],
 		history_3 = history[3],
 		history_4 = history[4],
+		baseline_snapshot = baselineSnapshotJson(),
+		last_compare_json = lastCompareJson(),
 		promotion_snapshot = promotionSnapshot(),
 	})
 end
@@ -266,6 +297,7 @@ local function clearRunHistory()
 	_promotionSnapshot = ""
 	_lastBatch = nil
 	_bestBatch = nil
+	_lastCompare = nil
 end
 
 local function finaliseStop()
@@ -275,6 +307,7 @@ local function finaliseStop()
 	_active = false
 	_mechanic = nil
 	_workingState = nil
+	_baselineState = nil
 	_passCount = 0
 	_lastResultText = ""
 	_lastFailureText = ""
@@ -301,7 +334,7 @@ local function setActiveSessionState(state, phaseLabel: string)
 	UIState.setBusy(false)
 	UIState.setPhase("TuneMode", phaseLabel)
 	UIState.setRequestContext(string.format("/tune %s", string.lower(_mechanic)), _sectorId, _mechanic)
-	UIState.setExplanation("Use /tune show | run | auto | set | pad | attr | reset | revert | commit | stop")
+	UIState.setExplanation("Use /tune show | run | compare | auto | set | pad | attr | reset | revert | commit | promote | stop")
 	UIState.clearRepairAction()
 	applyCameraOverride()
 	applyState(_workingState)
@@ -321,6 +354,9 @@ local function appendStatus(prefix: string)
 	end
 	if attrSummary() ~= "" then
 		UIState.appendLog("Tune attrs: " .. attrSummary())
+	end
+	if _baselineState ~= nil then
+		UIState.appendLog("Tune baseline: " .. paramSummary(_baselineState))
 	end
 	if _lastBatch ~= nil then
 		local aggregate = _lastBatch.aggregate or {}
@@ -357,6 +393,16 @@ local function appendStatus(prefix: string)
 			(_bestBatch.aggregate and _bestBatch.aggregate.score) or 0
 		))
 	end
+	if _lastCompare ~= nil and _lastCompare.summary ~= nil then
+		local summary = _lastCompare.summary
+		UIState.appendLog(string.format(
+			"Tune compare: heuristic=%s prod=%s dh=%.1f dp=%.1f",
+			tostring(summary.heuristic_winner or ""),
+			tostring(summary.challenge_winner or ""),
+			summary.heuristic_delta or 0,
+			summary.challenge_delta or 0
+		))
+	end
 end
 
 local function compactPassRecord(record)
@@ -367,6 +413,7 @@ local function compactPassRecord(record)
 		mechanic = record.mechanic,
 		success = record.success,
 		score = record.score,
+		challenge_score = cloneTable(record.challenge_score),
 		failure_type = record.failure_type,
 		failure_detail = record.failure_detail,
 		params = cloneTable(record.params),
@@ -404,6 +451,7 @@ local function buildPassRecord(passIndex: number, runId: number, candidateVersio
 			lateral_error = metrics.lateral_error or 0,
 		},
 	}
+	record.challenge_score = TuneLab.productionChallengeScore(stateSnapshot, result)
 	record.score = TuneLab.scorePass({
 		success = record.success,
 		failure = result.failure,
@@ -483,6 +531,8 @@ local function markCandidateChanged()
 	_candidateVersion += 1
 	_lastResultText = stageLabel()
 	_lastFailureText = ""
+	_lastCompare = nil
+	_promotionSnapshot = ""
 end
 
 local function ensureMutableState()
@@ -715,8 +765,9 @@ function TuneMode.start(mechanic: string, sectorId: number?): (boolean, string?)
 	end
 
 	_sectorId = sectorId or DEFAULT_SECTOR_ID
+	_baselineState = cloneState(productionBaselineState(mechanic))
 	local committed = currentCommittedState()
-	local nextState = if committed.mechanic == mechanic then cloneState(committed) else defaultState(mechanic)
+	local nextState = if committed.mechanic == mechanic then cloneState(committed) else cloneState(_baselineState)
 
 	_active = true
 	_token += 1
@@ -731,7 +782,7 @@ function TuneMode.start(mechanic: string, sectorId: number?): (boolean, string?)
 	clearRunHistory()
 	setActiveSessionState(nextState, string.format("Tune Mode — Sector %d · %s", _sectorId, mechanic))
 	UIState.appendLog(string.format("Tune mode on: sector %d %s", _sectorId, mechanic))
-	UIState.appendLog("Tune staged: use /tune run <n> for controlled attempts or /tune auto on for continuous looping")
+	UIState.appendLog("Tune staged: use /tune run <n> or /tune compare <n> for controlled evaluation, or /tune auto on for continuous looping")
 	appendStatus("Tune state")
 	Tracer.log(string.format("tune_start sector=%d mechanic=%s", _sectorId, mechanic))
 
@@ -762,11 +813,17 @@ function TuneMode.show(): (boolean, string?)
 		return false, "tune mode not running"
 	end
 	appendStatus("Tune state")
+	if baselineSnapshotJson() ~= "" then
+		UIState.appendLog("Tune baseline json: " .. baselineSnapshotJson())
+	end
+	if lastCompareJson() ~= "" then
+		UIState.appendLog("Tune compare json: " .. lastCompareJson())
+	end
 	if promotionSnapshot() ~= "" then
 		UIState.appendLog("Tune promote: " .. promotionSnapshot())
 	end
 	Tracer.log(string.format(
-		"tune_show sector=%d mechanic=%s auto=%s run=%s candidate=%d bounds=%s attrs=%s last=%s best=%s batch=%s best_batch=%s",
+		"tune_show sector=%d mechanic=%s auto=%s run=%s candidate=%d bounds=%s attrs=%s baseline=%s compare=%s last=%s best=%s batch=%s best_batch=%s",
 		_sectorId,
 		tostring(_mechanic),
 		tostring(_autoRun),
@@ -774,6 +831,8 @@ function TuneMode.show(): (boolean, string?)
 		_candidateVersion,
 		boundsSummary(),
 		attrSummary(),
+		baselineSnapshotJson(),
+		lastCompareJson(),
 		lastPassJson(),
 		bestPassJson(),
 		lastBatchJson(),
@@ -804,6 +863,164 @@ function TuneMode.runAttempts(attemptCount: number): (boolean, string?)
 	else
 		UIState.appendLog(string.format("Tune run: x%d on candidate v%d", applied, _candidateVersion))
 	end
+	syncTelemetry()
+	return true, nil
+end
+
+function TuneMode.compareBaseline(attemptCount: number): (boolean, string?)
+	if not _active then
+		return false, "tune mode not running"
+	end
+	if _autoRun then
+		return false, "disable /tune auto before /tune compare"
+	end
+	local okMutable, reason = ensureMutableState()
+	if not okMutable then
+		return false, reason
+	end
+	if _mechanic == nil or _workingState == nil then
+		return false, "tune mode not running"
+	end
+
+	local requested = math.floor(attemptCount)
+	if requested < 1 then
+		return false, "compare count must be at least 1"
+	end
+	local applied = math.clamp(requested, 1, MAX_RUN_ATTEMPTS)
+	local token = _token
+	local baselineState = cloneState(_baselineState or productionBaselineState(_mechanic))
+	local candidateState = cloneState(_workingState)
+	local candidateVersion = _candidateVersion
+	local attrSnapshot = cloneTable(_attrOverrides)
+
+	_runInFlight = true
+	_lastResultText = string.format("compare queued x%d", applied)
+	_lastFailureText = ""
+	syncTelemetry()
+	UIState.appendLog(string.format("Tune compare: baseline vs candidate v%d x%d", candidateVersion, applied))
+
+	task.spawn(function()
+		local acquired = false
+		while token == _token and _active do
+			if JobLock.tryAcquire() then
+				acquired = true
+				break
+			end
+			task.wait(IDLE_WAIT_SECONDS)
+		end
+
+		local comparison = nil
+		local compareError = nil
+		if acquired then
+			local ok, result = pcall(function()
+				return TuneExperiment.compareCandidates({
+					{
+						label = "production_baseline",
+						passes = applied,
+						state = baselineState,
+						attr_overrides = {},
+						clear_all_attrs = true,
+					},
+					{
+						label = string.format("candidate_v%d", candidateVersion),
+						passes = applied,
+						state = candidateState,
+						attr_overrides = attrSnapshot,
+					},
+				})
+			end)
+			JobLock.release()
+			if ok then
+				comparison = result
+			else
+				compareError = tostring(result)
+			end
+		elseif token == _token and _active then
+			compareError = "compare could not acquire job lock"
+		end
+
+		_runInFlight = false
+
+		if compareError ~= nil then
+			_lastResultText = "compare error"
+			_lastFailureText = compareError
+			UIState.setError("tune compare error: " .. compareError)
+			UIState.appendLog("Tune compare error: " .. compareError)
+		elseif comparison ~= nil then
+			_lastCompare = {
+				requested_passes = applied,
+				candidate_version = candidateVersion,
+				heuristic_best = comparison.best and comparison.best.label or "",
+				production_best = comparison.best_production and comparison.best_production.label or "",
+				baseline = comparison.results[1],
+				candidate = comparison.results[2],
+				summary = comparison.comparison,
+			}
+			local summary = _lastCompare.summary or {}
+			_lastResultText = string.format(
+				"compare x%d heuristic=%s prod=%s",
+				applied,
+				tostring(summary.heuristic_winner or ""),
+				tostring(summary.challenge_winner or "")
+			)
+			_lastFailureText = ""
+			UIState.appendLog(string.format(
+				"Tune compare done: dh=%.1f dp=%.1f winner=%s/%s",
+				summary.heuristic_delta or 0,
+				summary.challenge_delta or 0,
+				tostring(summary.heuristic_winner or ""),
+				tostring(summary.challenge_winner or "")
+			))
+			Tracer.log(string.format("tune_compare sector=%d %s", _sectorId, lastCompareJson()))
+		end
+
+		applyState(_workingState)
+
+		if _pendingStopFinalize then
+			finaliseStop()
+			return
+		end
+		if token ~= _token or not _active then
+			return
+		end
+
+		UIState.setPhase("TuneMode", phaseLabelForMechanic())
+		syncTelemetry()
+	end)
+
+	return true, nil
+end
+
+function TuneMode.promote(): (boolean, string?)
+	local okMutable, reason = ensureMutableState()
+	if not okMutable then
+		return false, reason
+	end
+	if _mechanic == nil or _workingState == nil then
+		return false, "tune mode not running"
+	end
+
+	_promotionSnapshot = HttpService:JSONEncode({
+		sector_id = _sectorId,
+		mechanic = _mechanic,
+		candidate_version = _candidateVersion,
+		state = {
+			params = cloneTable(_workingState.params),
+			pads = cloneTable(_workingState.pads),
+		},
+		attrs = cloneTable(_attrOverrides),
+		baseline = if _baselineState ~= nil then {
+			params = cloneTable(_baselineState.params),
+			pads = cloneTable(_baselineState.pads),
+		} else nil,
+		last_batch = cloneTable(_lastBatch),
+		best_batch = cloneTable(_bestBatch),
+		compare = cloneTable(_lastCompare),
+	})
+	_lastResultText = string.format("promote snapshot v%d", _candidateVersion)
+	_lastFailureText = ""
+	UIState.appendLog("Tune promote: snapshot ready")
+	Tracer.log(string.format("tune_promote sector=%d candidate=%d", _sectorId, _candidateVersion))
 	syncTelemetry()
 	return true, nil
 end
@@ -924,7 +1141,8 @@ function TuneMode.reset(): (boolean, string?)
 		return false, "tune mode not running"
 	end
 	pauseAutoForStagedEdit()
-	_workingState = defaultState(_mechanic)
+	_baselineState = cloneState(productionBaselineState(_mechanic))
+	_workingState = cloneState(_baselineState)
 	clearTuneAttrs()
 	applyState(_workingState)
 	markCandidateChanged()

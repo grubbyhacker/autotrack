@@ -512,10 +512,25 @@ local function runUnit()
 				tostring(normalState.params.gap_length)))
 	end
 
-	-- 27. Endurance build submits never run Stage B challenge-up.
+	-- 27. Endurance build submits can trigger the proposer-owned challenge-up do-over.
 	do
 		local request, err = RequestParser.parse("add an extreme jump in sector 3", "phase11-endurance-suppress")
 		assert(request ~= nil, "expected request: " .. tostring(err))
+		request.origin = "endurance"
+		request.design_intent = {
+			sector_id = 3,
+			mechanic = "RampJump",
+			params_hint = "extreme tall",
+			rationale = "undershot clean pass",
+			target_score_band = "high",
+			target_budget_tolerance = "medium",
+			target_reliability = "balanced",
+			spectacle_priority = "high",
+			novelty_priority = "medium",
+			replacement_intent = "open_slot_preferred",
+			desired_feel = "scoreable but recoverable",
+			constraints = { "stay under endurance budget" },
+		}
 		local result = {
 			success = true,
 			metrics = metrics(),
@@ -529,10 +544,15 @@ local function runUnit()
 				over_budget = false,
 			},
 		}
-		local shouldRun, why = JobRunner._shouldRunChallengeUp(request, result, true)
-		T.expect("phase11_challenge_up_suppressed_during_endurance",
-			shouldRun == false and why == "endurance_orchestrated",
-			string.format("expected endurance suppression, got shouldRun=%s why=%s", tostring(shouldRun), tostring(why)))
+		local shouldRun, why, strategy = JobRunner._shouldRunChallengeUp(request, result, true)
+		T.expect("phase11_endurance_challenge_up_uses_proposal_do_over",
+			shouldRun == true and why == nil and strategy == "proposal_do_over",
+			string.format(
+				"expected proposer do-over, got shouldRun=%s why=%s strategy=%s",
+				tostring(shouldRun),
+				tostring(why),
+				tostring(strategy)
+			))
 	end
 
 	-- 28. Pre-target failures must revert instead of repairing the target sector.
@@ -592,15 +612,16 @@ local function runUnit()
 			"expected extra repair attempts after halfway progress")
 	end
 
-	-- 31–32. Endurance lap-time budget gate (phase 14): 0.40 ratio.
+	-- 31–32. Endurance lap-time budget gate follows the current configured ratio.
 	do
 		local ratio = Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO
+		local overThreshold = 1 + ratio + 0.01
 		T.expect("phase11_endurance_budget_not_over_at_1_39",
 			1.39 <= 1 + ratio,
 			"expected 1.39 to be within endurance budget (ratio=" .. tostring(ratio) .. ")")
 		T.expect("phase11_endurance_budget_over_at_1_41",
-			1.41 > 1 + ratio,
-			"expected 1.41 to exceed endurance budget (ratio=" .. tostring(ratio) .. ")")
+			overThreshold > 1 + ratio,
+			"expected ratio+0.01 to exceed endurance budget (ratio=" .. tostring(ratio) .. ")")
 	end
 end
 

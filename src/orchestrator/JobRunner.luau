@@ -36,6 +36,7 @@ local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 type CIJob = Types.CIJob
 type Request = Types.Request
 type DesignIntent = Types.DesignIntent
+type ChallengeUpContext = Types.ChallengeUpContext
 type MemoryEntry = Types.MemoryEntry
 type RunMemory = Types.RunMemory
 
@@ -44,6 +45,8 @@ local _lastJob: CIJob? = nil
 local _idCounter = 0
 local _pendingRequest: string? = nil
 local _allowEnduranceInternalSubmit = false
+local pauseForUI
+local pauseOnFailure
 
 local function nextId(prefix: string): string
 	_idCounter += 1
@@ -325,23 +328,83 @@ local function hintsSummary(hints): string
 	return table.concat(hints, "|")
 end
 
-local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?): (boolean, string?)
+local ENDURANCE_CHALLENGE_UP_SCORE_FLOORS = {
+	low = 4.0,
+	medium = 6.0,
+	high = 8.5,
+	extreme = 10.5,
+}
+
+local function challengeUpScoreFloor(intent: DesignIntent?): number
+	if intent == nil then
+		return ENDURANCE_CHALLENGE_UP_SCORE_FLOORS.medium
+	end
+	return ENDURANCE_CHALLENGE_UP_SCORE_FLOORS[intent.target_score_band] or ENDURANCE_CHALLENGE_UP_SCORE_FLOORS.medium
+end
+
+local function budgetHeadroom(result): number
 	if result == nil or result.score == nil then
-		return false, "no_score"
+		return 0
+	end
+	return math.max(0, 1 - (result.score.budget_used or 0))
+end
+
+local function buildChallengeUpReason(intent: DesignIntent, result, scoreFloor: number): string
+	return string.format(
+		"clean pass scored %.1f with %.0f%% budget headroom, below the %s target floor of %.1f",
+		result.score.total or 0,
+		budgetHeadroom(result) * 100,
+		tostring(intent.target_score_band),
+		scoreFloor
+	)
+end
+
+local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?): (boolean, string?, string?)
+	if result == nil or result.score == nil then
+		return false, "no_score", nil
 	end
 	local enduranceBuildActive = if enduranceBuildActiveOverride ~= nil
 		then enduranceBuildActiveOverride
 		else OrchestratorAgent.isActive()
-	if enduranceBuildActive then
-		return false, "endurance_orchestrated"
+	local designIntent = request.design_intent
+	if request.origin == "endurance" or enduranceBuildActive then
+		if designIntent == nil then
+			return false, "no_design_intent", nil
+		end
+		if result.score.over_budget then
+			return false, "over_budget", nil
+		end
+		if designIntent.target_reliability == "conservative" then
+			return false, "conservative_target", nil
+		end
+		local headroom = budgetHeadroom(result)
+		if headroom < Constants.ENDURANCE_CHALLENGE_UP_MIN_HEADROOM then
+			return false, "low_budget_headroom", nil
+		end
+		local scoreFloor = challengeUpScoreFloor(designIntent)
+		local undershotIntent = (result.score.total or 0) < scoreFloor
+		local strongPushIntent = designIntent.target_reliability == "risky"
+			or designIntent.target_score_band == "high"
+			or designIntent.target_score_band == "extreme"
+			or designIntent.spectacle_priority == "high"
+		if designIntent.target_reliability == "risky" then
+			return true, nil, "proposal_do_over"
+		end
+		if undershotIntent then
+			return true, nil, "proposal_do_over"
+		end
+		if strongPushIntent and headroom >= Constants.ENDURANCE_CHALLENGE_UP_HIGH_HEADROOM then
+			return true, nil, "proposal_do_over"
+		end
+		return false, "already_aggressive_enough", nil
 	end
 
 	for _, q in ipairs(request.qualifiers) do
 		if q == "extreme" then
-			return true, nil
+			return true, nil, "deterministic_escalation"
 		end
 	end
-	return false, "not_extreme"
+	return false, "not_extreme", nil
 end
 
 local function shouldRevertPreTargetFailure(result, targetSectorId: number): boolean
@@ -432,6 +495,23 @@ local function metricsSummary(metrics): string
 	)
 end
 
+local function publishScoreSummary(targetSectorId: number, score)
+	if score == nil then
+		return
+	end
+	UIState.publishScore(targetSectorId, score)
+	UIState.appendLog(string.format(
+		"Score %.1f (air %.1f lat %.1f near %.1f cost %.1f budget %.0f%%%s)",
+		score.total,
+		score.air,
+		score.lateral,
+		score.near_miss,
+		score.time_cost,
+		score.budget_used * 100,
+		if score.over_budget then " OVER" else ""
+	))
+end
+
 local function downstreamDiagnostics(targetSectorId: number, failureSector: number?)
 	if failureSector == nil or failureSector == targetSectorId then
 		return nil
@@ -445,6 +525,178 @@ local function downstreamDiagnostics(targetSectorId: number, failureSector: numb
 	}
 end
 
+local function runProposalChallengeUp(args): (any?, any?, string?)
+	local request = args.request
+	local job = args.job
+	local targetSectorId = args.targetSectorId
+	local targetSector = args.targetSector
+	local baselineResult = args.baselineResult
+	local designIntent = request.design_intent
+	if designIntent == nil or baselineResult == nil or baselineResult.score == nil then
+		return nil, nil, "missing challenge-up context"
+	end
+
+	local challengeContext: ChallengeUpContext = {
+		baseline_state = cloneState(job.working_state),
+		baseline_result = baselineResult,
+		budget_headroom = budgetHeadroom(baselineResult),
+		target_score_floor = challengeUpScoreFloor(designIntent),
+		reason = buildChallengeUpReason(designIntent, baselineResult, challengeUpScoreFloor(designIntent)),
+		max_additional_repairs = Constants.ENDURANCE_CHALLENGE_UP_MAX_REPAIRS,
+	}
+
+	local challengeState, proposalNote, challengeErr = LLMAdapter.challengeUp(
+		request,
+		job.working_state,
+		baselineResult,
+		designIntent,
+		challengeContext
+	)
+	if not challengeState then
+		return nil, nil, tostring(challengeErr)
+	end
+
+	job.challenge_up_proposal_note = proposalNote
+	job.challenge_up_attempts = {}
+	appendRequestMemory(request, "proposal", proposalNote)
+	UIState.appendLog("Challenge-up do-over: " .. challengeContext.reason)
+	UIState.appendLog("Challenge proposal: " .. compactStateDetails(challengeState))
+	if proposalNote ~= nil then
+		UIState.appendLog("Challenge note: " .. proposalNote.note)
+	end
+	pauseForUI()
+
+	local workingState = cloneState(challengeState)
+	local lastAction = nil
+	local nextAction = nil
+	local attemptIndex = 0
+
+	while true do
+		local proposedState = cloneState(workingState)
+		local result, hints, updatedState = AttemptRunner.run({
+			workingState = workingState,
+			action = nextAction,
+			targetSectorId = targetSectorId,
+			entryFrame = targetSector.entry,
+			exitFrame = targetSector.exit,
+			sectors = RuntimeContext.getSectors(),
+			car = RuntimeContext.getCar(),
+			canonicalStart = RuntimeContext.getCanonicalStart(),
+			onSectorChange = function(id: number, entering: boolean)
+				if entering then
+					UIState.setCurrentSector(id)
+				end
+			end,
+		})
+		workingState = cloneState(updatedState)
+		table.insert(job.challenge_up_attempts, {
+			attempt_index = attemptIndex,
+			action = nextAction,
+			proposed_state = proposedState,
+			result = result,
+			hints = hints,
+			memory_note = nil,
+		})
+		UIState.publishAttemptResult(result)
+		Tracer.log(string.format(
+			"challenge_up_attempt index=%d target_sector=%d success=%s failure_type=%s failure_sector=%s failure_detail=%s target_progress=%.2f score=%s",
+			attemptIndex,
+			targetSectorId,
+			boolString(result.success),
+			tostring(result.failure and result.failure.type or "none"),
+			tostring(result.failure and result.failure.sector_id or "-"),
+			failureDetail(result),
+			result.metrics.target_progress or 0,
+			tostring(result.score and result.score.total or "-")
+		))
+
+		if result.success then
+			if result.score == nil then
+				return nil, nil, "challenge-up returned success without score"
+			end
+			if result.score.over_budget then
+				return nil, nil, "challenge-up over budget"
+			end
+			if result.score.total < (baselineResult.score.total or 0) + Constants.MIN_ESCALATION_DELTA then
+				return nil, nil, "challenge-up produced insufficient improvement"
+			end
+			return workingState, result, nil
+		end
+
+		UIState.showFailure(result)
+		pauseOnFailure(result)
+		UIState.appendLog(string.format(
+			"Challenge-up failed: %s in sector %d",
+			tostring(result.failure and result.failure.type or "unknown"),
+			result.failure and result.failure.sector_id or targetSectorId
+		))
+		if #hints > 0 then
+			UIState.appendLog("Challenge hints: " .. table.concat(hints, " | "))
+		end
+
+		if shouldRevertPreTargetFailure(result, targetSectorId) then
+			return nil, nil, "challenge-up failed before exiting target sector"
+		end
+		if attemptIndex >= Constants.ENDURANCE_CHALLENGE_UP_MAX_REPAIRS then
+			return nil, nil, "challenge-up repair limit reached"
+		end
+
+		local failureSector = if result.failure then result.failure.sector_id else targetSectorId
+		local packet = LapEvaluator.buildFailurePacket(
+			request,
+			workingState,
+			attemptIndex,
+			lastAction,
+			result,
+			failureSector,
+			hints,
+			downstreamDiagnostics(targetSectorId, failureSector)
+		)
+		local action, newState, explanation, repairMemoryNote, repairErr =
+			LLMAdapter.repair(packet, job.challenge_up_attempts, packet.design_intent)
+		if repairErr then
+			return nil, nil, tostring(repairErr)
+		end
+
+		appendRequestMemory(request, "repair", repairMemoryNote)
+		if #job.challenge_up_attempts > 0 then
+			job.challenge_up_attempts[#job.challenge_up_attempts].memory_note = repairMemoryNote
+		end
+
+		attemptIndex += 1
+		if newState then
+			workingState = cloneState(newState)
+			lastAction = nil
+			nextAction = nil
+			UIState.setRepairAction("CHALLENGE-UP: full state revision")
+			UIState.setExplanation(explanation or "")
+			UIState.appendLog(string.format(
+				"Challenge repair %d (LLM): %s",
+				attemptIndex,
+				explanation or "revised state"
+			))
+			UIState.appendLog("Challenge revised: " .. compactStateDetails(workingState))
+		elseif action then
+			lastAction = action
+			nextAction = action
+			UIState.setRepairAction(repairActionLabel(action))
+			UIState.setExplanation(explanation or "")
+			UIState.appendLog(string.format(
+				"Challenge repair %d: %s",
+				attemptIndex,
+				explanation or "repair"
+			))
+			UIState.appendLog("Challenge action: " .. repairActionLabel(action))
+		else
+			return nil, nil, "challenge-up repair returned no action"
+		end
+		if repairMemoryNote ~= nil then
+			UIState.appendLog("Challenge repair note: " .. repairMemoryNote.note)
+		end
+		pauseForUI()
+	end
+end
+
 local function finishRevert(job, targetSector, reason)
 	SectorRollback.revert(job.request.parsed.sector_id, targetSector.entry, targetSector.exit)
 	job.final_status = "reverted"
@@ -455,7 +707,7 @@ local function finishRevert(job, targetSector, reason)
 	_lastJob = job
 end
 
-local function pauseForUI()
+pauseForUI = function()
 	task.wait(Constants.UI_PHASE_DELAY)
 end
 
@@ -471,7 +723,7 @@ local function failureBannerText(result): string
 	return "SYSTEM FAIL"
 end
 
-local function pauseOnFailure(result)
+pauseOnFailure = function(result)
 	UIState.showFailureBanner(failureBannerText(result))
 	local ok = pcall(function()
 		VerifierCar.freeze()
@@ -653,6 +905,9 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			working_state = cloneState(initialState),
 			attempts = {},
 			proposal_memory_note = proposalMemoryNote,
+			challenge_up_proposal_note = nil,
+			challenge_up_attempts = nil,
+			final_result = nil,
 			final_status = "reverted",
 		}
 
@@ -724,80 +979,106 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				SectorRegistry.commit(job.working_state)
 				UIState.setSectorMechanic(targetSectorId, job.working_state.mechanic)
 				job.final_status = "committed"
+				job.final_result = result
 				UIState.setPhase("Commit", "Committed")
 				UIState.appendLog(string.format("Committed %s v%d", stateSummary(job.working_state), job.working_state.version))
-				if result.score then
-					UIState.publishScore(targetSectorId, result.score)
-					UIState.appendLog(string.format(
-						"Score %.1f (air %.1f lat %.1f near %.1f cost %.1f budget %.0f%%%s)",
-						result.score.total,
-						result.score.air,
-						result.score.lateral,
-						result.score.near_miss,
-						result.score.time_cost,
-						result.score.budget_used * 100,
-						if result.score.over_budget then " OVER" else ""
-					))
-				end
+				publishScoreSummary(targetSectorId, result.score)
 				pauseForUI()
 
-				-- Phase 11b Stage B: opt-in challenge-up via the "extreme"
-				-- qualifier. We already committed the minimum-valid state, so
-				-- a failure here just stops escalation — the commit stands.
-				local wantsChallengeUp, challengeSkipReason = shouldRunChallengeUp(request, result)
+				-- Baseline commit stands first. Any challenge-up branch only supersedes it
+				-- if the follow-up proposal validates cleanly and beats the baseline score.
+				local wantsChallengeUp, challengeSkipReason, challengeStrategy = shouldRunChallengeUp(request, result)
 				if wantsChallengeUp then
 					UIState.setPhase("ChallengeUp", "Challenging up...")
-					UIState.appendLog("Escalating for extreme qualifier")
-					local bestState, bestResult, rounds = ChallengeRunner.runUp({
-						baseState = job.working_state,
-						baseResult = result,
-						targetSectorId = targetSectorId,
-						targetSector = targetSector,
-						sectors = RuntimeContext.getSectors(),
-						car = RuntimeContext.getCar(),
-						canonicalStart = RuntimeContext.getCanonicalStart(),
-						onSectorChange = function(id, entering)
-							if entering then UIState.setCurrentSector(id) end
-						end,
-						onRound = function(round, attempt, improved, reason)
-							if attempt then
-								UIState.appendLog(string.format(
-									"Escalate r%d %s %s→%s %s%s",
-									round,
-									attempt.lever,
-									tostring(attempt.from),
-									tostring(attempt.to),
-									if improved then "ACCEPT" else "REJECT",
-									reason and (" (" .. reason .. ")") or ""
-								))
-							elseif reason then
-								UIState.appendLog("Escalate stopped: " .. reason)
-							end
-						end,
-					})
-					if bestResult and bestResult.score and bestResult ~= result then
-						bestState.version = job.working_state.version + 1
-						SectorRegistry.commit(bestState)
-						UIState.setSectorMechanic(targetSectorId, bestState.mechanic)
-						job.working_state = cloneState(bestState)
-						UIState.publishScore(targetSectorId, bestResult.score)
-						UIState.appendLog(string.format(
-							"Escalated in %d rounds → score %.1f (was %.1f)",
-							rounds, bestResult.score.total, result.score.total
-						))
-						Tracer.log(string.format(
-							"challenge_up sector=%d rounds=%d score=%.2f->%.2f",
-							targetSectorId, rounds, result.score.total, bestResult.score.total
-						))
+					if challengeStrategy == "proposal_do_over" then
+						local bestState, bestResult, challengeErr = runProposalChallengeUp({
+							request = request,
+							job = job,
+							targetSectorId = targetSectorId,
+							targetSector = targetSector,
+							baselineResult = result,
+						})
+						if bestState ~= nil and bestResult ~= nil and bestResult.score ~= nil then
+							bestState.version = job.working_state.version + 1
+							SectorRegistry.commit(bestState)
+							UIState.setSectorMechanic(targetSectorId, bestState.mechanic)
+							job.working_state = cloneState(bestState)
+							job.final_result = bestResult
+							publishScoreSummary(targetSectorId, bestResult.score)
+							UIState.appendLog(string.format(
+								"Challenge-up superseded baseline → score %.1f (was %.1f)",
+								bestResult.score.total,
+								result.score and result.score.total or 0
+							))
+							Tracer.log(string.format(
+								"challenge_up_proposal sector=%d score=%.2f->%.2f",
+								targetSectorId,
+								result.score and result.score.total or 0,
+								bestResult.score.total
+							))
+						else
+							UIState.appendLog("Challenge-up kept baseline: " .. tostring(challengeErr or "no improvement"))
+							Tracer.log(string.format(
+								"challenge_up_proposal_skip sector=%d reason=%s",
+								targetSectorId,
+								tostring(challengeErr or "no improvement")
+							))
+						end
 					else
-						UIState.appendLog(string.format("Escalate produced no net improvement in %d rounds", rounds))
+						UIState.appendLog("Escalating for extreme qualifier")
+						local bestState, bestResult, rounds = ChallengeRunner.runUp({
+							baseState = job.working_state,
+							baseResult = result,
+							targetSectorId = targetSectorId,
+							targetSector = targetSector,
+							sectors = RuntimeContext.getSectors(),
+							car = RuntimeContext.getCar(),
+							canonicalStart = RuntimeContext.getCanonicalStart(),
+							onSectorChange = function(id, entering)
+								if entering then UIState.setCurrentSector(id) end
+							end,
+							onRound = function(round, attempt, improved, reason)
+								if attempt then
+									UIState.appendLog(string.format(
+										"Escalate r%d %s %s→%s %s%s",
+										round,
+										attempt.lever,
+										tostring(attempt.from),
+										tostring(attempt.to),
+										if improved then "ACCEPT" else "REJECT",
+										reason and (" (" .. reason .. ")") or ""
+									))
+								elseif reason then
+									UIState.appendLog("Escalate stopped: " .. reason)
+								end
+							end,
+						})
+						if bestResult and bestResult.score and bestResult ~= result then
+							bestState.version = job.working_state.version + 1
+							SectorRegistry.commit(bestState)
+							UIState.setSectorMechanic(targetSectorId, bestState.mechanic)
+							job.working_state = cloneState(bestState)
+							job.final_result = bestResult
+							publishScoreSummary(targetSectorId, bestResult.score)
+							UIState.appendLog(string.format(
+								"Escalated in %d rounds → score %.1f (was %.1f)",
+								rounds, bestResult.score.total, result.score.total
+							))
+							Tracer.log(string.format(
+								"challenge_up sector=%d rounds=%d score=%.2f->%.2f",
+								targetSectorId, rounds, result.score.total, bestResult.score.total
+							))
+						else
+							UIState.appendLog(string.format("Escalate produced no net improvement in %d rounds", rounds))
+						end
 					end
 					pauseForUI()
 				else
 					Tracer.log(string.format(
-						"challenge_up_skip sector=%d reason=%s qualifiers=%s",
+						"challenge_up_skip sector=%d reason=%s strategy=%s qualifiers=%s",
 						targetSectorId,
 						tostring(challengeSkipReason or "unknown"),
+						tostring(challengeStrategy or "-"),
 						qualifiersSummary(request.qualifiers)
 					))
 				end
