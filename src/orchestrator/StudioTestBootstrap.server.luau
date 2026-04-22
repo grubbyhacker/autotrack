@@ -96,7 +96,7 @@ if args ~= nil then
 
 			if commandType == "endurance_trace" then
 				local traceDurationSeconds = tonumber(args.trace_duration_seconds) or 60
-				local submitOk, submitReason = JobRunner.submit("/demo endurance")
+				local submitOk, submitReason = JobRunner.startEndurance()
 				if submitOk ~= true then
 					return {
 						ok = false,

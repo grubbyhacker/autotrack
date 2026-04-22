@@ -221,11 +221,16 @@ The in-experience HUD command bar supports a small slash-command surface for con
 
 Current supported demo commands:
 
+- `/demo endurance`
 - `/demo camera`
 - `/demo rampitup`
 - `/demo repair`
 - `/demo llmerror`
 - `/demo ui-hotfix`
+
+Legacy aliases `/demo crest`, `/demo maximize`, `/demo extreme`, `/demo hotfix`, and `/llm ...` are intentionally unsupported in the current command router.
+
+Endurance Mode remains a public slash command at `/demo endurance`. Maintained tooling also uses the dedicated server-side endurance entry seam so the bridge path does not depend on text-command parsing.
 
 `/demo camera` toggles the default camera demo on and off. It exists to help evaluate spectator-camera behavior without changing the normal boot workflow. The default camera demo loops playable `RampJump` obstacles in sectors `3` and `7`.
 
@@ -362,7 +367,7 @@ To test code paths that would normally be triggered by LLM output or user input,
 **Read these two files at the start of every session before touching any code:**
 
 1. `plans/agent-handoff.md` — phase completion status and current work-in-progress
-2. `plans/phaseN.md` (or the current plan file) for the phase you are about to implement
+2. `plans/phaseN.md` for the phase you are about to implement, unless the human explicitly names a different plan file for that phase
 
 If either file is missing or stale, update it before proceeding.
 
@@ -456,9 +461,13 @@ Local file edits are not live in a running Play session. Stop Play → edit → 
 
 The HUD/UI runtime build stamp and controller profile exist specifically to catch stale Studio sessions and mismatched client/server code. If live behavior does not match the local diff, confirm those stamps before retuning the mechanic again.
 
-### `/demo maximize` suppresses Stage B challenge-up
+### Phase execution is plan-first
 
-`MaximizerAgent` sets `AutoTrack_MaximizeCampaignActive = true` for the full campaign. `JobRunner` skips the single-sector challenge-up loop during this flag. Do not remove this guard — Stage B inside maximize mixes escalation laps into campaign behavior and makes debugging impossible.
+`plans/phaseN.md` is the canonical plan for phase `N`. Do not create, substitute, or infer an alternative plan file such as `phaseN_cleanup.md` or `phaseN_retune.md` unless the human explicitly instructs that file to be used for the phase.
+
+If multiple candidate plan files appear to apply to the same phase, stop and ask for clarification before writing code.
+
+`plans/agent-handoff.md` is context only. It records status, lessons, and current state, but it does not override the selected phase plan.
 
 ### HttpService Secret API
 
@@ -471,6 +480,14 @@ The HUD/UI runtime build stamp and controller profile exist specifically to catc
 Implementation plans live in `plans/` at the project root (e.g., `plans/phase5.md`). Each plan covers the deliverable, files to change, test cases, and verification steps. Plans are committed alongside code so the project is restartable from any phase.
 
 **Plans must be written and committed to `plans/phaseN.md` before implementation begins.** Do not start writing code until the plan file exists in the repo. This is a hard requirement — a plan that only exists in Claude's plan-mode working memory is not sufficient.
+
+## Phase Execution Rules
+
+- The canonical plan for phase `N` is `plans/phaseN.md`.
+- Do not create or substitute alternative plan files without explicit human instruction.
+- If multiple candidate plans exist for the same phase, stop and ask for clarification.
+- `plans/agent-handoff.md` is context only and does not override the selected phase plan.
+- "Implement phase `N`" means execute the existing plan for that phase, not create a new one.
 
 When a phase completes:
 1. Update `plans/agent-handoff.md` with the phase completion status and lessons learned

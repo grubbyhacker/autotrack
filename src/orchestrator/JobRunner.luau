@@ -9,7 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
-local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
@@ -17,7 +16,6 @@ local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
-local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRollback = require(script.Parent.Parent.Track.SectorRollback)
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local AttemptRunner = require(script.Parent.AttemptRunner)
@@ -26,14 +24,13 @@ local JobLock = require(script.Parent.JobLock)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
+local CommandRouter = require(script.Parent.CommandRouter)
 local CameraDemo = require(script.Parent.CameraDemo)
 local TuneMode = require(script.Parent.TuneMode)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
-local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local HotfixAgent = require(script.Parent.HotfixAgent)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local EnduranceMemory = require(script.Parent.EnduranceMemory)
-local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
 type CIJob = Types.CIJob
@@ -46,44 +43,7 @@ local JobRunner = {}
 local _lastJob: CIJob? = nil
 local _idCounter = 0
 local _pendingRequest: string? = nil
-local _extremeDemoActive = false
-local _extremePriorStates = {}
 local _allowEnduranceInternalSubmit = false
-local _hudDemoActive: string? = nil
-local _hudDemoSnapshot = nil
-local HOTFIX_DEMO_REQUEST = "add a chicane in sector 7"
-local HUD_DEMO_ATTRS = {
-	"phase",
-	"phase_label",
-	"busy",
-	"request_text",
-	"target_sector_id",
-	"target_mechanic",
-	"request_summary",
-	"attempt_current",
-	"attempt_max",
-	"explanation",
-	"repair_action_text",
-	"final_status",
-	"error_text",
-	"llm_enabled",
-	"llm_model",
-	"shared_memory_depth",
-	"proposal_memory_depth",
-	"repair_memory_depth",
-	"shared_memory_1",
-	"shared_memory_2",
-	"proposal_memory_1",
-	"repair_memory_1",
-	"log_1",
-	"log_2",
-	"log_3",
-	"log_4",
-	"log_5",
-	"log_6",
-	"log_7",
-	"log_8",
-}
 
 local function nextId(prefix: string): string
 	_idCounter += 1
@@ -365,16 +325,9 @@ local function hintsSummary(hints): string
 	return table.concat(hints, "|")
 end
 
-local function maximizeCampaignActive(): boolean
-	return workspace:GetAttribute("AutoTrack_MaximizeCampaignActive") == true
-end
-
 local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?): (boolean, string?)
 	if result == nil or result.score == nil then
 		return false, "no_score"
-	end
-	if maximizeCampaignActive() then
-		return false, "maximize_campaign"
 	end
 	local enduranceBuildActive = if enduranceBuildActiveOverride ~= nil
 		then enduranceBuildActiveOverride
@@ -502,24 +455,6 @@ local function finishRevert(job, targetSector, reason)
 	_lastJob = job
 end
 
-local function buildHotfixDemoState(priorVersion: number)
-	return {
-		sector_id = 3,
-		mechanic = "RampJump",
-		params = {
-			ramp_angle = 60,
-			ramp_length = 40,
-			gap_length = 40,
-			landing_length = 4,
-		},
-		pads = {
-			ingress = "Boost50",
-			egress = "None",
-		},
-		version = priorVersion + 1,
-	}
-end
-
 local function pauseForUI()
 	task.wait(Constants.UI_PHASE_DELAY)
 end
@@ -550,633 +485,62 @@ local function pauseOnFailure(result)
 	UIState.hideFailureBanner()
 end
 
-local function parseSlashCommand(normalized: string): (string?, string?)
-	local command, rest = string.match(normalized, "^/([%a_]+)%s*(.-)%s*$")
-	if not command then
-		return nil, nil
-	end
-	return command, rest
-end
-
-local function activeDemoReason(targetCommand: string?): string
-	local preset = CameraDemo.activePreset()
-	if targetCommand and targetCommand ~= "" then
-		return string.format("demo '%s' is running; stop it before %s", preset, targetCommand)
-	end
-	return string.format("demo '%s' is running; use /demo %s to toggle it off", preset, preset)
-end
-
-local function activeTuneReason(targetCommand: string?): string
-	if targetCommand and targetCommand ~= "" then
-		return string.format("tune mode is running; stop it before %s", targetCommand)
-	end
-	return "tune mode is running; use /tune stop to exit it"
-end
-
-local function canonicalTuneMechanic(text: string): string?
-	local normalized = trim(string.lower(text))
-	if normalized == "rampjump" then
-		return "RampJump"
-	elseif normalized == "crestdip" then
-		return "CrestDip"
-	elseif normalized == "chicane" then
-		return "Chicane"
-	end
-	return LevelMappings.MECHANIC_SYNONYMS[normalized]
-end
-
-local function parseTuneCommand(arg: string)
-	local head, tail = string.match(arg, "^(%S+)%s*(.-)%s*$")
-	return head or "", tail or ""
-end
-
-local function captureHUDDemoSnapshot()
-	local folder = UIState.getStateFolder()
-	local snapshot = {}
-	for _, attr in ipairs(HUD_DEMO_ATTRS) do
-		snapshot[attr] = folder:GetAttribute(attr)
-	end
-	return snapshot
-end
-
-local function restoreHUDDemo()
-	if _hudDemoSnapshot == nil then
-		_hudDemoActive = nil
-		return
-	end
-
-	local folder = UIState.getStateFolder()
-	for _, attr in ipairs(HUD_DEMO_ATTRS) do
-		folder:SetAttribute(attr, _hudDemoSnapshot[attr])
-	end
-	_hudDemoSnapshot = nil
-	_hudDemoActive = nil
-end
-
-local function applyHUDDemo(kind: string)
-	local folder = UIState.getStateFolder()
-
-	if _hudDemoActive == kind then
-		restoreHUDDemo()
-		return true, nil
-	end
-
-	if _hudDemoActive ~= nil then
-		restoreHUDDemo()
-	end
-
-	_hudDemoSnapshot = captureHUDDemoSnapshot()
-	_hudDemoActive = kind
-
-	if kind == "repair" then
-		folder:SetAttribute("phase", "ApplyRepair")
-		folder:SetAttribute("phase_label", "Applying repair...")
-		folder:SetAttribute("busy", false)
-		folder:SetAttribute("request_text", "repair the jump in sector 3")
-		folder:SetAttribute("target_sector_id", 3)
-		folder:SetAttribute("target_mechanic", "RampJump")
-		folder:SetAttribute("request_summary", "Sector 3 · RampJump")
-		folder:SetAttribute("attempt_current", 2)
-		folder:SetAttribute("attempt_max", Constants.MAX_REPAIR_ATTEMPTS)
-		folder:SetAttribute("explanation", "Entry speed bled off before takeoff, so the repair adds an ingress boost to carry momentum up the ramp")
-		folder:SetAttribute("repair_action_text", "Entry boost")
-		folder:SetAttribute("final_status", "")
-		folder:SetAttribute("error_text", "")
-		folder:SetAttribute("log_1", "Initial proposal accepted")
-		folder:SetAttribute("log_2", "Failure: no_progress in sector 3")
-		folder:SetAttribute("log_3", "Metrics: progress=0.31 entered=true exited=false")
-		folder:SetAttribute("log_4", "Hints: boost first | avoid lengthening the ramp")
-		folder:SetAttribute("log_5", "Attempt 1: shortened ramp length")
-		folder:SetAttribute("log_6", "Attempt 2: added ingress boost after uphill speed bleed")
-		folder:SetAttribute("log_7", "Action: ingress Boost25")
-		folder:SetAttribute("log_8", "Awaiting next full-lap verification")
-		return true, nil
-	end
-
-	if kind == "llmerror" then
-		folder:SetAttribute("phase", "ApplyRepair")
-		folder:SetAttribute("phase_label", "Repair backend stalled")
-		folder:SetAttribute("busy", false)
-		folder:SetAttribute("request_text", "repair the jump in sector 3")
-		folder:SetAttribute("target_sector_id", 3)
-		folder:SetAttribute("target_mechanic", "RampJump")
-		folder:SetAttribute("request_summary", "Sector 3 · RampJump")
-		folder:SetAttribute("attempt_current", 0)
-		folder:SetAttribute("attempt_max", Constants.MAX_REPAIR_ATTEMPTS)
-		folder:SetAttribute("explanation", "")
-		folder:SetAttribute("repair_action_text", "")
-		folder:SetAttribute("final_status", "")
-		folder:SetAttribute("llm_enabled", true)
-		folder:SetAttribute("llm_model", "google/gemma-3-4b-it")
-		folder:SetAttribute("error_text", "LLM error: OpenRouter HTTP 429: rate limit exceeded for google/gemma-3-4b-it; retry after 22s")
-		folder:SetAttribute("log_1", "Attempt 1: ENTRY BOOST10")
-		folder:SetAttribute("log_2", "Attempt 2: LANDING LENGTH 18")
-		folder:SetAttribute("log_3", "Target exited but reacquire failed at sector 3")
-		folder:SetAttribute("log_4", "Requesting LLM repair from Gemma 3 4B")
-		folder:SetAttribute("log_5", "LLM error: OpenRouter HTTP 429")
-		folder:SetAttribute("log_6", "Model retry window reported as 22s")
-		folder:SetAttribute("log_7", "Repair loop paused pending operator retry")
-		folder:SetAttribute("log_8", "")
-		return true, nil
-	end
-
-	if kind == "ui-hotfix" then
-		folder:SetAttribute("phase", "EnduranceLoop")
-		folder:SetAttribute("phase_label", "Endurance Mode")
-		folder:SetAttribute("busy", false)
-		folder:SetAttribute("request_text", "")
-		folder:SetAttribute("request_summary", "")
-		folder:SetAttribute("attempt_current", 0)
-		folder:SetAttribute("attempt_max", 0)
-		folder:SetAttribute("explanation", "")
-		folder:SetAttribute("repair_action_text", "")
-		folder:SetAttribute("final_status", "")
-		folder:SetAttribute("error_text", "")
-		folder:SetAttribute("endurance_mode_active", true)
-		folder:SetAttribute("endurance_hotfix_active", true)
-		folder:SetAttribute("endurance_hotfix_sector", 6)
-		folder:SetAttribute("endurance_terminal", false)
-		folder:SetAttribute("endurance_lap_count", 9)
-		folder:SetAttribute("endurance_attempt_budget_used", 3)
-		folder:SetAttribute("endurance_attempt_budget_total", Constants.ENDURANCE_ATTEMPT_BUDGET)
-		folder:SetAttribute("log_1", "Endurance lap 9 failed in sector 6")
-		folder:SetAttribute("log_2", "Failure persisted on retry")
-		folder:SetAttribute("log_3", "Escalating to live hotfix")
-		folder:SetAttribute("log_4", "Committed sector 6 reverted")
-		folder:SetAttribute("log_5", "Hotfix agent preparing repair")
-		folder:SetAttribute("log_6", "")
-		folder:SetAttribute("log_7", "")
-		folder:SetAttribute("log_8", "")
-		return true, nil
-	end
-
-	return false, "unknown HUD demo"
+local function spawnEnduranceRun(): (boolean, string?)
+	task.spawn(function()
+		OrchestratorAgent.run({
+			submitDesignIntent = function(designIntent, text: string, memoryContext: RunMemory?)
+				_allowEnduranceInternalSubmit = true
+				local callOk, submitOk, submitReason =
+					pcall(JobRunner.submitEnduranceDesignIntent, designIntent, text, memoryContext)
+				_allowEnduranceInternalSubmit = false
+				if not callOk then
+					return false, tostring(submitOk)
+				end
+				return submitOk, submitReason
+			end,
+			submit = function(text: string)
+				_allowEnduranceInternalSubmit = true
+				local callOk, submitOk, submitReason = pcall(JobRunner.submit, text)
+				_allowEnduranceInternalSubmit = false
+				if not callOk then
+					return false, tostring(submitOk)
+				end
+				return submitOk, submitReason
+			end,
+			getLastJob = JobRunner.getLastJob,
+			isCameraDemoActive = CameraDemo.isActive,
+		})
+	end)
+	return true, nil
 end
 
 -- Submit a plain-text request.  Returns false + reason if rejected without running.
 function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean, string?)
 	local sm = JobStateMachine.new()
 	local requestId = nextId("req")
-	local trimmed = trim(rawText)
-	local lowered = string.lower(trimmed)
-	local slashCommand, slashArg = nil, nil
-	local rawSlashArg = nil
 	local traceOwnedByThisJob = false
 	local request = requestOverride
 
 	if requestOverride == nil then
-		slashCommand, slashArg = parseSlashCommand(lowered)
-		_, rawSlashArg = parseSlashCommand(trimmed)
-	end
-
-	if requestOverride == nil and slashCommand == "tune" then
-		local tuneCommand, tuneRest = parseTuneCommand(rawSlashArg or slashArg)
-		local canonicalMechanic = canonicalTuneMechanic(slashArg)
-		if canonicalMechanic ~= nil and tuneCommand ~= "set" and tuneCommand ~= "pad" and tuneCommand ~= "attr" and tuneCommand ~= "run" and tuneCommand ~= "auto" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/tune")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if MaximizerAgent.isActive() or OrchestratorAgent.isActive() or HotfixAgent.isActive() then
-				UIState.rejectRequest(rawText, "track is busy; try again shortly")
-				return false, "track is busy; try again shortly"
-			end
-			local ok, reason = TuneMode.start(canonicalMechanic)
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
+		local handled, routedOk, routedReason = CommandRouter.route(rawText, {
+			startEndurance = JobRunner.startEndurance,
+		})
+		if handled then
+			return routedOk, routedReason
 		end
-
-		if tuneCommand == "show" then
-			local ok, reason = TuneMode.show()
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "set" then
-			local lever, valueText = string.match(tuneRest, "^(%S+)%s*(.-)%s*$")
-			local value = tonumber(valueText)
-			if lever == nil or value == nil then
-				UIState.rejectRequest(rawText, "usage: /tune set <lever> <value>")
-				return false, "usage: /tune set <lever> <value>"
-			end
-			local ok, reason = TuneMode.setLever(lever, value)
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "pad" then
-			local side, value = string.match(tuneRest, "^(%S+)%s*(%S+)%s*$")
-			if side == nil or value == nil then
-				UIState.rejectRequest(rawText, "usage: /tune pad <ingress|egress> <PadValue>")
-				return false, "usage: /tune pad <ingress|egress> <PadValue>"
-			end
-			local ok, reason = TuneMode.setPad(side, value)
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "attr" then
-			local name, valueText = string.match(tuneRest, "^(%S+)%s*(.-)%s*$")
-			local value = tonumber(valueText)
-			if name == nil or value == nil then
-				UIState.rejectRequest(rawText, "usage: /tune attr <name> <value>")
-				return false, "usage: /tune attr <name> <value>"
-			end
-			local ok, reason = TuneMode.setAttr(name, value)
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "run" then
-			local attempts = tonumber(trim(tuneRest))
-			if attempts == nil then
-				UIState.rejectRequest(rawText, "usage: /tune run <n>")
-				return false, "usage: /tune run <n>"
-			end
-			local ok, reason = TuneMode.runAttempts(attempts)
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "auto" then
-			local mode = trim(string.lower(tuneRest))
-			if mode ~= "on" and mode ~= "off" then
-				UIState.rejectRequest(rawText, "usage: /tune auto <on|off>")
-				return false, "usage: /tune auto <on|off>"
-			end
-			local ok, reason = TuneMode.setAuto(mode == "on")
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "reset" then
-			local ok, reason = TuneMode.reset()
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "revert" then
-			local ok, reason = TuneMode.revert()
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "commit" then
-			local ok, reason = TuneMode.commit()
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		elseif tuneCommand == "stop" then
-			local ok, reason = TuneMode.stop()
-			if not ok then
-				UIState.rejectRequest(rawText, tostring(reason))
-				return false, reason
-			end
-			return true, nil
-		end
-
-		local supportedAttrs = table.concat(TuneMode.supportedAttrs(), ", ")
-		local usage = "usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune stop"
-		UIState.rejectRequest(rawText, usage, "Supported tune attrs: " .. supportedAttrs)
-		return false, usage
 	end
 
 	if requestOverride == nil and TuneMode.isActive() then
-		local reason = activeTuneReason(if slashCommand ~= nil then "/" .. slashCommand else nil)
-		UIState.rejectRequest(rawText, reason)
-		return false, reason
-	end
-
-		if requestOverride == nil and slashCommand == "demo" then
-			if slashArg == "repair" or slashArg == "llmerror" or slashArg == "ui-hotfix" then
-				if CameraDemo.isActive() then
-					local reason = activeDemoReason("/demo " .. slashArg)
-					UIState.rejectRequest(rawText, reason)
-					return false, reason
-				end
-				if JobLock.isHeld() or MaximizerAgent.isActive() or OrchestratorAgent.isActive() or HotfixAgent.isActive() then
-					UIState.rejectRequest(rawText, "track is busy; try again shortly")
-					return false, "track is busy; try again shortly"
-				end
-				return applyHUDDemo(slashArg)
-			end
-
-			if slashArg == "camera" or slashArg == "rampitup" then
-				if CameraDemo.isActive() then
-					if CameraDemo.activePreset() == slashArg then
-					return CameraDemo.stop()
-				end
-				local activePreset = CameraDemo.activePreset()
-				local reason = string.format("demo '%s' is running; stop it before /demo %s", activePreset, slashArg)
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if JobLock.isHeld() then
-				UIState.rejectRequest(rawText, "track is busy; try again shortly")
-				return false, "track is busy; try again shortly"
-			end
-			return CameraDemo.start({ preset = slashArg })
-		end
-
-		if slashArg == "crest" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/demo crest")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if JobLock.isHeld() then
-				UIState.rejectRequest(rawText, "track is busy; try again shortly")
-				return false, "track is busy; try again shortly"
-			end
-			return JobRunner.submit("add a crest in sector 3")
-		end
-
-		if slashArg == "maximize" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/demo maximize")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if MaximizerAgent.isActive() then
-				UIState.rejectRequest(rawText, "maximizer already running")
-				return false, "maximizer already running"
-			end
-			task.spawn(function()
-				MaximizerAgent.run({
-					submit = JobRunner.submit,
-					isBusy = JobRunner.isBusy,
-					isCameraDemoActive = CameraDemo.isActive,
-				})
-			end)
-			return true, nil
-		end
-
-		if slashArg == "endurance" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/demo endurance")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if OrchestratorAgent.isActive() then
-				UIState.rejectRequest(rawText, "endurance mode already running")
-				return false, "endurance mode already running"
-			end
-			task.spawn(function()
-				OrchestratorAgent.run({
-					submitDesignIntent = function(designIntent, text: string, memoryContext: RunMemory?)
-						_allowEnduranceInternalSubmit = true
-						local callOk, submitOk, submitReason = pcall(JobRunner.submitEnduranceDesignIntent, designIntent, text, memoryContext)
-						_allowEnduranceInternalSubmit = false
-						if not callOk then
-							return false, tostring(submitOk)
-						end
-						return submitOk, submitReason
-					end,
-					submit = function(text: string)
-						_allowEnduranceInternalSubmit = true
-						local callOk, submitOk, submitReason = pcall(JobRunner.submit, text)
-						_allowEnduranceInternalSubmit = false
-						if not callOk then
-							return false, tostring(submitOk)
-						end
-						return submitOk, submitReason
-					end,
-					getLastJob = JobRunner.getLastJob,
-					isCameraDemoActive = CameraDemo.isActive,
-				})
-			end)
-			return true, nil
-		end
-
-		if slashArg == "extreme" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/demo extreme")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			-- Toggle off: restore prior states
-			if _extremeDemoActive then
-				_extremeDemoActive = false
-				if not JobLock.isHeld() then
-					assert(JobLock.tryAcquire(), "JobLock busy restoring extreme demo")
-					local extremeIds = { 2, 3, 7 }
-					for _, id in ipairs(extremeIds) do
-						local saved = _extremePriorStates[id]
-						if saved then
-							local restored = cloneState(saved)
-							restored.version = saved.version + 2
-							local sector = RuntimeContext.getSectorById(id)
-							SectorApplier.apply(restored, sector.entry, sector.exit)
-							SectorRegistry.commit(restored)
-						end
-					end
-					_extremePriorStates = {}
-					JobLock.release()
-					UIState.publishReady()
-					UIState.appendLog("Extreme demo off — prior track state restored")
-					Tracer.log("extreme_demo_restored")
-				else
-					UIState.rejectRequest(rawText, "track is busy; try again shortly")
-					_extremeDemoActive = true
-					return false, "track is busy; try again shortly"
-				end
-				return true, nil
-			end
-			-- Toggle on: apply extreme geometry for inspection
-			if JobLock.isHeld() then
-				UIState.rejectRequest(rawText, "track is busy; try again shortly")
-				return false, "track is busy; try again shortly"
-			end
-			assert(JobLock.tryAcquire(), "JobLock busy in /demo extreme")
-			local extremeIds = { 2, 3, 7 }
-			_extremePriorStates = {}
-			for _, id in ipairs(extremeIds) do
-				local committed = SectorRegistry.getCommitted(id)
-				if committed then
-					_extremePriorStates[id] = cloneState(committed)
-				end
-			end
-
-			local function applyState(state)
-				local sector = RuntimeContext.getSectorById(state.sector_id)
-				SectorApplier.apply(state, sector.entry, sector.exit)
-				SectorRegistry.commit(state)
-			end
-
-			local v2 = _extremePriorStates[2] and _extremePriorStates[2].version or 0
-			local v3 = _extremePriorStates[3] and _extremePriorStates[3].version or 0
-			local v7 = _extremePriorStates[7] and _extremePriorStates[7].version or 0
-
-			applyState({
-				sector_id = 2,
-				mechanic = nil,
-				params = {},
-				pads = { ingress = "Boost50", egress = "None" },
-				version = v2 + 1,
-			})
-			local rjDefaults = LevelMappings.DEFAULTS.RampJump
-			applyState({
-				sector_id = 3,
-				mechanic = "RampJump",
-				params = {
-					ramp_angle = LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max,
-					ramp_length = rjDefaults.ramp_length,
-					gap_length = LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max,
-					landing_length = rjDefaults.landing_length,
-				},
-				pads = { ingress = "None", egress = "None" },
-				version = v3 + 1,
-			})
-			local cdDefaults = LevelMappings.DEFAULTS.CrestDip
-			applyState({
-				sector_id = 7,
-				mechanic = "CrestDip",
-				params = {
-					height_or_depth = LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max,
-					radius = cdDefaults.radius,
-					sector_length = cdDefaults.sector_length,
-				},
-				pads = { ingress = "None", egress = "None" },
-				version = v7 + 1,
-			})
-
-			JobLock.release()
-			_extremeDemoActive = true
-
-			UIState.setPhase("ExtremeDemo", "Extreme demo active — inspect the track")
-			UIState.appendLog(string.format(
-				"Extreme demo ON: Sector 2 Boost50 ingress | Sector 3 RampJump angle=%d gap=%d | Sector 7 CrestDip height=%d",
-				LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max,
-				LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max,
-				LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.max))
-			UIState.setExplanation("Submit '/demo extreme' again to restore the track")
-			Tracer.log("extreme_demo_applied")
-			return true, nil
-		end
-
-		if slashArg == "hotfix" then
-			if CameraDemo.isActive() then
-				local reason = activeDemoReason("/demo hotfix")
-				UIState.rejectRequest(rawText, reason)
-				return false, reason
-			end
-			if JobLock.isHeld() then
-				UIState.rejectRequest(rawText, "track is busy; try again shortly")
-				return false, "track is busy; try again shortly"
-			end
-			task.spawn(function()
-				-- Step 1: commit a working sector 4 (chicane) as our "in-flight job" target
-				-- Step 2: sabotage sector 3 with an impossible ramp so upstream failures trigger
-				assert(JobLock.tryAcquire(), "JobLock busy in /demo hotfix setup")
-
-				local sector3 = RuntimeContext.getSectorById(3)
-				local priorSector3 = SectorRegistry.getCommitted(3)
-				local priorVersion = priorSector3 and priorSector3.version or 0
-
-				-- Force a real upstream execution failure. The earlier short-ramp
-				-- sabotage became survivable after the phase-14 controller changes.
-				local badState = buildHotfixDemoState(priorVersion)
-				SectorApplier.apply(badState, sector3.entry, sector3.exit)
-				SectorRegistry.commit(badState)
-
-				JobLock.release()
-
-				UIState.setPhase("HotfixDemo", "Hotfix demo: sector 3 sabotaged — submitting job to trigger upstream failure")
-				UIState.appendLog("Hotfix demo: planted catastrophic RampJump in sector 3 (Boost50 ingress, angle=60, ramp=40, gap=40, landing=4)")
-				UIState.appendLog("Submitting '" .. HOTFIX_DEMO_REQUEST .. "' — watch for retry → hotfix sequence...")
-				UIState.setExplanation("HotfixAgent will detect sector 3 failure and attempt emergency repair")
-				Tracer.log("hotfix_demo_sabotage sector=3")
-
-				-- Submit a later-sector job so the sector-3 crash is always treated
-				-- as an upstream failure by the retry/hotfix pipeline.
-				task.wait(0.5)
-				JobRunner.submit(HOTFIX_DEMO_REQUEST)
-			end)
-			return true, nil
-		end
-
-			UIState.rejectRequest(rawText, "unknown demo; supported: /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix")
-			return false, "unknown demo; supported: /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix"
-		end
-
-	if requestOverride == nil and slashCommand == "llm" then
-		local subcmd, rest2 = string.match(slashArg, "^(%S+)%s*(.-)%s*$")
-		if subcmd == "on" then
-			LLMConfig.setEnabled(true)
-			local cfg = LLMConfig.get()
-			UIState.setLLMConfig(true, cfg.modelId)
-			UIState.appendLog("LLM enabled: " .. cfg.displayName)
-			return true, nil
-		elseif subcmd == "off" then
-			LLMConfig.setEnabled(false)
-			UIState.setLLMConfig(false, LLMConfig.get().modelId)
-			UIState.appendLog("LLM disabled (heuristic)")
-			return true, nil
-		elseif subcmd == "model" then
-			local modelId = rest2 or ""
-			LLMConfig.setModel(modelId)
-			local cfg = LLMConfig.get()
-			UIState.setLLMConfig(cfg.enabled, cfg.modelId)
-			UIState.appendLog("LLM model: " .. cfg.displayName)
-			return true, nil
-		end
-		UIState.rejectRequest(rawText, "usage: /llm on | /llm off | /llm model <id>")
-		return false, "usage: /llm on | /llm off | /llm model <id>"
-	end
-
-	if requestOverride == nil and slashCommand == "test" then
-		if slashArg == "" then
-			UIState.rejectRequest(rawText, "test name missing; use /test <suite>")
-			return false, "test name missing; use /test <suite>"
-		end
-		if CameraDemo.isActive() then
-			local reason = activeDemoReason("/test")
-			UIState.rejectRequest(rawText, reason)
-			return false, reason
-		end
-		if JobLock.isHeld() then
-			UIState.rejectRequest(rawText, "track is busy; try again shortly")
-			return false, "track is busy; try again shortly"
-		end
-
-		UIState.setBusy(true)
-		UIState.setPhase("RunTest", "Running server-side test...")
-		UIState.appendLog("Running /test " .. slashArg)
-		local snapshot = TestDispatcher.runSuite(slashArg)
-		UIState.setBusy(false)
-		if snapshot.status == "passed" then
-			UIState.setPhase("RunTest", "Test passed")
-			UIState.appendLog(string.format("Suite %s passed (%d pass)", slashArg, snapshot.pass_count))
-			return true, nil
-		end
-		UIState.setPhase("RunTest", "Test failed")
-		UIState.setError("test failed: " .. slashArg)
-		UIState.appendLog(string.format(
-			"Suite %s %s (%d fail, %d error)",
-			slashArg,
-			tostring(snapshot.status),
-			snapshot.fail_count,
-			snapshot.error_count
-		))
-		return false, "test failed: " .. slashArg
+		UIState.rejectRequest(rawText, "tune mode is running; use /tune stop to exit it")
+		return false, "tune mode is running; use /tune stop to exit it"
 	end
 
 	if CameraDemo.isActive() then
-		local reason = activeDemoReason(nil)
+		local reason = string.format(
+			"demo '%s' is running; use /demo %s to toggle it off",
+			CameraDemo.activePreset(),
+			CameraDemo.activePreset()
+		)
 		UIState.rejectRequest(rawText, reason)
 		return false, reason
 	end
@@ -1693,6 +1057,25 @@ function JobRunner.submitEnduranceDesignIntent(designIntent: DesignIntent, rawTe
 	end
 	local request = buildEnduranceRequest(nextId("req"), rawText, designIntent, memoryContext)
 	return JobRunner.submit(rawText, request)
+end
+
+function JobRunner.startEndurance(): (boolean, string?)
+	if OrchestratorAgent.isActive() then
+		return false, "endurance mode already running"
+	end
+	if CameraDemo.isActive() then
+		return false, string.format(
+			"demo '%s' is running; stop it before /demo endurance",
+			CameraDemo.activePreset()
+		)
+	end
+	if TuneMode.isActive() then
+		return false, "tune mode is running; use /tune stop to exit it"
+	end
+	if JobLock.isHeld() or HotfixAgent.isActive() then
+		return false, "track is busy; try again shortly"
+	end
+	return spawnEnduranceRun()
 end
 
 -- Returns true if a job is currently running.

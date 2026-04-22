@@ -8,7 +8,6 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local T = require(script.Parent.TestUtils)
 local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
 local ChallengeRunner = require(script.Parent.ChallengeRunner)
-local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local MinimalProposer = require(script.Parent.MinimalProposer)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local JobRunner = require(script.Parent.JobRunner)
@@ -513,92 +512,7 @@ local function runUnit()
 				tostring(normalState.params.gap_length)))
 	end
 
-	-- 27. Campaign summary reports score count and budget usage from the probe.
-	do
-		local summary = MaximizerAgent._summarizeCampaign({
-			[2] = { total = 5, budget_used = 0, over_budget = false },
-			[3] = { total = 7, budget_used = 0, over_budget = false },
-		}, 1 + Constants.CHALLENGE_BUDGET_RATIO * 0.5, true)
-
-		T.expect("phase11_campaign_summary_total",
-			math.abs(summary.total - 12) < 1e-6,
-			"expected total=12, got " .. tostring(summary.total))
-		T.expect("phase11_campaign_summary_count",
-			summary.sector_count == 2,
-			"expected count=2, got " .. tostring(summary.sector_count))
-		T.expect("phase11_campaign_summary_budget",
-			math.abs(summary.budget_used - 0.5) < 1e-6,
-			"expected budget_used=0.5, got " .. tostring(summary.budget_used))
-		T.expect("phase11_campaign_summary_headroom",
-			math.abs(summary.budget_headroom - 0.5) < 1e-6,
-			"expected headroom=0.5, got " .. tostring(summary.budget_headroom))
-		T.expect("phase11_campaign_summary_not_over",
-			summary.over_budget == false,
-			"expected over_budget=false")
-	end
-
-	-- 28. Campaign summary treats a failed probe as over budget.
-	do
-		local summary = MaximizerAgent._summarizeCampaign({
-			[2] = { total = 5, budget_used = 0, over_budget = false },
-		}, 1, false)
-		T.expect("phase11_campaign_summary_failed_probe",
-			summary.over_budget == true,
-			"expected over_budget=true when probe failed")
-	end
-
-	-- 29. Maximizer evicts the lowest positive-score sector first.
-	do
-		local sectorId, score = MaximizerAgent._selectEvictionSector({
-			[2] = { total = 4.5 },
-			[3] = { total = 2.0 },
-			[4] = { total = 9.0 },
-		})
-		T.expect("phase11_eviction_picks_lowest_sector",
-			sectorId == 3,
-			"expected sector 3, got " .. tostring(sectorId))
-		T.expect("phase11_eviction_returns_score",
-			score ~= nil and math.abs(score.total - 2.0) < 1e-6,
-			"expected score total 2.0")
-	end
-
-	-- 30. Maximizer stops evicting once the minimum demo sector count is reached.
-	do
-		local sectorId, score = MaximizerAgent._selectEvictionSector({
-			[2] = { total = 4.5 },
-			[3] = { total = 2.0 },
-		})
-		T.expect("phase11_eviction_preserves_minimum_demo_sectors",
-			sectorId == nil and score == nil,
-			string.format("expected nil,nil at min retained count; got %s %s", tostring(sectorId), tostring(score and score.total)))
-	end
-
-	-- 31. JobRunner suppresses challenge-up during maximize campaigns.
-	do
-		local request, err = RequestParser.parse("add an extreme jump in sector 3", "phase11-maximize-suppress")
-		assert(request ~= nil, "expected request: " .. tostring(err))
-		local result = {
-			success = true,
-			metrics = metrics(),
-			score = {
-				total = 5,
-				air = 2,
-				lateral = 0,
-				near_miss = 3,
-				time_cost = 0,
-				budget_used = 0.2,
-				over_budget = false,
-			},
-		}
-		workspace:SetAttribute("AutoTrack_MaximizeCampaignActive", true)
-		local shouldRun, why = JobRunner._shouldRunChallengeUp(request, result)
-		workspace:SetAttribute("AutoTrack_MaximizeCampaignActive", false)
-		T.expect("phase11_challenge_up_suppressed_during_maximize",
-			shouldRun == false and why == "maximize_campaign",
-			string.format("expected maximize suppression, got shouldRun=%s why=%s", tostring(shouldRun), tostring(why)))
-	end
-
-	-- 31b. Endurance build submits never run Stage B challenge-up.
+	-- 27. Endurance build submits never run Stage B challenge-up.
 	do
 		local request, err = RequestParser.parse("add an extreme jump in sector 3", "phase11-endurance-suppress")
 		assert(request ~= nil, "expected request: " .. tostring(err))
@@ -621,7 +535,7 @@ local function runUnit()
 			string.format("expected endurance suppression, got shouldRun=%s why=%s", tostring(shouldRun), tostring(why)))
 	end
 
-	-- 32. Pre-target failures must revert instead of repairing the target sector.
+	-- 28. Pre-target failures must revert instead of repairing the target sector.
 	do
 		local result = {
 			success = false,
@@ -640,7 +554,7 @@ local function runUnit()
 			"expected pre-target failure revert guard to fire")
 	end
 
-	-- 33. Once the target was entered, downstream failures remain repairable.
+	-- 29. Once the target was entered, downstream failures remain repairable.
 	do
 		local result = {
 			success = false,
@@ -659,7 +573,7 @@ local function runUnit()
 			"expected guard to stay off after target entry")
 	end
 
-	-- 34. Halfway target progress unlocks extra repair attempts.
+	-- 30. Halfway target progress unlocks extra repair attempts.
 	do
 		local result = {
 			success = false,
@@ -678,7 +592,7 @@ local function runUnit()
 			"expected extra repair attempts after halfway progress")
 	end
 
-	-- 35–36. Endurance lap-time budget gate (phase 14): 0.40 ratio.
+	-- 31–32. Endurance lap-time budget gate (phase 14): 0.40 ratio.
 	do
 		local ratio = Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO
 		T.expect("phase11_endurance_budget_not_over_at_1_39",
