@@ -592,6 +592,37 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})
 
+	local memoryPanel = createFrame(gui, {
+		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 104),
+		Position = UDim2.new(1, -20, 0, 228),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = PANEL_SOFT,
+		BackgroundTransparency = 0.12,
+	})
+	memoryPanel.Visible = false
+	addCorner(memoryPanel, 18)
+	addStroke(memoryPanel, STEEL_LIGHT, 0.25)
+
+	createLabel(memoryPanel, {
+		Position = UDim2.new(0, 14, 0, 10),
+		Size = UDim2.new(0, 120, 0, 18),
+		Text = "Memory",
+		TextColor3 = AMBER_SOFT,
+		TextSize = 13,
+		Font = Enum.Font.Code,
+	})
+
+	local memoryLabel = createLabel(memoryPanel, {
+		Position = UDim2.new(0, 14, 0, 32),
+		Size = UDim2.new(1, -28, 1, -44),
+		Text = "",
+		TextColor3 = TEXT,
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+	})
+
 	local setBaselineButton = createButton(rightRail, {
 		Position = UDim2.new(1, -70, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
@@ -809,6 +840,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		lastLapLabel = lastLapLabel,
 		slowdownLabel = slowdownLabel,
 		scoreLabel = scoreLabel,
+		memoryPanel = memoryPanel,
+		memoryLabel = memoryLabel,
 		speedLabel = speedLabel,
 		speedValueLabel = speedValueLabel,
 		headingLabel = headingLabel,

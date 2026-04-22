@@ -155,7 +155,7 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		UIState.setPhase("HotfixRepair", string.format("Hotfix: attempt %d/%d", attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS))
 		UIState.setAttempt(attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS)
 
-		local action, newState, explanation, repairErr = LLMAdapter.repair(packet, history)
+		local action, newState, explanation, _, repairErr = LLMAdapter.repair(packet, history)
 		if repairErr then
 			Tracer.log(string.format("hotfix_repair_error sector=%d attempt=%d err=%s", sectorId, attemptIndex, repairErr))
 			UIState.appendLog("Hotfix repair error: " .. repairErr)

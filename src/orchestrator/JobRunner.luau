@@ -31,12 +31,15 @@ local ChallengeRunner = require(script.Parent.ChallengeRunner)
 local MaximizerAgent = require(script.Parent.MaximizerAgent)
 local HotfixAgent = require(script.Parent.HotfixAgent)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
+local EnduranceMemory = require(script.Parent.EnduranceMemory)
 local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
 type CIJob = Types.CIJob
 type Request = Types.Request
 type DesignIntent = Types.DesignIntent
+type MemoryEntry = Types.MemoryEntry
+type RunMemory = Types.RunMemory
 
 local JobRunner = {}
 local _lastJob: CIJob? = nil
@@ -64,6 +67,13 @@ local HUD_DEMO_ATTRS = {
 	"error_text",
 	"llm_enabled",
 	"llm_model",
+	"shared_memory_depth",
+	"proposal_memory_depth",
+	"repair_memory_depth",
+	"shared_memory_1",
+	"shared_memory_2",
+	"proposal_memory_1",
+	"repair_memory_1",
 	"log_1",
 	"log_2",
 	"log_3",
@@ -81,6 +91,13 @@ end
 
 local function trim(text: string): string
 	return string.match(text, "^%s*(.-)%s*$") or ""
+end
+
+local function truncateText(value: string, maxLen: number): string
+	if #value <= maxLen then
+		return value
+	end
+	return string.sub(value, 1, maxLen)
 end
 
 local function cloneState(state)
@@ -119,6 +136,34 @@ local function cloneDesignIntent(intent: DesignIntent): DesignIntent
 		desired_feel = intent.desired_feel,
 		constraints = constraints,
 	}
+end
+
+local function cloneMemory(memory: RunMemory?): RunMemory?
+	if memory == nil then
+		return nil
+	end
+	return EnduranceMemory.clone(memory)
+end
+
+local function ensureRequestMemory(request: Request): RunMemory?
+	if request.origin ~= "endurance" then
+		return request.memory_context
+	end
+	if request.memory_context == nil then
+		request.memory_context = EnduranceMemory.new()
+	end
+	return request.memory_context
+end
+
+local function appendRequestMemory(request: Request, scopeName: string, note: MemoryEntry?)
+	if note == nil then
+		return
+	end
+	local memory = ensureRequestMemory(request)
+	if memory == nil then
+		return
+	end
+	EnduranceMemory.append(memory, scopeName, note)
 end
 
 local DESIGN_INTENT_QUALIFIER_WORDS = {
@@ -234,7 +279,7 @@ local function validateDesignIntent(intent): (boolean, string?)
 	return true, nil
 end
 
-local function buildEnduranceRequest(requestId: string, rawText: string, designIntent: DesignIntent): Request
+local function buildEnduranceRequest(requestId: string, rawText: string, designIntent: DesignIntent, memoryContext: RunMemory?): Request
 	return {
 		request_id = requestId,
 		raw_text = trim(rawText),
@@ -248,6 +293,7 @@ local function buildEnduranceRequest(requestId: string, rawText: string, designI
 		qualifiers = extractIntentQualifiers(designIntent.params_hint),
 		origin = "endurance",
 		design_intent = cloneDesignIntent(designIntent),
+		memory_context = cloneMemory(memoryContext),
 		timestamp = os.time(),
 	}
 end
@@ -383,6 +429,40 @@ local function compactStateDetails(state): string
 	table.insert(parts, string.format("ingress=%s", state.pads.ingress))
 	table.insert(parts, string.format("egress=%s", state.pads.egress))
 	return string.format("%s {%s}", tostring(state.mechanic), table.concat(parts, ", "))
+end
+
+local function invalidAgentResponseWarning(errText: string?): string?
+	local message = trim(tostring(errText or ""))
+	if message == "" then
+		return nil
+	end
+
+	local label = nil
+	local detail = nil
+	if string.sub(message, 1, #"invalid proposal: ") == "invalid proposal: " then
+		label = "Proposal"
+		detail = string.sub(message, #"invalid proposal: " + 1)
+	elseif string.sub(message, 1, #"invalid initial proposal: ") == "invalid initial proposal: " then
+		label = "Proposal"
+		detail = string.sub(message, #"invalid initial proposal: " + 1)
+	elseif string.sub(message, 1, #"invalid repair: ") == "invalid repair: " then
+		label = "Repair"
+		detail = string.sub(message, #"invalid repair: " + 1)
+	elseif message == "invalid orchestrate response" then
+		label = "Orchestrator"
+		detail = "schema invalid"
+	elseif string.sub(message, 1, #"invalid orchestrate response: ") == "invalid orchestrate response: " then
+		label = "Orchestrator"
+		detail = string.sub(message, #"invalid orchestrate response: " + 1)
+	end
+
+	if label == nil then
+		return nil
+	end
+	if detail == nil or detail == "" then
+		return string.format("%s response invalid", label)
+	end
+	return truncateText(string.format("%s response invalid: %s", label, detail), 120)
 end
 
 local function metricsSummary(metrics): string
@@ -698,9 +778,9 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			end
 			task.spawn(function()
 				OrchestratorAgent.run({
-					submitDesignIntent = function(designIntent, text: string)
+					submitDesignIntent = function(designIntent, text: string, memoryContext: RunMemory?)
 						_allowEnduranceInternalSubmit = true
-						local callOk, submitOk, submitReason = pcall(JobRunner.submitEnduranceDesignIntent, designIntent, text)
+						local callOk, submitOk, submitReason = pcall(JobRunner.submitEnduranceDesignIntent, designIntent, text, memoryContext)
 						_allowEnduranceInternalSubmit = false
 						if not callOk then
 							return false, tostring(submitOk)
@@ -966,6 +1046,8 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		end
 	end
 
+	ensureRequestMemory(request)
+
 	if not JobLock.tryAcquire() then
 		Tracer.log(string.format("job_reject reason=busy raw=%q", rawText))
 		sm:transition("RejectRequest")
@@ -1012,23 +1094,29 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 
 		sm:transition("GenerateInitialProposal")
 		UIState.setPhase("GenerateInitialProposal", "Generating proposal...")
-		local initialState, proposalErr = LLMAdapter.propose(request, request.design_intent)
+		local initialState, proposalMemoryNote, proposalErr = LLMAdapter.propose(request, request.design_intent)
 		if not initialState then
+			local errText = tostring(proposalErr)
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
-			UIState.rejectRequest(rawText, tostring(proposalErr))
+			UIState.rejectRequest(rawText, errText, invalidAgentResponseWarning(errText))
 			return false, proposalErr
 		end
 
 		local validState, validationErr = ActionValidator.validateSectorState(initialState)
 		if not validState then
+			local errText = "invalid initial proposal: " .. tostring(validationErr)
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
-			UIState.rejectRequest(rawText, "invalid initial proposal: " .. tostring(validationErr))
-			return false, "invalid initial proposal: " .. tostring(validationErr)
+			UIState.rejectRequest(rawText, errText, invalidAgentResponseWarning(errText))
+			return false, errText
 		end
 		UIState.appendLog("Initial proposal accepted")
 		UIState.appendLog("Proposal: " .. compactStateDetails(initialState))
+		appendRequestMemory(request, "proposal", proposalMemoryNote)
+		if proposalMemoryNote ~= nil then
+			UIState.appendLog("Proposal note: " .. proposalMemoryNote.note)
+		end
 		Tracer.log(string.format(
 			"proposal sector=%d state=%s",
 			targetSectorId,
@@ -1041,6 +1129,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			initial_state = cloneState(initialState),
 			working_state = cloneState(initialState),
 			attempts = {},
+			proposal_memory_note = proposalMemoryNote,
 			final_status = "reverted",
 		}
 
@@ -1089,6 +1178,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				proposed_state = proposedState,
 				result = result,
 				hints = hints,
+				memory_note = nil,
 			})
 			Tracer.log(string.format(
 				"attempt_result index=%d target_sector=%d success=%s failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f score=%s",
@@ -1316,11 +1406,14 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 
 			sm:transition("ApplyRepair")
 			UIState.setPhase("ApplyRepair", "Applying repair...")
-			local action, newState, explanation, repairErr = LLMAdapter.repair(packet, job.attempts, packet.design_intent)
+			local action, newState, explanation, repairMemoryNote, repairErr = LLMAdapter.repair(packet, job.attempts, packet.design_intent)
 			if repairErr then
-				UIState.setError("LLM error: " .. repairErr)
-				UIState.appendLog("LLM error: " .. repairErr)
-				Tracer.log("llm_error attempt=" .. attemptIndex .. " err=" .. repairErr)
+				local errText = tostring(repairErr)
+				local warningText = invalidAgentResponseWarning(errText)
+				UIState.setLLMWarning(warningText or "")
+				UIState.setError("LLM error: " .. errText)
+				UIState.appendLog("LLM error: " .. errText)
+				Tracer.log("llm_error attempt=" .. attemptIndex .. " err=" .. errText)
 				sm:transition("Revert")
 				finishRevert(job, targetSector, "revert reason=llm_error")
 				sm:transition("Idle")
@@ -1330,6 +1423,10 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			if newState then
 				-- LLM returned a full revised SectorState (no delta action)
 				job.working_state = cloneState(newState)
+				appendRequestMemory(request, "repair", repairMemoryNote)
+				if #job.attempts > 0 then
+					job.attempts[#job.attempts].memory_note = repairMemoryNote
+				end
 				lastAction = nil
 				nextAction = nil
 				attemptIndex += 1
@@ -1337,6 +1434,9 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				UIState.setRepairAction("LLM: full state revision")
 				UIState.setExplanation(explanation or "")
 				UIState.appendLog(string.format("Attempt %d (LLM): %s", attemptIndex, explanation or "revised state"))
+				if repairMemoryNote ~= nil then
+					UIState.appendLog("Repair note: " .. repairMemoryNote.note)
+				end
 				UIState.appendLog("Revised: " .. compactStateDetails(job.working_state))
 				pauseForUI()
 				Tracer.log(string.format(
@@ -1354,11 +1454,18 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				end
 				lastAction = action
 				nextAction = action
+				appendRequestMemory(request, "repair", repairMemoryNote)
+				if #job.attempts > 0 then
+					job.attempts[#job.attempts].memory_note = repairMemoryNote
+				end
 				attemptIndex += 1
 				UIState.setAttempt(attemptIndex, attemptLimitForResult(result, targetSectorId))
 				UIState.setRepairAction(repairActionLabel(action))
 				UIState.setExplanation(explanation or "")
 				UIState.appendLog(string.format("Attempt %d: %s", attemptIndex, explanation or "repair"))
+				if repairMemoryNote ~= nil then
+					UIState.appendLog("Repair note: " .. repairMemoryNote.note)
+				end
 				UIState.appendLog("Action: " .. repairActionLabel(action))
 				pauseForUI()
 				Tracer.log(string.format(
@@ -1419,13 +1526,13 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 	return resultOrErr, reason
 end
 
-function JobRunner.submitEnduranceDesignIntent(designIntent: DesignIntent, rawText: string): (boolean, string?)
+function JobRunner.submitEnduranceDesignIntent(designIntent: DesignIntent, rawText: string, memoryContext: RunMemory?): (boolean, string?)
 	local validIntent, intentErr = validateDesignIntent(designIntent)
 	if not validIntent then
 		UIState.rejectRequest(rawText, tostring(intentErr))
 		return false, intentErr
 	end
-	local request = buildEnduranceRequest(nextId("req"), rawText, designIntent)
+	local request = buildEnduranceRequest(nextId("req"), rawText, designIntent, memoryContext)
 	return JobRunner.submit(rawText, request)
 end
 
@@ -1458,8 +1565,12 @@ function JobRunner._attemptLimitForResult(result, targetSectorId: number): numbe
 	return attemptLimitForResult(result, targetSectorId)
 end
 
-function JobRunner._buildEnduranceRequest(designIntent: DesignIntent, rawText: string, requestId: string?): Request
-	return buildEnduranceRequest(requestId or nextId("req"), rawText, designIntent)
+function JobRunner._buildEnduranceRequest(designIntent: DesignIntent, rawText: string, requestId: string?, memoryContext: RunMemory?): Request
+	return buildEnduranceRequest(requestId or nextId("req"), rawText, designIntent, memoryContext)
+end
+
+function JobRunner._invalidAgentResponseWarning(errText: string?): string?
+	return invalidAgentResponseWarning(errText)
 end
 
 return JobRunner

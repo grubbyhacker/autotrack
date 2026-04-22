@@ -12,6 +12,15 @@ local function encode(value): string
 end
 
 local DESIGN_INTENT_SCHEMA = [[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params_hint":"short text","rationale":"short text","target_score_band":"low|medium|high|extreme","target_budget_tolerance":"low|medium|high","target_reliability":"conservative|balanced|risky","spectacle_priority":"low|medium|high","novelty_priority":"low|medium|high","replacement_intent":"open_slot_preferred|replace_if_gain|preserve_good_sector","desired_feel":"short text","constraints":["short constraint"]}]]
+local MEMORY_NOTE_SCHEMA = [[{"author":"orchestrator","scope":"orchestrator","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}]]
+
+local function relevantMemory(context: OrchestratorContext)
+	local memory = context and context.memory or nil
+	return {
+		shared = if memory then memory.shared else {},
+		orchestrator = if memory then memory.orchestrator else {},
+	}
+end
 
 function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { role: string, content: string } }
 	return {
@@ -27,6 +36,9 @@ function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { r
 				"You have a hard global attempt budget. Repairs within a chosen sector are handled elsewhere.",
 				"Return a full shared DesignIntent JSON object for the next build candidate.",
 				"DesignIntent schema: " .. DESIGN_INTENT_SCHEMA,
+				"You may also include an optional memory_note object using: " .. MEMORY_NOTE_SCHEMA,
+				"Memory is advisory only. Current telemetry and budget state outrank remembered notes.",
+				"If you include memory_note, it must stay in scope 'orchestrator' and capture only a short durable lesson.",
 				"Every string field must stay short. constraints must be a short list of explicit downstream-preservation rules.",
 				"Return either the full DesignIntent object",
 				"or {\"action\":\"begin_loop\",\"rationale\":\"short reason\"} when the track is balanced enough to start the live continuous loop.",
@@ -38,9 +50,11 @@ function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { r
 			content = table.concat({
 				"Endurance orchestration context:",
 				encode(context),
+				"Relevant memory:",
+				encode(relevantMemory(context)),
 				"Pick the next sector and mechanic, or begin the loop.",
 				"Keep params_hint and desired_feel short and descriptive. Use words like extreme, tall, tight, wide, steep, deep, gentle, long, short when helpful.",
-				"Use attempt_history, mechanic_repeat_pressure, sector_attempt_counts, and track_intent directly when ranking candidates.",
+				"Use attempt_history, mechanic_repeat_pressure, sector_attempt_counts, track_intent, and memory directly when ranking candidates.",
 			}, "\n"),
 		},
 	}

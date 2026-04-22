@@ -250,6 +250,7 @@ function LapEvaluator.buildFailurePacket(
 		diagnostics   = diagnostics,
 		legal_actions = { numeric_levers = legalLevers, pads = { "ingress", "egress" } },
 		design_intent = request.design_intent,
+		memory_context = request.memory_context,
 	}
 end
 

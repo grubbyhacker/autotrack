@@ -171,7 +171,7 @@ function TestPhase13.runUnit()
 	local request = makeRequest(3, "Chicane")
 	local state = makeState(3, "Chicane", { amplitude = 5, transition_length = 15, corridor_width = 14 })
 	local packet = fakePacket(request, state, 1)
-	local action, newState, explanation, err = LLMAdapter.repair(packet, {})
+	local action, newState, explanation, _, err = LLMAdapter.repair(packet, {})
 	T.expect("llm_repair_action_nil", action == nil)
 	T.expect("llm_repair_newstate_present", newState ~= nil and newState.mechanic == "Chicane")
 	T.expect("llm_repair_explanation_present", type(explanation) == "string" and #explanation > 0)
@@ -193,7 +193,7 @@ function TestPhase13.runUnit()
 			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
 		end,
 	})
-	local _, sectorMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
+	local _, _, sectorMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
 	T.expect("llmadapter_rejects_sector_mismatch",
 		sectorMismatchErr == "invalid proposal: sector_id mismatch",
 		tostring(sectorMismatchErr))
@@ -214,7 +214,7 @@ function TestPhase13.runUnit()
 			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
 		end,
 	})
-	local _, mechanicMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
+	local _, _, mechanicMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
 	T.expect("llmadapter_rejects_mechanic_mismatch",
 		mechanicMismatchErr == "invalid proposal: mechanic mismatch",
 		tostring(mechanicMismatchErr))
@@ -237,7 +237,7 @@ function TestPhase13.runUnit()
 	local repairRequest = makeRequest(3, "Chicane")
 	local repairPacket = fakePacket(repairRequest, validChicaneState, 0)
 	repairPacket.legal_actions.numeric_levers = { "amplitude", "transition_length", "corridor_width" }
-	local _, _, _, invalidRepairErr = LLMAdapter.repair(repairPacket, {})
+	local _, _, _, _, invalidRepairErr = LLMAdapter.repair(repairPacket, {})
 	T.expect("llmadapter_rejects_invalid_repair_action",
 		string.find(tostring(invalidRepairErr), "invalid repair", 1, true) ~= nil,
 		tostring(invalidRepairErr))
@@ -273,7 +273,7 @@ function TestPhase13.runUnit()
 			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 11 }, explanation = "x" })
 		end,
 	})
-	local partialProposed, partialProposeErr = LLMAdapter.propose(makeRequest(3, "CrestDip"))
+	local partialProposed, _, partialProposeErr = LLMAdapter.propose(makeRequest(3, "CrestDip"))
 	T.expect("llmadapter_merges_partial_initial_proposal",
 		partialProposeErr == nil
 			and partialProposed ~= nil
@@ -315,9 +315,9 @@ function TestPhase13.runUnit()
 		repair = function(_) error("simulated API failure") end,
 	}
 	LLMAdapter.setProvider("error-shim", errorShim)
-	local _, propErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
+	local _, _, propErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
 	T.expect("llm_propose_error_string", type(propErr) == "string" and propErr ~= "")
-	local _, _, _, repErr = LLMAdapter.repair(fakePacket(request, state, 0), {})
+	local _, _, _, _, repErr = LLMAdapter.repair(fakePacket(request, state, 0), {})
 	T.expect("llm_repair_error_string", type(repErr) == "string" and repErr ~= "")
 	LLMAdapter.useMockProvider()
 
@@ -344,9 +344,9 @@ function TestPhase13.runUnit()
 	local traceRequest = makeRequest(3, "Chicane")
 	local traceState = makeState(3, "Chicane", { amplitude = 6, transition_length = 15, corridor_width = 14 })
 	local tracePacket = fakePacket(traceRequest, traceState, 0)
-	local _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
-	local _, proposeTraceErr = LLMAdapter.propose(traceRequest)
-	local _, _, _, repairTraceErr = LLMAdapter.repair(tracePacket, {})
+	local _, _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local _, _, proposeTraceErr = LLMAdapter.propose(traceRequest)
+	local _, _, _, _, repairTraceErr = LLMAdapter.repair(tracePacket, {})
 	T.expect("llm_trace_seed_calls_succeeded",
 		orchestrateErr == nil and proposeTraceErr == nil and repairTraceErr == nil,
 		tostring(orchestrateErr or proposeTraceErr or repairTraceErr))
@@ -365,7 +365,7 @@ function TestPhase13.runUnit()
 			return HttpService:JSONEncode({ action = "begin_loop" })
 		end,
 	})
-	local _, traceError = LLMAdapter.propose(traceRequest)
+	local _, _, traceError = LLMAdapter.propose(traceRequest)
 	T.expect("llm_trace_error_string_present", type(traceError) == "string" and traceError ~= "")
 	LLMTraceJournal.finishRun({
 		outcome = "phase13_unit_trace_seed",

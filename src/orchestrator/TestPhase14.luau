@@ -371,7 +371,7 @@ function TestPhase14.runUnit()
 		end,
 	})
 
-	local action, newState, explanation, err = LLMAdapter.repair(fakePacket(request, currentState, 0), {})
+	local action, newState, explanation, _, err = LLMAdapter.repair(fakePacket(request, currentState, 0), {})
 	T.expect("phase14_partial_repair_state_action_nil", action == nil, tostring(action and action.type))
 	T.expect("phase14_partial_repair_state_no_error", err == nil, tostring(err))
 	T.expect("phase14_partial_repair_state_merged",
@@ -418,7 +418,7 @@ function TestPhase14.runUnit()
 			return HttpService:JSONEncode({ action = "begin_loop" })
 		end,
 	})
-	local normalizedProposal, normalizedProposalErr = LLMAdapter.propose(makeRequest("add a crest in sector 3"))
+	local normalizedProposal, _, normalizedProposalErr = LLMAdapter.propose(makeRequest("add a crest in sector 3"))
 	T.expect(
 		"phase14_plain_crestdip_proposal_normalized",
 		normalizedProposalErr == nil
@@ -454,7 +454,7 @@ function TestPhase14.runUnit()
 		end,
 	})
 
-	local _, repairedCrestState, _, crestErr = LLMAdapter.repair(fakePacket(makeRequest("add a crest in sector 3"), crestState, 1), {})
+	local _, repairedCrestState, _, _, crestErr = LLMAdapter.repair(fakePacket(makeRequest("add a crest in sector 3"), crestState, 1), {})
 	T.expect("phase14_partial_crestdip_repair_state_no_error", crestErr == nil, tostring(crestErr))
 	T.expect("phase14_partial_crestdip_repair_state_tuned",
 		repairedCrestState ~= nil
@@ -485,7 +485,7 @@ function TestPhase14.runUnit()
 		end,
 	}
 	LLMAdapter.setProvider("orchestrate-test", orchestrateProvider)
-	local decision, orchestrateErr = LLMAdapter.orchestrate({
+	local decision, _, orchestrateErr = LLMAdapter.orchestrate({
 		editable_sectors = { 2, 3, 4, 7, 8, 9 },
 		sector_states = {
 			[2] = { mechanic = "RampJump", params = {}, score = 4 },

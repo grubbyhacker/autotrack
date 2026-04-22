@@ -114,6 +114,12 @@ function StatusPanel.setEndurance(
 	hud.topLeftStroke.Color = if hotfixActive == true or terminal then hud.colors.danger else hud.colors.amber
 end
 
+function StatusPanel.setMemorySummary(active: boolean, summaryText: string)
+	local hud = refs()
+	hud.memoryPanel.Visible = active == true and summaryText ~= ""
+	hud.memoryLabel.Text = if active == true then summaryText else ""
+end
+
 function StatusPanel.setRuntimeIdentity(buildStamp: string, controllerProfile: string)
 	return
 end
@@ -135,14 +141,21 @@ function StatusPanel.setRepairAction(text: string)
 	renderDetailLine()
 end
 
-function StatusPanel.setError(text: string, finalStatus: string, hotfixActive: boolean?)
+function StatusPanel.setError(text: string, finalStatus: string, hotfixActive: boolean?, warningText: string?)
 	local hud = refs()
 	local isLLMError = text ~= "" and string.find(text, "LLM error:", 1, true) == 1
+	local warning = warningText or ""
 
-	hud.llmWarning.Visible = isLLMError
-	if isLLMError then
-		local warningText = string.gsub(text, "^LLM error:%s*", "")
-		hud.llmWarningLabel.Text = if warningText ~= "" then warningText else text
+	hud.llmWarning.Visible = isLLMError or warning ~= ""
+	if isLLMError or warning ~= "" then
+		local displayText = warning
+		if displayText == "" then
+			displayText = string.gsub(text, "^LLM error:%s*", "")
+			if displayText == "" then
+				displayText = text
+			end
+		end
+		hud.llmWarningLabel.Text = displayText
 		hud.tweenFlash(hud.llmWarning, { BackgroundTransparency = 0.02 })
 	else
 		hud.llmWarningLabel.Text = ""

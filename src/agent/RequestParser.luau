@@ -171,6 +171,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 			qualifiers = {},
 			origin = "player",
 			design_intent = nil,
+			memory_context = nil,
 			timestamp = os.time(),
 		}, nil
 	end
@@ -204,6 +205,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		qualifiers = qualifiers,
 		origin = "player",
 		design_intent = nil,
+		memory_context = nil,
 		timestamp = os.time(),
 	}, nil
 end

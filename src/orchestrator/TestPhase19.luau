@@ -213,7 +213,7 @@ function TestPhase19.run()
 		end,
 	})
 
-	local decision, decisionErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local decision, _, decisionErr = LLMAdapter.orchestrate(makeOrchestratorContext())
 	T.expect(
 		"phase19_orchestrate_returns_design_intent",
 		decisionErr == nil
@@ -242,7 +242,7 @@ function TestPhase19.run()
 			return HttpService:JSONEncode(verbose)
 		end,
 	})
-	local longDecision, longDecisionErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local longDecision, _, longDecisionErr = LLMAdapter.orchestrate(makeOrchestratorContext())
 	T.expect(
 		"phase19_orchestrate_truncates_long_text_fields",
 		longDecisionErr == nil
@@ -291,7 +291,7 @@ function TestPhase19.run()
 		end,
 	})
 
-	local _, _, _, repairErr = LLMAdapter.repair(packet, {}, designIntent)
+	local _, _, _, _, repairErr = LLMAdapter.repair(packet, {}, designIntent)
 	T.expect(
 		"phase19_repair_accepts_design_intent_context",
 		repairErr == nil,
@@ -311,7 +311,7 @@ function TestPhase19.run()
 			return HttpService:JSONEncode(bad)
 		end,
 	})
-	local _, invalidErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local _, _, invalidErr = LLMAdapter.orchestrate(makeOrchestratorContext())
 	T.expect(
 		"phase19_invalid_design_intent_rejected",
 		type(invalidErr) == "string" and string.find(invalidErr, "target_score_band", 1, true) ~= nil,
@@ -329,7 +329,7 @@ function TestPhase19.run()
 			return HttpService:JSONEncode({ action = "begin_loop", rationale = "track is balanced enough" })
 		end,
 	})
-	local beginLoopDecision, beginLoopErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local beginLoopDecision, _, beginLoopErr = LLMAdapter.orchestrate(makeOrchestratorContext())
 	T.expect(
 		"phase19_begin_loop_supported",
 		beginLoopErr == nil and beginLoopDecision ~= nil and beginLoopDecision.action == "begin_loop",
@@ -379,9 +379,9 @@ function TestPhase19.run()
 		end,
 	})
 
-	local _, traceOrchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
-	local _, traceProposeErr = LLMAdapter.propose(request, designIntent)
-	local _, _, _, traceRepairErr = LLMAdapter.repair(packet, {}, designIntent)
+	local _, _, traceOrchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
+	local _, _, traceProposeErr = LLMAdapter.propose(request, designIntent)
+	local _, _, _, _, traceRepairErr = LLMAdapter.repair(packet, {}, designIntent)
 	T.expect(
 		"phase19_trace_seed_calls_succeeded",
 		traceOrchestrateErr == nil and traceProposeErr == nil and traceRepairErr == nil,

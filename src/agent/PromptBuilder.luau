@@ -15,6 +15,7 @@ type Request = Types.Request
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
 type DesignIntent = Types.DesignIntent
+type RunMemory = Types.RunMemory
 
 local PromptBuilder = {}
 
@@ -46,6 +47,16 @@ function PromptBuilder.systemPrompt(): string
 end
 
 local SCHEMA_LINE = "SectorState schema: {\"sector_id\":number,\"mechanic\":\"RampJump|Chicane|CrestDip\",\"params\":{},\"pads\":{\"ingress\":\"<PadValue>\",\"egress\":\"<PadValue>\"},\"version\":number}"
+local PROPOSAL_RESPONSE_SCHEMA = [[{"state":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"memory_note":{"author":"proposal","scope":"proposal","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
+local REPAIR_RESPONSE_SCHEMA = [[{"newState":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"explanation":"short text","memory_note":{"author":"repair","scope":"repair","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
+
+local function relevantMemory(memory: RunMemory?, localScope: string)
+	return {
+		shared = if memory ~= nil then (memory.shared or {}) else {},
+		[localScope] = if memory ~= nil then (memory[localScope] or {}) else {},
+	}
+end
+
 local function paramRangeLine(mechanic: string, levers: { string }): string
 	local defaults = LevelMappings.DEFAULTS[mechanic]
 	local bounds = LevelMappings.LEVER_BOUNDS[mechanic]
@@ -92,6 +103,9 @@ local function llmProposeSystemPrompt(): string
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
 		"Pad values: " .. table.concat(PadValueUtils.allowedValues(), ", ") .. ".",
 		SCHEMA_LINE,
+		"Return either a plain SectorState JSON or " .. PROPOSAL_RESPONSE_SCHEMA .. ".",
+		"If you include memory_note, it must stay in author/scope 'proposal' and record a short local lesson.",
+		"Memory is advisory only. Current design intent, telemetry, and legal ranges outrank remembered notes.",
 		"",
 		PARAM_RANGES,
 	}, "\n")
@@ -122,10 +136,13 @@ local function llmRepairSystemPrompt(): string
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
 		"Pad values: " .. table.concat(PadValueUtils.allowedValues(), ", ") .. ".",
 		SCHEMA_LINE,
+		"Return JSON matching " .. REPAIR_RESPONSE_SCHEMA .. ".",
+		"If you include memory_note, it must stay in author/scope 'repair' and capture a short repair lesson.",
+		"Memory is advisory only. Current failure evidence and diagnostics outrank remembered notes.",
 		"",
 		PARAM_RANGES,
 		"",
-		"Return a complete revised SectorState. Make small targeted changes — one or two params at a time.",
+		"Return a complete revised SectorState inside newState. Make small targeted changes — one or two params at a time.",
 	}, "\n")
 end
 
@@ -157,10 +174,13 @@ function PromptBuilder.initialProposal(request: Request): string
 			"Target pad value: " .. tostring(request.parsed.pad_value),
 			"Return a full SectorState for the sector with the requested pad change applied.",
 			"Return JSON matching:",
-			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
+			PROPOSAL_RESPONSE_SCHEMA,
 		}
 		if request.design_intent ~= nil then
 			table.insert(lines, 6, "Shared design intent: " .. encode(request.design_intent))
+		end
+		if request.memory_context ~= nil then
+			table.insert(lines, 7, "Relevant memory: " .. encode(relevantMemory(request.memory_context, "proposal")))
 		end
 		return table.concat(lines, "\n")
 	end
@@ -177,10 +197,13 @@ function PromptBuilder.initialProposal(request: Request): string
 		"Legal numeric levers: " .. encode(levers),
 		"Default params: " .. encode(defaults),
 		"Return JSON matching:",
-		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
+		PROPOSAL_RESPONSE_SCHEMA,
 	}
 	if request.design_intent ~= nil then
 		table.insert(lines, 5, "Shared design intent: " .. encode(request.design_intent))
+	end
+	if request.memory_context ~= nil then
+		table.insert(lines, 6, "Relevant memory: " .. encode(relevantMemory(request.memory_context, "proposal")))
 	end
 	return table.concat(lines, "\n")
 end
@@ -195,10 +218,13 @@ function PromptBuilder.repairStep(packet: FailurePacket): string
 		"Diagnostics: " .. encode(packet.diagnostics),
 		"Legal actions: " .. encode(packet.legal_actions),
 		"Return JSON matching:",
-		[[{"action":{"type":"SetNumericLever|SetPad"},"explanation":"short text"}]],
+		REPAIR_RESPONSE_SCHEMA,
 	}
 	if packet.design_intent ~= nil then
 		table.insert(lines, 3, "Shared design intent: " .. encode(packet.design_intent))
+	end
+	if packet.memory_context ~= nil then
+		table.insert(lines, 4, "Relevant memory: " .. encode(relevantMemory(packet.memory_context, "repair")))
 	end
 	return table.concat(lines, "\n")
 end
@@ -208,6 +234,7 @@ end
 -- Build the messages array for an initial proposal to a real LLM.
 function PromptBuilder.proposeMessages(request: Request, designIntent: DesignIntent?): { { role: string, content: string } }
 	local sharedIntent = effectiveDesignIntent(request, nil, designIntent)
+	local memoryContext = request.memory_context
 	local userContent
 	if request.parsed.request_kind == "Pad" then
 		local lines = {
@@ -221,6 +248,9 @@ function PromptBuilder.proposeMessages(request: Request, designIntent: DesignInt
 		if sharedIntent ~= nil then
 			table.insert(lines, 6, "Shared design intent: " .. encode(sharedIntent))
 		end
+		if memoryContext ~= nil then
+			table.insert(lines, 7, "Relevant memory: " .. encode(relevantMemory(memoryContext, "proposal")))
+		end
 		userContent = table.concat(lines, "\n")
 	else
 		local mechanic = request.parsed.mechanic
@@ -231,9 +261,13 @@ function PromptBuilder.proposeMessages(request: Request, designIntent: DesignInt
 			"Target mechanic: " .. mechanic,
 			"Qualifiers: " .. encode(request.qualifiers),
 			"Legal numeric levers: " .. encode(levers),
+			"Relevant memory: " .. encode(relevantMemory(memoryContext, "proposal")),
 			"Implement the shared design intent faithfully inside this one sector.",
+			"Use shared memory for durable constraints and proposal memory for local shape lessons.",
 			"Preserve the intended feel unless hard numeric/legal constraints block it.",
-			"Return a complete SectorState JSON. Be ambitious — push params toward challenging values.",
+			"Return either a plain SectorState JSON or the wrapped proposal schema with optional memory_note.",
+			"If you learned something durable, include a proposal-scoped memory_note.",
+			"Be ambitious — push params toward challenging values.",
 		}
 		if sharedIntent ~= nil then
 			table.insert(lines, 5, "Shared design intent: " .. encode(sharedIntent))
@@ -253,6 +287,7 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 	local mechanic = packet.sector_state.mechanic
 	local levers = mechanic and LevelMappings.NUMERIC_LEVERS[mechanic] or {}
 	local sharedIntent = effectiveDesignIntent(request, packet, designIntent)
+	local memoryContext = packet.memory_context or request.memory_context
 
 	local messages = {}
 	table.insert(messages, { role = "system", content = llmRepairSystemPrompt() })
@@ -264,6 +299,7 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		"Target mechanic: " .. tostring(mechanic),
 		"Qualifiers: " .. encode(request.qualifiers),
 		"Legal numeric levers: " .. encode(levers),
+		"Relevant memory: " .. encode(relevantMemory(memoryContext, "repair")),
 	}
 	if sharedIntent ~= nil then
 		table.insert(initialLines, 5, "Shared design intent: " .. encode(sharedIntent))
@@ -301,10 +337,13 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		"Current pads: " .. encode(packet.sector_state.pads),
 		"Current run metrics: " .. compactMetrics(packet.run_result.metrics),
 		"Diagnostics: " .. encode(packet.diagnostics),
+		"Relevant memory: " .. encode(relevantMemory(memoryContext, "repair")),
 		"The car FAILED — make the obstacle easier.",
 		"If this is a downstream_failure, your sector already passed but harmed a later committed sector. Preserve downstream compatibility, especially exit speed and post-feature stability.",
 		"Preserve the shared design intent when possible. If you must soften it, keep the same overall feel.",
+		"Use shared memory for durable constraints and repair memory for prior repair lessons, but let current diagnostics win when they disagree.",
 		"Make small changes to 1-2 params or pads. Stay within the specified ranges.",
+		"Return JSON matching the repair response schema, with optional repair-scoped memory_note.",
 	}
 	if sharedIntent ~= nil then
 		table.insert(finalLines, 3, "Shared design intent: " .. encode(sharedIntent))

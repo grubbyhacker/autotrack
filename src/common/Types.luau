@@ -23,6 +23,10 @@ export type TargetBudgetTolerance = "low" | "medium" | "high"
 export type TargetReliability = "conservative" | "balanced" | "risky"
 export type PriorityLevel = "low" | "medium" | "high"
 export type ReplacementIntent = "open_slot_preferred" | "replace_if_gain" | "preserve_good_sector"
+export type MemoryAuthor = "orchestrator" | "proposal" | "repair"
+export type MemoryScope = "shared" | "orchestrator" | "proposal" | "repair"
+export type MemorySourceType = "observed_result" | "inferred_pattern" | "downstream_warning" | "explicit_policy"
+export type MemoryConfidence = "low" | "medium" | "high"
 
 export type DesignIntent = {
 	sector_id: number,
@@ -39,6 +43,24 @@ export type DesignIntent = {
 	constraints: { string },
 }
 
+export type MemoryEntry = {
+	entry_id: string,
+	author: MemoryAuthor,
+	scope: MemoryScope,
+	note: string,
+	confidence: MemoryConfidence,
+	source_type: MemorySourceType,
+	source_ref: string,
+	timestamp: number,
+}
+
+export type RunMemory = {
+	shared: { MemoryEntry },
+	orchestrator: { MemoryEntry },
+	proposal: { MemoryEntry },
+	repair: { MemoryEntry },
+}
+
 export type Request = {
 	request_id: string,
 	raw_text: string,
@@ -46,6 +68,7 @@ export type Request = {
 	qualifiers: { string },
 	origin: RequestOrigin?,
 	design_intent: DesignIntent?,
+	memory_context: RunMemory?,
 	timestamp: number,
 }
 
@@ -182,6 +205,7 @@ export type FailurePacket = {
 	diagnostics: Diagnostics,
 	legal_actions: LegalActions,
 	design_intent: DesignIntent?,
+	memory_context: RunMemory?,
 }
 
 export type AttemptRecord = {
@@ -190,6 +214,7 @@ export type AttemptRecord = {
 	proposed_state: SectorState?,
 	result: RunResult,
 	hints: { string }?,
+	memory_note: MemoryEntry?,
 }
 
 export type OrchestratorAttempt = {
@@ -256,6 +281,7 @@ export type OrchestratorContext = {
 	sector_attempt_counts: { [number]: number }?,
 	mechanic_repeat_pressure: { [string]: number }?,
 	track_intent: OrchestratorTrackIntent?,
+	memory: RunMemory,
 }
 
 export type OrchestratorDecision = {
@@ -272,6 +298,7 @@ export type OrchestratorDecision = {
 	replacement_intent: ReplacementIntent?,
 	desired_feel: string?,
 	constraints: { string }?,
+	memory_note: MemoryEntry?,
 }
 
 export type LLMTraceDirection = "prompt" | "response" | "error"
@@ -312,6 +339,7 @@ export type CIJob = {
 	initial_state: SectorState,
 	working_state: SectorState,
 	attempts: { AttemptRecord },
+	proposal_memory_note: MemoryEntry?,
 	final_status: FinalStatus,
 }
 

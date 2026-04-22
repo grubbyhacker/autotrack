@@ -5,8 +5,8 @@
 -- All LLM calls go through here. Reads LLMConfig on every call so model
 -- changes take effect immediately without requiring a restart.
 --
--- propose(request, designIntent?)          → (SectorState?, error?)
--- repair(packet, history, designIntent?)   → (AgentAction?, SectorState?, explanation?, error?)
+-- propose(request, designIntent?)          → (SectorState?, MemoryEntry?, error?)
+-- repair(packet, history, designIntent?)   → (AgentAction?, SectorState?, explanation?, MemoryEntry?, error?)
 --   heuristic path: (action, nil, explanation, nil)
 --   LLM path:       (nil, newSectorState, explanation, nil)
 --   error:          (nil, nil, nil, errorString)
@@ -22,6 +22,7 @@ local ActionValidator = require(script.Parent.ActionValidator)
 local LLMTraceJournal = require(script.Parent.LLMTraceJournal)
 local MinimalProposer = require(script.Parent.Parent.Orchestrator.MinimalProposer)
 local MinimalOrchestrator = require(script.Parent.Parent.Orchestrator.MinimalOrchestrator)
+local EnduranceMemory = require(script.Parent.Parent.Orchestrator.EnduranceMemory)
 local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
 local RampJumpTuner = require(script.Parent.Parent.Mechanics.RampJumpTuner)
 
@@ -31,6 +32,7 @@ type AgentAction = Types.AgentAction
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
 type DesignIntent = Types.DesignIntent
+type MemoryEntry = Types.MemoryEntry
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
 type LLMTraceRole = Types.LLMTraceRole
@@ -74,6 +76,19 @@ local REPLACEMENT_INTENTS = {
 	open_slot_preferred = true,
 	replace_if_gain = true,
 	preserve_good_sector = true,
+}
+
+local MEMORY_CONFIDENCE = {
+	low = true,
+	medium = true,
+	high = true,
+}
+
+local MEMORY_SOURCE_TYPES = {
+	observed_result = true,
+	inferred_pattern = true,
+	downstream_warning = true,
+	explicit_policy = true,
 }
 
 local function traceRoleForKind(kind: LLMTraceKind): LLMTraceRole
@@ -270,6 +285,59 @@ local function validateChoice(decoded, fieldName: string, allowed): (string?, st
 	return value, nil
 end
 
+local function validateMemoryNote(rawNote, expectedAuthor: string, expectedScope: string, defaultSourceRef: string): (MemoryEntry?, string?)
+	if rawNote == nil then
+		return nil, nil
+	end
+	if type(rawNote) ~= "table" then
+		return nil, nil
+	end
+
+	local rawNoteText = rawNote.note
+	if rawNoteText == nil then
+		return nil, nil
+	end
+	if type(rawNoteText) ~= "string" then
+		return nil, nil
+	end
+	local trimmedNote = string.match(rawNoteText, "^%s*(.-)%s*$") or ""
+	if trimmedNote == "" then
+		return nil, nil
+	end
+
+	local author = expectedAuthor
+	local scope = expectedScope
+	local note = truncateText(trimmedNote, 120)
+	local confidence = rawNote.confidence
+	if type(confidence) ~= "string" or not MEMORY_CONFIDENCE[confidence] then
+		confidence = "medium"
+	end
+
+	local sourceType = rawNote.source_type
+	if type(sourceType) ~= "string" or not MEMORY_SOURCE_TYPES[sourceType] then
+		sourceType = "inferred_pattern"
+	end
+
+	local sourceRef = defaultSourceRef
+	if type(rawNote.source_ref) == "string" then
+		local trimmedRef = string.match(rawNote.source_ref, "^%s*(.-)%s*$") or ""
+		if trimmedRef ~= "" then
+			sourceRef = truncateText(trimmedRef, 64)
+		end
+	end
+
+	return {
+		entry_id = EnduranceMemory.nextEntryId(expectedAuthor),
+		author = author,
+		scope = scope,
+		note = note,
+		confidence = confidence,
+		source_type = sourceType,
+		source_ref = sourceRef,
+		timestamp = DateTime.now().UnixTimestampMillis,
+	}, nil
+end
+
 local function isPlainCrestRequest(request: Request): boolean
 	return request.parsed.request_kind == "Mechanic"
 		and request.parsed.mechanic == "CrestDip"
@@ -396,7 +464,7 @@ end
 
 -- ── propose ─────────────────────────────────────────────────────────────────
 
-function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (SectorState?, string?)
+function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (SectorState?, MemoryEntry?, string?)
 	local provider, providerName, traceProvider, traceModel = activeProvider()
 	local systemPrompt = PromptBuilder.systemPrompt()
 	local userPrompt = PromptBuilder.initialProposal(request)
@@ -408,6 +476,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 		user_prompt = userPrompt,
 		request = request,
 		design_intent = sharedIntent,
+		memory_context = request.memory_context,
 		messages = messages,
 	})
 
@@ -417,13 +486,14 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 			user_prompt = userPrompt,
 			request = request,
 			design_intent = sharedIntent,
+			memory_context = request.memory_context,
 			messages = messages,
 		})
 	end)
 	if not ok then
 		local errText = "proposal backend failure: " .. tostring(rawOrErr)
 		traceError("propose", traceProvider, traceModel, "backend", errText)
-		return nil, errText
+		return nil, nil, errText
 	end
 	traceRawResponse("propose", traceProvider, traceModel, rawOrErr)
 
@@ -435,7 +505,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 		traceError("propose", traceProvider, traceModel, "decode", errText, {
 			raw_response = rawOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 	traceDecodedResponse("propose", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
@@ -453,23 +523,36 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 		traceError("propose", traceProvider, traceModel, "template_validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 
-	local candidate = decodedOrErr
+	local decoded = decodedOrErr
+	local candidate = if type(decoded) == "table" and type(decoded.state) == "table" then decoded.state else decoded
+	local memoryNote, memoryErr = validateMemoryNote(
+		if type(decoded) == "table" then decoded.memory_note else nil,
+		"proposal",
+		"proposal",
+		string.format("request:%s", request.request_id)
+	)
+	if memoryErr ~= nil then
+		traceError("propose", traceProvider, traceModel, "validation", memoryErr, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, memoryErr
+	end
 	if type(candidate) ~= "table" then
 		local errText = "invalid proposal: sector state must be a table"
 		traceError("propose", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 	if candidate.sector_id ~= nil and candidate.sector_id ~= request.parsed.sector_id then
 		local errText = "invalid proposal: sector_id mismatch"
 		traceError("propose", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 	if request.parsed.request_kind == "Mechanic"
 		and candidate.mechanic ~= nil
@@ -478,7 +561,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 		traceError("propose", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 
 	local state = mergeRepairState(templateState, candidate)
@@ -501,7 +584,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 			decoded_response = decodedOrErr,
 			normalized_state = state,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 	if request.parsed.request_kind == "Pad" then
 		local side = request.parsed.pad_side
@@ -511,7 +594,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 			traceError("propose", traceProvider, traceModel, "validation", errText, {
 				decoded_response = decodedOrErr,
 			})
-			return nil, errText
+			return nil, nil, errText
 		end
 		if state.pads[side] ~= value then
 			local errText = "invalid proposal: pad target mismatch"
@@ -519,20 +602,20 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 				decoded_response = decodedOrErr,
 				normalized_state = state,
 			})
-			return nil, errText
+			return nil, nil, errText
 		end
 	end
 
-	return state, nil
+	return state, memoryNote, nil
 end
 
 -- ── repair ───────────────────────────────────────────────────────────────────
 
--- Returns (AgentAction?, SectorState?, explanation?, error?)
---   heuristic path: (action, nil, explanation, nil)
---   LLM full-state path: (nil, newSectorState, explanation, nil)
---   error: (nil, nil, nil, errorString)
-function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, designIntent: DesignIntent?): (AgentAction?, SectorState?, string?, string?)
+-- Returns (AgentAction?, SectorState?, explanation?, MemoryEntry?, error?)
+--   heuristic path: (action, nil, explanation, memoryNote?, nil)
+--   LLM full-state path: (nil, newSectorState, explanation, memoryNote?, nil)
+--   error: (nil, nil, nil, nil, errorString)
+function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, designIntent: DesignIntent?): (AgentAction?, SectorState?, string?, MemoryEntry?, string?)
 	local provider, providerName, traceProvider, traceModel = activeProvider()
 
 	-- Cap history to MAX_HISTORY_DEPTH
@@ -556,6 +639,7 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 		packet = packet,
 		history = cappedHistory,
 		design_intent = sharedIntent,
+		memory_context = packet.memory_context,
 		messages = messages,
 	})
 
@@ -566,13 +650,14 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 			packet = packet,
 			history = cappedHistory,
 			design_intent = sharedIntent,
+			memory_context = packet.memory_context,
 			messages = messages,
 		})
 	end)
 	if not ok then
 		local errText = "repair backend failure: " .. tostring(rawOrErr)
 		traceError("repair", traceProvider, traceModel, "backend", errText)
-		return nil, nil, nil, errText
+		return nil, nil, nil, nil, errText
 	end
 	traceRawResponse("repair", traceProvider, traceModel, rawOrErr)
 
@@ -584,7 +669,7 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 		traceError("repair", traceProvider, traceModel, "decode", errText, {
 			raw_response = rawOrErr,
 		})
-		return nil, nil, nil, errText
+		return nil, nil, nil, nil, errText
 	end
 	traceDecodedResponse("repair", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
@@ -598,7 +683,19 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 
 	-- Detect LLM full-state path: response has "newState" key
 	local decoded = decodedOrErr
-	if decoded.newState ~= nil then
+	local memoryNote, memoryErr = validateMemoryNote(
+		if type(decoded) == "table" then decoded.memory_note else nil,
+		"repair",
+		"repair",
+		string.format("repair:%s:%d", packet.request.request_id, packet.attempt_index)
+	)
+	if memoryErr ~= nil then
+		traceError("repair", traceProvider, traceModel, "validation", memoryErr, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, nil, nil, memoryErr
+	end
+	if type(decoded) == "table" and decoded.newState ~= nil then
 		-- LLM returned a full SectorState replacement
 		local newState = mergeRepairState(packet.sector_state, decoded.newState)
 		if newState.mechanic == "CrestDip" then
@@ -621,7 +718,7 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 				decoded_response = decodedOrErr,
 				normalized_state = newState,
 			})
-			return nil, nil, nil, errText
+			return nil, nil, nil, nil, errText
 		end
 		if newState.sector_id ~= packet.sector_state.sector_id then
 			local errText = "LLM repair: sector_id mismatch"
@@ -629,7 +726,7 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 				decoded_response = decodedOrErr,
 				normalized_state = newState,
 			})
-			return nil, nil, nil, errText
+			return nil, nil, nil, nil, errText
 		end
 		if newState.mechanic ~= packet.sector_state.mechanic then
 			local errText = "LLM repair: mechanic mismatch"
@@ -637,12 +734,20 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 				decoded_response = decodedOrErr,
 				normalized_state = newState,
 			})
-			return nil, nil, nil, errText
+			return nil, nil, nil, nil, errText
 		end
-		return nil, newState, explanation, nil
+		return nil, newState, explanation, memoryNote, nil
 	end
 
 	-- Heuristic / injected delta-action path
+	if type(decoded) ~= "table" then
+		local errText = "invalid repair: response must be an object"
+		traceError("repair", traceProvider, traceModel, "validation", errText, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, nil, nil, errText
+	end
+
 	local action = decoded.action
 	local explanation = shortenExplanation(decoded.explanation)
 	if action == nil then
@@ -650,14 +755,14 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 		traceError("repair", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, nil, nil, errText
+		return nil, nil, nil, nil, errText
 	end
 	if explanation == nil then
 		local errText = "invalid repair: explanation must be short non-empty text"
 		traceError("repair", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, nil, nil, errText
+		return nil, nil, nil, nil, errText
 	end
 
 	local valid, err = ActionValidator.validateAction(action, packet.sector_state.mechanic)
@@ -666,10 +771,10 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 		traceError("repair", traceProvider, traceModel, "validation", errText, {
 			decoded_response = decodedOrErr,
 		})
-		return nil, nil, nil, errText
+		return nil, nil, nil, nil, errText
 	end
 
-	return action, nil, explanation, nil
+	return action, nil, explanation, memoryNote, nil
 end
 
 local EDITABLE_SECTORS = {
@@ -741,17 +846,18 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 	}, nil
 end
 
-function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDecision?, string?)
+function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDecision?, MemoryEntry?, string?)
 	local provider, providerName, traceProvider, traceModel = activeProvider()
 	if type(provider.orchestrate) ~= "function" then
 		local errText = "orchestrate backend missing"
 		traceError("orchestrate", traceProvider, traceModel, "backend", errText)
-		return nil, errText
+		return nil, nil, errText
 	end
 
 	local messages = OrchestratorPromptBuilder.messages(context)
 	tracePrompt("orchestrate", traceProvider, traceModel, {
 		context = context,
+		memory = context.memory,
 		messages = messages,
 	})
 
@@ -764,7 +870,7 @@ function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDeci
 	if not ok then
 		local errText = "orchestrate backend failure: " .. tostring(rawOrErr)
 		traceError("orchestrate", traceProvider, traceModel, "backend", errText)
-		return nil, errText
+		return nil, nil, errText
 	end
 	traceRawResponse("orchestrate", traceProvider, traceModel, rawOrErr)
 
@@ -776,7 +882,7 @@ function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDeci
 		traceError("orchestrate", traceProvider, traceModel, "decode", errText, {
 			raw_response = rawOrErr,
 		})
-		return nil, errText
+		return nil, nil, errText
 	end
 	traceDecodedResponse("orchestrate", traceProvider, traceModel, rawOrErr, decodedOrErr)
 
@@ -793,9 +899,21 @@ function LLMAdapter.orchestrate(context: OrchestratorContext): (OrchestratorDeci
 		traceError("orchestrate", traceProvider, traceModel, "validation", tostring(err), {
 			decoded_response = decodedOrErr,
 		})
-		return nil, err
+		return nil, nil, err
 	end
-	return decision, nil
+	local memoryNote, memoryErr = validateMemoryNote(
+		if type(decodedOrErr) == "table" then decodedOrErr.memory_note else nil,
+		"orchestrator",
+		"orchestrator",
+		string.format("decision:%d", (context.attempt_budget and context.attempt_budget.used or 0) + 1)
+	)
+	if memoryErr ~= nil then
+		traceError("orchestrate", traceProvider, traceModel, "validation", memoryErr, {
+			decoded_response = decodedOrErr,
+		})
+		return nil, nil, memoryErr
+	end
+	return decision, memoryNote, nil
 end
 
 return LLMAdapter

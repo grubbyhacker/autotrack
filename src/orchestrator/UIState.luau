@@ -27,6 +27,13 @@ local function defaultOrchestratorAttributes()
 		orchestrator_failure_signature = "",
 		orchestrator_reliability_index = 0,
 		orchestrator_track_intent = "",
+		shared_memory_depth = 0,
+		proposal_memory_depth = 0,
+		repair_memory_depth = 0,
+		shared_memory_1 = "",
+		shared_memory_2 = "",
+		proposal_memory_1 = "",
+		repair_memory_1 = "",
 		orchestrator_ledger_1 = "",
 		orchestrator_ledger_2 = "",
 		orchestrator_ledger_3 = "",
@@ -122,6 +129,7 @@ function UIState.init(baselineLapTime: number)
 		current_sector_kind = "",
 		final_status = "",
 		error_text = "",
+		llm_warning_text = "",
 		failure_banner_text = "",
 		failure_banner_visible = false,
 		last_score_sector = 0,
@@ -262,6 +270,16 @@ function UIState.clearError()
 	UIState.setError("")
 end
 
+function UIState.setLLMWarning(text: string)
+	setAttributes({
+		llm_warning_text = text or "",
+	})
+end
+
+function UIState.clearLLMWarning()
+	UIState.setLLMWarning("")
+end
+
 function UIState.showFailureBanner(text: string)
 	setAttributes({
 		failure_banner_text = text or "",
@@ -290,6 +308,7 @@ end
 function UIState.beginJob(request)
 	UIState.resetLogs()
 	UIState.clearError()
+	UIState.clearLLMWarning()
 	UIState.clearExplanation()
 	UIState.clearRepairAction()
 	UIState.setBusy(true)
@@ -303,12 +322,13 @@ function UIState.beginJob(request)
 	SuccessMarker.clear()
 end
 
-function UIState.rejectRequest(rawText: string, reason: string)
+function UIState.rejectRequest(rawText: string, reason: string, warningText: string?)
 	local label = if string.find(reason, "busy", 1, true) ~= nil then "Track busy" else "Request rejected"
 	UIState.setBusy(false)
 	UIState.setRequestContext(rawText, 0, "")
 	UIState.setPhase("RejectRequest", label)
 	UIState.setError(reason)
+	UIState.setLLMWarning(warningText or "")
 	UIState.setAttempt(0, Constants.MAX_REPAIR_ATTEMPTS)
 	UIState.clearExplanation()
 	UIState.clearRepairAction()
@@ -481,6 +501,7 @@ function UIState.setEnduranceActive(active: boolean, attemptBudgetTotal: number?
 		endurance_lap_count = 0,
 		endurance_attempt_budget_used = 0,
 		endurance_attempt_budget_total = attemptBudgetTotal or 0,
+		llm_warning_text = "",
 	})
 end
 
@@ -497,6 +518,9 @@ end
 
 function UIState.setOrchestratorTelemetry(payload)
 	local ledgerLines = payload and payload.ledger_lines or {}
+	local sharedMemoryLines = payload and payload.shared_memory_lines or {}
+	local proposalMemoryLines = payload and payload.proposal_memory_lines or {}
+	local repairMemoryLines = payload and payload.repair_memory_lines or {}
 	setAttributes({
 		orchestrator_objective_total = payload and payload.objective_total or 0,
 		orchestrator_budget_target = payload and payload.budget_target or 0,
@@ -509,6 +533,13 @@ function UIState.setOrchestratorTelemetry(payload)
 		orchestrator_failure_signature = payload and payload.failure_signature or "",
 		orchestrator_reliability_index = payload and payload.reliability_index or 0,
 		orchestrator_track_intent = payload and payload.track_intent or "",
+		shared_memory_depth = payload and payload.shared_memory_depth or 0,
+		proposal_memory_depth = payload and payload.proposal_memory_depth or 0,
+		repair_memory_depth = payload and payload.repair_memory_depth or 0,
+		shared_memory_1 = sharedMemoryLines[1] or "",
+		shared_memory_2 = sharedMemoryLines[2] or "",
+		proposal_memory_1 = proposalMemoryLines[1] or "",
+		repair_memory_1 = repairMemoryLines[1] or "",
 		orchestrator_ledger_1 = ledgerLines[1] or "",
 		orchestrator_ledger_2 = ledgerLines[2] or "",
 		orchestrator_ledger_3 = ledgerLines[3] or "",
@@ -544,6 +575,7 @@ function UIState.publishReady()
 	UIState.setBusy(false)
 	UIState.setPhase("Idle", "Ready for request")
 	UIState.clearError()
+	UIState.clearLLMWarning()
 	UIState.clearExplanation()
 	UIState.clearRepairAction()
 	UIState.hideFailure()

@@ -164,9 +164,13 @@ function OpenRouterProvider(modelId: string)
 	function provider.propose(payload)
 		local messages = payload.messages or PromptBuilder.proposeMessages(payload.request, payload.design_intent)
 		local json = callAPI(modelId, messages)
-		local state = HttpService:JSONDecode(json)
+		local decoded = HttpService:JSONDecode(json)
+		local state = if type(decoded) == "table" and type(decoded.state) == "table" then decoded.state else decoded
 		state = normalizeState(state, cfg.integerLevers)
-		return encode(state)
+		return encode({
+			state = state,
+			memory_note = if type(decoded) == "table" then decoded.memory_note else nil,
+		})
 	end
 
 	function provider.repair(payload)
@@ -174,14 +178,19 @@ function OpenRouterProvider(modelId: string)
 		local packet = payload.packet
 		local messages = payload.messages or PromptBuilder.repairMessages(packet.request, history, packet, payload.design_intent)
 		local json = callAPI(modelId, messages)
-		local state = HttpService:JSONDecode(json)
+		local decoded = HttpService:JSONDecode(json)
+		local state = if type(decoded) == "table" and type(decoded.newState) == "table" then decoded.newState else decoded
 		state = normalizeState(state, cfg.integerLevers)
 		-- Derive a short explanation from the state diff vs the previous attempt
 		local explanation = string.format(
 			"LLM revised state (attempt %d)",
 			packet.attempt_index + 1
 		)
-		return encode({ newState = state, explanation = explanation })
+		return encode({
+			newState = state,
+			explanation = if type(decoded) == "table" and type(decoded.explanation) == "string" then decoded.explanation else explanation,
+			memory_note = if type(decoded) == "table" then decoded.memory_note else nil,
+		})
 	end
 
 	function provider.orchestrate(payload)

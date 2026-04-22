@@ -27,6 +27,38 @@ local function percentString(value: number): string
 	return ("%d%%"):format(math.floor((value or 0) * 100 + 0.5))
 end
 
+local function compactLine(prefix: string, text: string): string
+	if text == nil or text == "" then
+		return prefix .. " -"
+	end
+	return prefix .. " " .. text
+end
+
+local function buildMemorySummary(): string
+	local sharedDepth = stateFolder:GetAttribute("shared_memory_depth") or 0
+	local proposalDepth = stateFolder:GetAttribute("proposal_memory_depth") or 0
+	local repairDepth = stateFolder:GetAttribute("repair_memory_depth") or 0
+	local shared1 = stateFolder:GetAttribute("shared_memory_1") or ""
+	local shared2 = stateFolder:GetAttribute("shared_memory_2") or ""
+	local proposal1 = stateFolder:GetAttribute("proposal_memory_1") or ""
+	local repair1 = stateFolder:GetAttribute("repair_memory_1") or ""
+
+	if sharedDepth == 0 and proposalDepth == 0 and repairDepth == 0 then
+		return ""
+	end
+
+	local lines = {
+		string.format("S%d P%d R%d", sharedDepth, proposalDepth, repairDepth),
+		compactLine("Shared", shared1),
+	}
+	if shared2 ~= "" then
+		table.insert(lines, compactLine("Shared", shared2))
+	end
+	table.insert(lines, compactLine("Prop", proposal1))
+	table.insert(lines, compactLine("Fix", repair1))
+	return table.concat(lines, "\n")
+end
+
 local function bindBaselineButton(remoteEvent)
 	if baselineClickConnection then
 		baselineClickConnection:Disconnect()
@@ -189,6 +221,10 @@ local function render()
 				)
 			or nil
 	)
+	StatusPanel.setMemorySummary(
+		stateFolder:GetAttribute("endurance_mode_active") == true,
+		buildMemorySummary()
+	)
 	StatusPanel.setRuntimeIdentity(
 		stateFolder:GetAttribute("build_stamp") or "",
 		stateFolder:GetAttribute("controller_profile") or ""
@@ -202,7 +238,8 @@ local function render()
 	StatusPanel.setError(
 		stateFolder:GetAttribute("error_text") or "",
 		stateFolder:GetAttribute("final_status") or "",
-		hotfixActive
+		hotfixActive,
+		stateFolder:GetAttribute("llm_warning_text") or ""
 	)
 	StatusPanel.setFailureBanner(
 		stateFolder:GetAttribute("failure_banner_text") or "",
@@ -274,6 +311,7 @@ local observedAttributes = {
 	"explanation",
 	"repair_action_text",
 	"error_text",
+	"llm_warning_text",
 	"busy",
 	"baseline_lap_time",
 	"last_lap_time",
@@ -329,6 +367,13 @@ local observedAttributes = {
 	"orchestrator_failure_signature",
 	"orchestrator_reliability_index",
 	"orchestrator_track_intent",
+	"shared_memory_depth",
+	"proposal_memory_depth",
+	"repair_memory_depth",
+	"shared_memory_1",
+	"shared_memory_2",
+	"proposal_memory_1",
+	"repair_memory_1",
 	"orchestrator_ledger_1",
 	"orchestrator_ledger_2",
 	"orchestrator_ledger_3",

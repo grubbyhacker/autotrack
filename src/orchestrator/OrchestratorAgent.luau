@@ -4,11 +4,13 @@ local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForC
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
+local MinimalOrchestrator = require(script.Parent.MinimalOrchestrator)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local EnduranceObjective = require(script.Parent.EnduranceObjective)
+local EnduranceMemory = require(script.Parent.EnduranceMemory)
 local JobLock = require(script.Parent.JobLock)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local UIState = require(script.Parent.UIState)
@@ -17,6 +19,8 @@ local Tracer = require(script.Parent.Tracer)
 
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
+type MemoryEntry = Types.MemoryEntry
+type RunMemory = Types.RunMemory
 
 local OrchestratorAgent = {}
 
@@ -43,6 +47,13 @@ local MECHANIC_WORDS = {
 
 local _active = false
 local MAX_ORCHESTRATOR_HISTORY = 8
+
+local function truncateText(value: string, maxLen: number): string
+	if #value <= maxLen then
+		return value
+	end
+	return string.sub(value, 1, maxLen)
+end
 
 local function defaultEnsureBaseline(): (boolean, string?)
 	if workspace:GetAttribute("AutoTrack_BaselineLapDone") == true then
@@ -104,6 +115,9 @@ local function defaultDeps()
 		end,
 		setAttemptBudget = function(used: number, total: number)
 			UIState.setEnduranceAttemptBudget(used, total)
+		end,
+		setLLMWarning = function(text: string)
+			UIState.setLLMWarning(text)
 		end,
 		appendLog = function(line: string)
 			UIState.appendLog(line)
@@ -168,7 +182,8 @@ local function buildContext(
 	attemptHistory,
 	sectorAttemptCounts,
 	repeatPressure,
-	trackIntent
+	trackIntent,
+	memory: RunMemory
 ): OrchestratorContext
 	local sectorStates = {}
 	for _, state in ipairs(SectorRegistry.getStraights()) do
@@ -195,6 +210,7 @@ local function buildContext(
 		sector_attempt_counts = sectorAttemptCounts,
 		mechanic_repeat_pressure = repeatPressure,
 		track_intent = trackIntent,
+		memory = EnduranceMemory.clone(memory),
 	}
 end
 
@@ -315,6 +331,118 @@ local function appendAttemptHistory(history, entry)
 	end
 end
 
+local function appendRoleMemory(memory: RunMemory, scopeName: string, note: MemoryEntry?)
+	if note == nil then
+		return
+	end
+	EnduranceMemory.append(memory, scopeName, note)
+end
+
+local function appendJobMemory(memory: RunMemory, job)
+	if job == nil then
+		return
+	end
+	appendRoleMemory(memory, "proposal", job.proposal_memory_note)
+	for _, attempt in ipairs(job.attempts or {}) do
+		appendRoleMemory(memory, "repair", attempt.memory_note)
+	end
+end
+
+local function latestRepairNote(job): MemoryEntry?
+	if job == nil then
+		return nil
+	end
+	for index = #job.attempts, 1, -1 do
+		local note = job.attempts[index].memory_note
+		if note ~= nil then
+			return note
+		end
+	end
+	return nil
+end
+
+local function buildSharedLesson(decision: OrchestratorDecision, job, result, decisionIndex: number): MemoryEntry?
+	if job == nil or result == nil or decision.action == "begin_loop" then
+		return nil
+	end
+
+	local sectorId = decision.sector_id or 0
+	local mechanic = tostring(decision.mechanic or (job.working_state and job.working_state.mechanic) or "Unknown")
+	local localNote = latestRepairNote(job) or job.proposal_memory_note
+	local noteText
+	local sourceType = "observed_result"
+
+	if job.final_status == "committed" then
+		if localNote ~= nil then
+			noteText = string.format("Sector %d %s committed: %s", sectorId, mechanic, localNote.note)
+			sourceType = localNote.source_type
+		else
+			noteText = string.format("Sector %d %s committed with stable lap behavior.", sectorId, mechanic)
+		end
+	else
+		local failureDetail = tostring(result.failure and (result.failure.detail or result.failure.type) or "reverted")
+		if result.failure and result.failure.type == "downstream_failure" then
+			sourceType = "downstream_warning"
+		end
+		if localNote ~= nil then
+			noteText = string.format("Sector %d %s failed (%s): %s", sectorId, mechanic, failureDetail, localNote.note)
+		else
+			noteText = string.format("Sector %d %s failed (%s); prefer a safer variant next time.", sectorId, mechanic, failureDetail)
+		end
+	end
+
+	return {
+		entry_id = EnduranceMemory.nextEntryId("orchestrator"),
+		author = "orchestrator",
+		scope = "shared",
+		note = truncateText(noteText, 120),
+		confidence = "medium",
+		source_type = sourceType,
+		source_ref = string.format("decision:%d", decisionIndex),
+		timestamp = DateTime.now().UnixTimestampMillis,
+	}
+end
+
+local function memoryTelemetry(memory: RunMemory)
+	local sharedNotes = EnduranceMemory.latestNotes(memory, "shared", 2)
+	local proposalNotes = EnduranceMemory.latestNotes(memory, "proposal", 1)
+	local repairNotes = EnduranceMemory.latestNotes(memory, "repair", 1)
+	return {
+		shared_memory_depth = EnduranceMemory.depth(memory, "shared"),
+		proposal_memory_depth = EnduranceMemory.depth(memory, "proposal"),
+		repair_memory_depth = EnduranceMemory.depth(memory, "repair"),
+		shared_memory_lines = sharedNotes,
+		proposal_memory_lines = proposalNotes,
+		repair_memory_lines = repairNotes,
+	}
+end
+
+local function withMemoryTelemetry(payload, memory: RunMemory)
+	local merged = {}
+	for key, value in pairs(payload) do
+		merged[key] = value
+	end
+	for key, value in pairs(memoryTelemetry(memory)) do
+		merged[key] = value
+	end
+	return merged
+end
+
+local function fallbackOrchestrate(context: OrchestratorContext, orchestrateErr: string?): (OrchestratorDecision, string)
+	local fallbackDecision = MinimalOrchestrator.decide(context)
+	local reason = tostring(orchestrateErr or "unknown orchestrate error")
+	local fallbackReason = "LLM orchestration failed; using deterministic fallback"
+	if string.find(reason, "invalid orchestrate response", 1, true) ~= nil then
+		fallbackReason = "LLM orchestration returned invalid JSON; using deterministic fallback"
+	end
+	if fallbackDecision.action == "begin_loop" then
+		fallbackDecision.rationale = "fallback: track ready after invalid orchestration response"
+	else
+		fallbackDecision.rationale = fallbackDecision.rationale or "fallback deterministic orchestration"
+	end
+	return fallbackDecision, fallbackReason .. ": " .. reason
+end
+
 local function buildHistoryEntry(decision: OrchestratorDecision, job, result, decisionIndex: number)
 	local normalizedSignature = EnduranceObjective.signature(decision)
 	return {
@@ -372,6 +500,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 		local sectorAttemptCounts = {}
 		local repeatPressure = {}
 		local trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
+		local runMemory = EnduranceMemory.new()
 
 		while attemptBudgetUsed < Constants.ENDURANCE_ATTEMPT_BUDGET do
 			local context = buildContext(
@@ -382,18 +511,29 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				attemptHistory,
 				sectorAttemptCounts,
 				repeatPressure,
-				trackIntent
+				trackIntent,
+				runMemory
 			)
 			deps.setPhase(
 				"EnduranceOrchestrate",
 				string.format("Endurance Mode — Orchestrating (%d/%d)", attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
 			)
 			deps.setAttemptBudget(attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
-
-			local decision, orchestrateErr = deps.orchestrate(context)
-			if not decision then
-				return false, orchestrateErr
+			if deps.setLLMWarning then
+				deps.setLLMWarning("")
 			end
+
+			local decision, decisionNote, orchestrateErr = deps.orchestrate(context)
+			if not decision then
+				decision, orchestrateErr = fallbackOrchestrate(context, orchestrateErr)
+				decisionNote = nil
+				deps.appendLog(orchestrateErr)
+				deps.trace("endurance_orchestrate_fallback " .. orchestrateErr)
+				if deps.setLLMWarning then
+					deps.setLLMWarning("Orchestrator response invalid; using deterministic fallback")
+				end
+			end
+			appendRoleMemory(runMemory, "orchestrator", decisionNote)
 			local decisionIndex = #attemptHistory + 1
 			local objectiveScore = nil
 			local rationale = tostring(decision.rationale or "")
@@ -405,7 +545,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 			end
 			if decision.action == "begin_loop" then
 				if deps.setOrchestratorTelemetry then
-					deps.setOrchestratorTelemetry({
+					deps.setOrchestratorTelemetry(withMemoryTelemetry({
 						objective_total = scoreTotal(scoresBySector),
 						budget_target = trackIntent.target_budget_used,
 						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
@@ -422,7 +562,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 							trackIntent.target_total_score or 0,
 							(trackIntent.target_budget_used or 0) * 100
 						),
-					})
+					}, runMemory))
 				end
 				deps.appendLog("Orchestrator: track ready")
 				deps.trace("endurance_begin_loop")
@@ -430,7 +570,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 			end
 
 			if deps.setOrchestratorTelemetry then
-				deps.setOrchestratorTelemetry({
+				deps.setOrchestratorTelemetry(withMemoryTelemetry({
 					objective_total = objectiveScore and objectiveScore.total or 0,
 					budget_target = trackIntent.target_budget_used,
 					budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
@@ -447,7 +587,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 						trackIntent.target_total_score or 0,
 						(trackIntent.target_budget_used or 0) * 100
 					),
-				})
+				}, runMemory))
 			end
 
 			attemptBudgetUsed += 1
@@ -464,7 +604,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 
 			local submitOk, submitReason
 			if args.submitDesignIntent ~= nil then
-				submitOk, submitReason = args.submitDesignIntent(decision, requestText)
+				submitOk, submitReason = args.submitDesignIntent(decision, requestText, EnduranceMemory.clone(runMemory))
 			else
 				submitOk, submitReason = args.submit(requestText)
 			end
@@ -492,11 +632,16 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				}
 				local historyEntry = buildHistoryEntry(decision, job, result, decisionIndex)
 				appendAttemptHistory(attemptHistory, historyEntry)
+				appendJobMemory(runMemory, job)
+				local sharedLesson = buildSharedLesson(decision, job, result, decisionIndex)
+				if sharedLesson ~= nil then
+					EnduranceMemory.appendSharedIfFresh(runMemory, sharedLesson)
+				end
 				sectorAttemptCounts = rebuildSectorAttemptCounts(attemptHistory)
 				repeatPressure = rebuildRepeatPressure(attemptHistory)
 				trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
 				if deps.setOrchestratorTelemetry then
-					deps.setOrchestratorTelemetry({
+					deps.setOrchestratorTelemetry(withMemoryTelemetry({
 						objective_total = success and (historyEntry.score or 0) or (objectiveScore and objectiveScore.total or 0),
 						budget_target = trackIntent.target_budget_used,
 						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
@@ -513,7 +658,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 							trackIntent.target_total_score or 0,
 							(trackIntent.target_budget_used or 0) * 100
 						),
-					})
+					}, runMemory))
 				end
 			end
 

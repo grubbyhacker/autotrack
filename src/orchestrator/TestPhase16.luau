@@ -150,7 +150,7 @@ function TestPhase16.run()
 		end,
 	})
 
-	local normalizedProposal, normalizedErr = LLMAdapter.propose(plainRequest)
+	local normalizedProposal, _, normalizedErr = LLMAdapter.propose(plainRequest)
 	T.expect(
 		"phase16_llm_ramp_proposal_normalized_safe",
 		normalizedErr == nil
