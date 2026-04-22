@@ -14,6 +14,7 @@ local RampJumpIntegrity = require(script.Parent.Parent.Integrity.RampJumpIntegri
 local ChicaneIntegrity = require(script.Parent.Parent.Integrity.ChicaneIntegrity)
 local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegrity)
 local Tracer = require(script.Parent.Parent.Orchestrator.Tracer)
+local RuntimeContext = require(script.Parent.Parent.Orchestrator.RuntimeContext)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 
 type RunResult = Types.RunResult
@@ -21,6 +22,7 @@ type RunResult = Types.RunResult
 local VerifierController = {}
 local TRAIL_POINT_SPACING = 5
 local MAX_TRAIL_POINTS = 8
+local SECTOR_ENTRY_RIDE_OFFSET_Y = (Constants.TRACK_THICKNESS * 0.5) + (Constants.CAR_HEIGHT * 0.5)
 
 local function moveTowards(current: number, target: number, maxDelta: number): number
 	if current < target then
@@ -474,12 +476,82 @@ local function mechanicEntryTarget(baseSpeed: number, progress: number, targetSt
 	return lerp(entryCap, baseSpeed, blend)
 end
 
-local function shouldNormalizeRampEntry(targetSectorId: number?, currentSectorId: number?, currentSectorState): boolean
-	return targetSectorId == nil
-		and currentSectorId ~= nil
-		and currentSectorState ~= nil
-		and currentSectorState.mechanic == "RampJump"
+local function sectorEntrySnapSpeedFactor(sectorKind: string?, sectorState): number
+	if sectorKind == "Corner" then
+		return runtimeNumberAttr(
+			"AutoTrack_SectorEntrySnapCornerSpeedFactor",
+			Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR
+		)
+	end
+	if sectorState ~= nil and sectorState.mechanic == "RampJump" then
+		return runtimeNumberAttr(
+			"AutoTrack_SectorEntrySnapRampJumpSpeedFactor",
+			Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR
+		)
+	end
+	if sectorState ~= nil and sectorState.mechanic == "CrestDip" then
+		return runtimeNumberAttr(
+			"AutoTrack_SectorEntrySnapCrestDipSpeedFactor",
+			Constants.SECTOR_ENTRY_SNAP_CRESTDIP_SPEED_FACTOR
+		)
+	end
+	if sectorState ~= nil and sectorState.mechanic == "Chicane" then
+		return runtimeNumberAttr(
+			"AutoTrack_SectorEntrySnapChicaneSpeedFactor",
+			Constants.SECTOR_ENTRY_SNAP_CHICANE_SPEED_FACTOR
+		)
+	end
+	return runtimeNumberAttr(
+		"AutoTrack_SectorEntrySnapStraightSpeedFactor",
+		Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR
+	)
 end
+
+local function shouldSnapOnSectorEntry(previousSectorId: number?, sectorId: number, sectorKinds: { [number]: string }?): boolean
+	if previousSectorId ~= nil
+		and sectorKinds ~= nil
+		and sectorKinds[previousSectorId] == "Corner"
+		and sectorKinds[sectorId] == "Corner" then
+		return false
+	end
+	return true
+end
+
+VerifierController._shouldSnapOnSectorEntry = shouldSnapOnSectorEntry
+
+local function getExactSectorEntryFrame(sectorId: number): CFrame?
+	if not RuntimeContext.isReady() then
+		return nil
+	end
+
+	local ok, sector = pcall(function()
+		return RuntimeContext.getSectorById(sectorId)
+	end)
+	if not ok or sector == nil or sector.entry == nil then
+		return nil
+	end
+
+	local entryFrame = sector.entry
+	return CFrame.new(entryFrame.Position + Vector3.new(0, SECTOR_ENTRY_RIDE_OFFSET_Y, 0))
+		* (entryFrame - entryFrame.Position)
+end
+
+local function buildSectorEntrySnap(
+	entryPosition: Vector3,
+	referenceWaypoint: CFrame,
+	sectorKind: string?,
+	sectorState,
+	exactEntryFrame: CFrame?
+)
+	local snapOrigin = if exactEntryFrame ~= nil then exactEntryFrame.Position else entryPosition
+	local sourceDirection = if exactEntryFrame ~= nil then exactEntryFrame.LookVector else referenceWaypoint.LookVector
+	local direction = horizontalDirectionOrFallback(sourceDirection, referenceWaypoint.LookVector)
+	local speed = math.max(5, Constants.CAR_TARGET_SPEED * sectorEntrySnapSpeedFactor(sectorKind, sectorState))
+	local snapCFrame = CFrame.lookAt(snapOrigin, snapOrigin + direction)
+	return snapCFrame, direction * speed, speed, direction
+end
+
+VerifierController._buildSectorEntrySnap = buildSectorEntrySnap
 
 local function projectPointToSegment(point: Vector3, startPoint: Vector3, endPoint: Vector3): (Vector3, number)
 	local flatStart = flattenHorizontal(startPoint)
@@ -601,17 +673,17 @@ function VerifierController.runLap(
 
 		handleSectorChange = function(id: number, entering: boolean)
 			local speed = car.AssemblyLinearVelocity.Magnitude
+			local angularSpeed = car.AssemblyAngularVelocity.Magnitude
+			local verticalSpeed = car.AssemblyLinearVelocity.Y
 			if entering then
 				MetricCollector.onSectorEntry(id, speed)
 			else
-				MetricCollector.onSectorExit(id, speed)
+				MetricCollector.onSectorExit(id, speed, angularSpeed, verticalSpeed)
 			end
 			if onSectorChange then
 				onSectorChange(id, entering)
 			end
 		end
-
-		handleSectorChange(currentSectorId :: number, true)
 	end
 
 	local attachment = Instance.new("Attachment")
@@ -669,6 +741,8 @@ function VerifierController.runLap(
 	local debugNextProgress = 0
 	local rampJumpRecoveryDeadline = 0
 	local airborneFrozenDirection = nil
+	local postSnapSettleDeadline = 0
+	local postSnapDirection = nil
 
 	local function recordSectorPeak(
 		sectorId: number?,
@@ -718,11 +792,54 @@ function VerifierController.runLap(
 		car:SetAttribute("AutoTrack_CurrentSectorKind", sectorKind or "")
 	end
 
+	local function snapIntoSector(sectorId: number, waypointCursor: number): (number, Vector3)
+		local sectorKind = if sectorKinds ~= nil then sectorKinds[sectorId] else nil
+		local sectorState = sectorStateForContext(sectorId, targetSectorId, targetState)
+		local entryIndex = math.max(1, waypointCursor - 1)
+		local entryPosition = waypoints[entryIndex].Position
+		local referenceWaypoint = waypoints[math.clamp(waypointCursor, 1, #waypoints)]
+		local exactEntryFrame = getExactSectorEntryFrame(sectorId)
+		local snapCFrame, snapVelocity, snapSpeed, snapDirection = buildSectorEntrySnap(
+			entryPosition,
+			referenceWaypoint,
+			sectorKind,
+			sectorState,
+			exactEntryFrame
+		)
+		car.CFrame = snapCFrame
+		car.AssemblyLinearVelocity = snapVelocity
+		car.AssemblyAngularVelocity = Vector3.zero
+		return snapSpeed, snapDirection
+	end
+
 	if currentSectorId ~= nil and sectorKinds and sectorKinds[currentSectorId] == "Corner" then
 		commandedSpeed = Constants.CAR_TARGET_SPEED * Constants.CORNER_SPEED_FACTOR
 		publishDebugState(commandedSpeed, "Corner")
 	else
 		publishDebugState(Constants.CAR_TARGET_SPEED, if currentSectorId ~= nil then "Straight" else "")
+	end
+
+	if currentSectorId ~= nil
+		and handleSectorChange ~= nil
+		and runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED) then
+		if shouldSnapOnSectorEntry(nil, currentSectorId, sectorKinds) then
+			local snappedSpeed, snappedDirection = snapIntoSector(currentSectorId, 1)
+			persistentTargetSpeed = snappedSpeed
+			commandedSpeed = snappedSpeed
+			activePadToken = nil
+			padEffectSectorHopsRemaining = 0
+			postSnapDirection = snappedDirection
+			postSnapSettleDeadline = startTime + runtimeNumberAttr(
+				"AutoTrack_SectorEntrySnapSettleTime",
+				Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME
+			)
+			recentTrail = { car.Position }
+			lastTrailPoint = car.Position
+			publishDebugState(snappedSpeed, if sectorKinds ~= nil then sectorKinds[currentSectorId] else "Straight")
+		end
+	end
+	if currentSectorId ~= nil and handleSectorChange ~= nil then
+		handleSectorChange(currentSectorId :: number, true)
 	end
 
 	local function recordTrail(position: Vector3)
@@ -752,6 +869,9 @@ function VerifierController.runLap(
 				target_vertical_displacement = targetMetrics.vertical_displacement,
 				target_reacquired = targetMetrics.reacquired,
 				target_airtime_distance = targetMetrics.airtime_distance,
+				target_reacquire_distance = targetMetrics.reacquire_distance,
+				target_exit_angular_speed = targetMetrics.exit_angular_speed,
+				target_exit_vertical_speed = targetMetrics.exit_vertical_speed,
 			})
 		elseif targetState.mechanic == "RampJump" then
 			runtimeOk, runtimeHints = RampJumpIntegrity.evaluateRuntime({
@@ -760,12 +880,16 @@ function VerifierController.runLap(
 				target_vertical_displacement = targetMetrics.vertical_displacement,
 				target_reacquired = targetMetrics.reacquired,
 				target_airtime_distance = targetMetrics.airtime_distance,
+				target_reacquire_distance = targetMetrics.reacquire_distance,
+				target_exit_angular_speed = targetMetrics.exit_angular_speed,
+				target_exit_vertical_speed = targetMetrics.exit_vertical_speed,
 			})
 		elseif targetState.mechanic == "Chicane" then
 			runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime({
 				target_left_offset = targetMetrics.left_offset,
 				target_right_offset = targetMetrics.right_offset,
 				target_lateral_band_changes = targetMetrics.lateral_band_changes,
+				target_peak_body_distance = targetMetrics.peak_body_distance,
 			})
 		else
 			return nil
@@ -798,16 +922,29 @@ function VerifierController.runLap(
 		local toTarget = targetPosition - carPosition
 		local distanceToTarget = toTarget.Magnitude
 
-		if distanceToTarget <= 10 then
+		local waypointAdvanceThreshold = 10
+		if waypointSectors ~= nil and currentSectorId ~= nil then
+			local nextSectorId = waypointSectors[math.min(waypointIndex + 1, #waypointSectors)]
+			if nextSectorId ~= currentSectorId then
+				waypointAdvanceThreshold = math.max(
+					1,
+					runtimeNumberAttr(
+						"AutoTrack_SectorEntrySnapTransitionDistance",
+						Constants.SECTOR_ENTRY_SNAP_TRANSITION_DISTANCE
+					)
+				)
+			end
+		end
+		if distanceToTarget <= waypointAdvanceThreshold then
 			waypointIndex += 1
 			lastWaypointAdvanceTime = now
-				if waypointIndex > #waypoints then
-					if waypointSectors and handleSectorChange and currentSectorId then
-						handleSectorChange(currentSectorId, false)
-						logSectorContainment(currentSectorId)
-					end
-					completed = true
-					break
+			if waypointIndex > #waypoints then
+				if waypointSectors and handleSectorChange and currentSectorId then
+					handleSectorChange(currentSectorId, false)
+					logSectorContainment(currentSectorId)
+				end
+				completed = true
+				break
 			end
 			if waypointSectors and handleSectorChange then
 				local newSectorId = (waypointSectors :: { number })[waypointIndex]
@@ -837,88 +974,35 @@ function VerifierController.runLap(
 						if padEffectSectorHopsRemaining <= 0 then
 							persistentTargetSpeed = Constants.CAR_TARGET_SPEED
 						end
-						end
-						currentSectorId = newSectorId
-						handleSectorChange(currentSectorId :: number, true)
-						local currentEntryState = sectorStateForContext(currentSectorId, targetSectorId, targetState)
-						if targetSectorId ~= nil
-							and currentSectorId == targetSectorId
-							and targetState ~= nil
-							and runtimeBoolAttr(
-								"AutoTrack_TargetEntryStateNormalizeEnabled",
-								Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED
-							) then
-						local entryDirection = horizontalDirectionOrFallback(
-							waypoints[waypointIndex].LookVector,
-							car.CFrame.LookVector
+					end
+					local previousSectorId = currentSectorId
+					currentSectorId = newSectorId
+					if runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED)
+						and shouldSnapOnSectorEntry(previousSectorId, currentSectorId, sectorKinds) then
+						local snappedSpeed, snappedDirection = snapIntoSector(currentSectorId, waypointIndex)
+						persistentTargetSpeed = snappedSpeed
+						commandedSpeed = snappedSpeed
+						activePadToken = nil
+						padEffectSectorHopsRemaining = 0
+						postSnapDirection = snappedDirection
+						postSnapSettleDeadline = now + runtimeNumberAttr(
+							"AutoTrack_SectorEntrySnapSettleTime",
+							Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME
 						)
-						local entrySpeedFactor = runtimeNumberAttr(
-							"AutoTrack_TargetEntryNormalizedSpeedFactor",
-							Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR
-						)
-						if targetState ~= nil then
-							if targetState.mechanic == "RampJump" then
-								entrySpeedFactor = runtimeNumberAttr(
-									"AutoTrack_TargetEntryNormalizedSpeedFactorRampJump",
-									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP
-								)
-							elseif targetState.mechanic == "CrestDip" then
-								entrySpeedFactor = runtimeNumberAttr(
-									"AutoTrack_TargetEntryNormalizedSpeedFactorCrestDip",
-									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CRESTDIP
-								)
-							elseif targetState.mechanic == "Chicane" then
-								entrySpeedFactor = runtimeNumberAttr(
-									"AutoTrack_TargetEntryNormalizedSpeedFactorChicane",
-									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_CHICANE
-								)
-							end
-						end
-						local normalizedSpeed = math.max(
-							5,
-							Constants.CAR_TARGET_SPEED
-								* entrySpeedFactor
-						)
-						if runtimeBoolAttr(
-							"AutoTrack_TargetEntryOrientationSnapEnabled",
-							Constants.TARGET_ENTRY_ORIENTATION_SNAP_ENABLED
-						) then
-							car.CFrame = CFrame.lookAt(car.Position, car.Position + entryDirection)
-						end
-							car.AssemblyLinearVelocity = entryDirection * normalizedSpeed
-							car.AssemblyAngularVelocity = Vector3.zero
-							persistentTargetSpeed = math.min(persistentTargetSpeed, normalizedSpeed)
-							commandedSpeed = normalizedSpeed
-						elseif shouldNormalizeRampEntry(targetSectorId, currentSectorId, currentEntryState)
-							and runtimeBoolAttr(
-								"AutoTrack_TargetEntryStateNormalizeEnabled",
-								Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED
-							) then
-							local entryDirection = horizontalDirectionOrFallback(
-								waypoints[waypointIndex].LookVector,
-								car.CFrame.LookVector
-							)
-							local normalizedSpeed = math.max(
-								5,
-								Constants.CAR_TARGET_SPEED * runtimeNumberAttr(
-									"AutoTrack_TargetEntryNormalizedSpeedFactorRampJump",
-									Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP
-								)
-							)
-							if runtimeBoolAttr(
-								"AutoTrack_TargetEntryOrientationSnapEnabled",
-								Constants.TARGET_ENTRY_ORIENTATION_SNAP_ENABLED
-							) then
-								car.CFrame = CFrame.lookAt(car.Position, car.Position + entryDirection)
-							end
-							car.AssemblyLinearVelocity = entryDirection * normalizedSpeed
-							car.AssemblyAngularVelocity = Vector3.zero
-							persistentTargetSpeed = math.min(persistentTargetSpeed, normalizedSpeed)
-							commandedSpeed = normalizedSpeed
-						end
+					else
+						postSnapDirection = nil
+						postSnapSettleDeadline = 0
+					end
+					handleSectorChange(currentSectorId :: number, true)
+					publishDebugState(
+						commandedSpeed,
+						if sectorKinds ~= nil then sectorKinds[currentSectorId] else "Straight"
+					)
 				end
 			end
 			targetPosition = waypoints[waypointIndex].Position
+			carPosition = car.Position
+			carCFrame = car.CFrame
 			toTarget = targetPosition - carPosition
 			distanceToTarget = toTarget.Magnitude
 		end
@@ -952,8 +1036,15 @@ function VerifierController.runLap(
 			(segmentDirection * (1 - orientationBlend)) + (anticipatedDirection * orientationBlend),
 			segmentDirection
 		)
+		local postSnapSettleActive = now < postSnapSettleDeadline and postSnapDirection ~= nil
+		if postSnapSettleActive then
+			moveDirection = postSnapDirection
+			segmentDirection = postSnapDirection
+			orientationDirection = postSnapDirection
+		end
 		local isAirborne = not ReacquireDetector.isGrounded(carPosition, rayParams)
 		local currentSectorState = sectorStateForContext(currentSectorId, targetSectorId, targetState)
+		local inAuthoredSector = currentSectorState ~= nil and currentSectorState.mechanic ~= nil
 		local inRampJumpSector = currentSectorState ~= nil and currentSectorState.mechanic == "RampJump"
 		local isTargetRampJump = currentSectorId == targetSectorId
 			and targetState ~= nil
@@ -976,11 +1067,11 @@ function VerifierController.runLap(
 		)
 		local speed = car.AssemblyLinearVelocity.Magnitude
 		local angularSpeed = car.AssemblyAngularVelocity.Magnitude
-			if (currentSectorId == targetSectorId or rampJumpContext)
-				and runtimeBoolAttr(
-					"AutoTrack_TargetSectorStabilityAssistEnabled",
-					Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED
-				) then
+		if (currentSectorId == targetSectorId or inAuthoredSector or rampJumpContext)
+			and runtimeBoolAttr(
+				"AutoTrack_TargetSectorStabilityAssistEnabled",
+				Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED
+			) then
 			local maxAngularSpeed = math.max(0, runtimeNumberAttr(
 				"AutoTrack_TargetSectorStabilityMaxAngularSpeed",
 				Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
@@ -1068,7 +1159,15 @@ function VerifierController.runLap(
 		end
 
 		recordTrail(carPosition)
-		MetricCollector.record(speed, carPosition, isAirborne, lateralError, targetLocalX, targetLocalZ)
+		MetricCollector.record(
+			speed,
+			carPosition,
+			isAirborne,
+			lateralError,
+			targetLocalX,
+			targetLocalZ,
+			if currentSectorId == targetSectorId then bodyDistance else nil
+		)
 
 		if now - lastWaypointAdvanceTime >= Constants.WAYPOINT_STALL_TIME_THRESHOLD then
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
@@ -1220,7 +1319,9 @@ function VerifierController.runLap(
 		local vectorVelocity = if forcedAirborneVectorVelocity ~= nil
 			then forcedAirborneVectorVelocity
 			else pathDirection * commandedSpeed
-		if not isAirborne and lateralError > 1 then
+		if postSnapSettleActive then
+			vectorVelocity = orientationDirection * commandedSpeed
+		elseif not isAirborne and lateralError > 1 then
 			local lateralNudge = lateralOffset.Unit * math.min(lateralError, Constants.CAR_MAX_LATERAL_CORRECTION)
 			vectorVelocity += Vector3.new(lateralNudge.X, 0, lateralNudge.Z)
 		end
@@ -1330,6 +1431,9 @@ function VerifierController.runLap(
 		end
 		if not isAirborne then
 			airborneFrozenDirection = nil
+		end
+		if now >= postSnapSettleDeadline then
+			postSnapDirection = nil
 		end
 
 		wasAirborne = isAirborne

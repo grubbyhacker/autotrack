@@ -161,13 +161,16 @@ local function testRampJump()
 		makeMetrics({
 			target_airborne = false,
 			target_air_distance = 0,
-			target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
+			target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT + Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN + 0.1,
 			target_reacquired = true,
+			target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN - 1,
+			target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED - 0.25,
+			target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 0.5,
 		})
 	)
-	T.expect("rampjump_pass_vertical_displacement_at_min",
+	T.expect("rampjump_pass_vertical_displacement_with_margin",
 		ok == true,
-		"expected pass at vertical displacement = MIN (" .. tostring(Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT) .. ")")
+		"expected pass above the comfort floor")
 
 	ok, hints = RampJumpIntegrity.evaluateRuntime({
 		target_airborne = false,

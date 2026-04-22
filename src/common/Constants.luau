@@ -92,6 +92,14 @@ Constants.STRAIGHT_PIN_ORIENTATION_MAX_TORQUE = 70000
 Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED = true -- once airborne on a ramp, hold takeoff heading instead of steering toward future waypoints
 Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING = 12            -- resist spin/yaw while airborne on a RampJump
 Constants.RAMPJUMP_AIRBORNE_ORIENTATION_MAX_TORQUE = 3500 -- lower airborne torque in ramp context so the verifier does not twist itself mid-flight
+Constants.SECTOR_ENTRY_SNAP_ENABLED = true              -- authoritative state reset on every sector entry to stop upstream physics bleed
+Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR = Constants.CORNER_SPEED_FACTOR
+Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR = 1.0
+Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR = 0.22
+Constants.SECTOR_ENTRY_SNAP_CRESTDIP_SPEED_FACTOR = 0.28
+Constants.SECTOR_ENTRY_SNAP_CHICANE_SPEED_FACTOR = 0.32
+Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME = 0.12         -- briefly hold snapped heading so the controller does not visibly fight the reset
+Constants.SECTOR_ENTRY_SNAP_TRANSITION_DISTANCE = 3.5  -- enter the next sector closer to the true boundary, not 10 studs early
 Constants.TARGET_ENTRY_STATE_NORMALIZE_ENABLED = true   -- optional deterministic assist: normalize state at target-sector entry
 Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR = 0.34   -- normalized entry speed as a fraction of CAR_TARGET_SPEED
 Constants.TARGET_ENTRY_NORMALIZED_SPEED_FACTOR_RAMPJUMP = 0.22
@@ -144,6 +152,10 @@ Constants.RAMPJUMP_MIN_GAP = 2              -- studs
 Constants.RAMPJUMP_MIN_AIR_DISTANCE = 2.0   -- retained as telemetry guidance only; Phase 16 no longer requires dramatic airtime for a playable ramp
 Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT = 1.5 -- low-risk ramps should still visibly lift the car above the flat road
 Constants.RAMPJUMP_REACQUIRE_MAX = 12       -- studs after landing (phase 14: tightened from 20)
+Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN = 0.5
+Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN = 2.0
+Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED = 2.5
+Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 10.0
 
 -- Chicane integrity thresholds
 Constants.CHICANE_MIN_LATERAL_DISPLACEMENT = 4  -- studs
@@ -153,6 +165,8 @@ Constants.CHICANE_LATERAL_BAND_THRESHOLD = 2    -- studs; local X threshold for 
 Constants.CHICANE_SCORE_ALT_FULL = 3            -- band changes mapping to full alternation credit
 Constants.CHICANE_SPEED_RETENTION_FLOOR = 0.65  -- chicane score falls off below this target min-speed ratio
 Constants.CHICANE_INGRESS_BRAKE_PENALTY = 2.0   -- score penalty for brake-heavy "safe" chicanes
+Constants.CHICANE_COMFORT_LATERAL_MARGIN = 0.75
+Constants.CHICANE_COMFORT_BODY_MARGIN = 1.5
 Constants.CRESTDIP_EGRESS_BRAKE_PENALTY = 2.5   -- score penalty for exit-brake crests; they sabotage downstream setup
 
 -- CrestDip integrity thresholds
@@ -161,6 +175,11 @@ Constants.CRESTDIP_MIN_CURVATURE = 0.005          -- |h|/L^2, 1/studs; relaxed f
 Constants.CRESTDIP_MAX_AIRTIME_DISTANCE = 30      -- studs; largest allowed airborne segment after liftoff
 Constants.CRESTDIP_APEX_PROGRESS_RADIUS = 0.12    -- progress window around sector midpoint treated as the crest top
 Constants.CRESTDIP_APEX_MIN_SPEED = 20            -- studs/s minimum speed across the crest top for resilience
+Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN = 0.75
+Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN = 4.0
+Constants.CRESTDIP_COMFORT_APEX_SPEED_MARGIN = 4.0
+Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED = 2.5
+Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 8.0
 
 -- Phase 11: ChallengeScore weights and budget
 -- See plans/phase11.md §3, §10 for the formula and motivation.

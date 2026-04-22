@@ -54,6 +54,7 @@
     "phase14_5": { "boot_mode": "skip_baseline" },
     "phase15": { "boot_mode": "skip_baseline" },
     "phase16": { "boot_mode": "baseline" },
+    "phase18": { "boot_mode": "baseline" },
     "llm_trace_export": { "boot_mode": "skip_baseline" }
   }
 }

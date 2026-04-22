@@ -48,14 +48,20 @@ function ChicaneIntegrity.evaluateRuntime(
 	local leftOffset = metrics.target_left_offset or 0
 	local rightOffset = metrics.target_right_offset or 0
 	local bandChanges = metrics.target_lateral_band_changes or 0
+	local peakBodyDistance = metrics.target_peak_body_distance or 0
+	local minRuntimeExcursion = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
+		+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
+	local maxBodyDistance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE - Constants.CHICANE_COMFORT_BODY_MARGIN
 
-	if leftOffset < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5
-		or rightOffset < Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5 then
+	if leftOffset < minRuntimeExcursion or rightOffset < minRuntimeExcursion then
 		table.insert(hints, "runtime lateral excursion too small")
 	end
 
 	if bandChanges < Constants.CHICANE_MIN_ALTERNATIONS then
 		table.insert(hints, "runtime lateral alternation too small")
+	end
+	if peakBodyDistance > maxBodyDistance then
+		table.insert(hints, "body containment margin too small inside chicane")
 	end
 
 	return #hints == 0, hints

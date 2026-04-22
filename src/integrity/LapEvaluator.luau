@@ -51,6 +51,10 @@ local function zeroMetrics(): RunMetrics
 		target_entered = false,
 		target_exited = false,
 		target_progress = 0,
+		target_reacquire_distance = 0,
+		target_peak_body_distance = 0,
+		target_exit_angular_speed = 0,
+		target_exit_vertical_speed = 0,
 		lap_time = 0,
 		slowdown_ratio = 1,
 	}

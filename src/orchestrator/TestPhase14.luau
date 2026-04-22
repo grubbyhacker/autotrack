@@ -40,7 +40,7 @@ local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 -- | Chicane sector 3 | Tightest currently reliable S-bend inside the real sector-length budget; guards against over-easing the shape into something trivial. |
 -- | CrestDip sector 3 | Standalone crest profile that survives without upstream conditioning; guards the solo CrestDip envelope used by the downstream pair test. |
 local GOLDEN_CHICANE_SECTOR3 = {
-	amplitude = 4,
+	amplitude = 5,
 	transition_length = 26,
 	corridor_width = 18,
 	ingress = "Brake25",

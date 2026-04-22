@@ -242,8 +242,11 @@ function TestPhase16.run()
 	local integrityOk, integrityHints = RampJumpIntegrity.evaluateRuntime({
 		target_airborne = false,
 		target_air_distance = 0,
-		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
+		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT + Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN + 0.25,
 		target_reacquired = true,
+		target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN - 1,
+		target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED - 0.5,
+		target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 1,
 	})
 	T.expect(
 		"phase16_ramp_integrity_allows_playable_rollover",
@@ -263,10 +266,10 @@ function TestPhase16.run()
 	resetEditableSectors()
 	local sector = getSectorMeta(3)
 	local liveState = makeState(3, {
-		ramp_angle = 4,
-		ramp_length = 24,
+		ramp_angle = 5,
+		ramp_length = 26,
 		gap_length = 2,
-		landing_length = 34,
+		landing_length = 36,
 	}, "Brake25", "Brake10")
 	local result = select(1, AttemptRunner.run({
 		workingState = liveState,

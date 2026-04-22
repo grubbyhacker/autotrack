@@ -40,6 +40,10 @@ local _targetLeftOffset = 0
 local _targetRightOffset = 0
 local _targetLateralBand = 0
 local _targetLateralBandChanges = 0
+local _targetPeakBodyDistance = 0
+local _targetReacquireDistance = 0
+local _targetExitAngularSpeed = 0
+local _targetExitVerticalSpeed = 0
 -- Phase 11 telemetry: time-based hang tracking, peak lateral acceleration,
 -- target-sector minimum speed. These feed ChallengeScore.compute.
 local _airStartClock = 0
@@ -84,6 +88,10 @@ function MetricCollector.reset(baselineY: number, targetSector: number?)
 	_targetRightOffset = 0
 	_targetLateralBand = 0
 	_targetLateralBandChanges = 0
+	_targetPeakBodyDistance = 0
+	_targetReacquireDistance = 0
+	_targetExitAngularSpeed = 0
+	_targetExitVerticalSpeed = 0
 	_airStartClock = 0
 	_targetAirStartClock = 0
 	_hangTime = 0
@@ -102,7 +110,8 @@ function MetricCollector.record(
 	isAirborne: boolean,
 	lateralError: number,
 	targetLocalX: number?,
-	targetLocalZ: number?
+	targetLocalZ: number?,
+	targetBodyDistance: number?
 )
 	_maxLateralError = math.max(_maxLateralError, math.abs(lateralError))
 	_maxVerticalDisplacement = math.max(_maxVerticalDisplacement, math.abs(position.Y - _baselineY))
@@ -189,6 +198,10 @@ function MetricCollector.record(
 			end
 		end
 
+		if type(targetBodyDistance) == "number" and targetBodyDistance > _targetPeakBodyDistance then
+			_targetPeakBodyDistance = targetBodyDistance
+		end
+
 		if isAirborne and not _targetAirborne then
 			_targetAirborne = true
 			_targetEverAirborne = true
@@ -197,6 +210,9 @@ function MetricCollector.record(
 		elseif not isAirborne and _targetAirborne then
 			_targetAirborne = false
 			_targetEverReacquired = true
+			if _targetCurrentAirSegment > _targetReacquireDistance then
+				_targetReacquireDistance = _targetCurrentAirSegment
+			end
 			if _targetCurrentAirSegment > _targetMaxAirSegment then
 				_targetMaxAirSegment = _targetCurrentAirSegment
 			end
@@ -221,12 +237,14 @@ function MetricCollector.onSectorEntry(sector_id: number, speed: number)
 end
 
 -- Mark sector exit.
-function MetricCollector.onSectorExit(sector_id: number, speed: number)
+function MetricCollector.onSectorExit(sector_id: number, speed: number, angularSpeed: number?, verticalSpeed: number?)
 	_sectorExitSpeed[sector_id] = speed
 	if sector_id == _targetSector then
 		if _targetAirborne and _targetCurrentAirSegment > _targetMaxAirSegment then
 			_targetMaxAirSegment = _targetCurrentAirSegment
 		end
+		_targetExitAngularSpeed = math.abs(angularSpeed or 0)
+		_targetExitVerticalSpeed = math.abs(verticalSpeed or 0)
 		_insideTargetSector = false
 		_targetExited = true
 		_targetMaxProgress = 1
@@ -240,6 +258,10 @@ function MetricCollector.getTargetMetrics()
 	end
 
 	local targetReacquired = if _targetEverAirborne then _targetEverReacquired else true
+	local targetReacquireDistance = math.max(_targetReacquireDistance, _targetMaxAirSegment)
+	if _targetAirborne and _targetCurrentAirSegment > targetReacquireDistance then
+		targetReacquireDistance = _targetCurrentAirSegment
+	end
 
 	return {
 		airborne = _targetEverAirborne,
@@ -251,6 +273,10 @@ function MetricCollector.getTargetMetrics()
 		right_offset = _targetRightOffset,
 		lateral_band_changes = _targetLateralBandChanges,
 		in_target_sector = _insideTargetSector,
+		peak_body_distance = _targetPeakBodyDistance,
+		reacquire_distance = targetReacquireDistance,
+		exit_angular_speed = _targetExitAngularSpeed,
+		exit_vertical_speed = _targetExitVerticalSpeed,
 	}
 end
 
@@ -283,6 +309,10 @@ function MetricCollector.finalise(
 	local hangTime = if _targetHangTime > 0 then _targetHangTime else _hangTime
 	local targetMinSpeed = if _targetMinSpeed == math.huge then 0 else _targetMinSpeed
 	local targetApexMinSpeed = if _targetApexMinSpeed == math.huge then 0 else _targetApexMinSpeed
+	local targetReacquireDistance = math.max(_targetReacquireDistance, _targetMaxAirSegment)
+	if _targetAirborne and _targetCurrentAirSegment > targetReacquireDistance then
+		targetReacquireDistance = _targetCurrentAirSegment
+	end
 
 	return {
 		entry_speed = _sectorEntrySpeed[targetSector] or 0,
@@ -306,6 +336,10 @@ function MetricCollector.finalise(
 		target_exited = _targetExited,
 		target_progress = _targetMaxProgress,
 		target_entered = _targetEntered,
+		target_reacquire_distance = targetReacquireDistance,
+		target_peak_body_distance = _targetPeakBodyDistance,
+		target_exit_angular_speed = _targetExitAngularSpeed,
+		target_exit_vertical_speed = _targetExitVerticalSpeed,
 		lap_time = lapTime,
 		slowdown_ratio = lapTime / math.max(baselineLapTime, 0.001),
 		hang_time = hangTime,

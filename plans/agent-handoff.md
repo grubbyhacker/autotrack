@@ -25,10 +25,11 @@
 | 15 | Complete — RampJump continuous entry arc, shared ramp profile, dedicated `phase15` gate |
 | 16 | Complete — RampJump playability retune, `/demo rampitup`, full-lap ramp stabilization, dedicated `phase16` gate |
 | 17 | Complete — server-side LLM trace journal, `llm_trace_export` snapshot export, CLI bridge export command |
+| 18 | Complete — deterministic sector-entry snap isolation, comfort-margin integrity gates, dedicated `phase18` gate |
 
 ## Current state
 
-- `phase14.5`, `phase15`, and `phase16` are landed and committed.
+- `phase14.5`, `phase15`, `phase16`, and `phase18` are landed locally; `phase18` includes exact-entry snapping, short post-snap settle, and corner-to-corner handoff continuity.
 - Phase 17 trace observability now lives entirely server-side:
   - `src/agent/LLMTraceJournal.luau` owns append-only in-memory runs
   - `src/agent/LLMAdapter.luau` is the only canonical emission point for prompt/response/error events
@@ -67,11 +68,22 @@
   - the old per-sector shell underlay was replaced with a shared track foundation in `TrackVisuals.renderTrackFoundation`
   - corner visuals now use denser visual-only path sampling than the verifier path
   - chicanes now render hidden segmented collision plus a denser smooth visual overlay; when retuning chicane visuals, keep the collision path and visual path conceptually separate
+- Phase 18 hardening now owns sector-boundary determinism:
+  - `VerifierController` snaps the verifier into an upright canonical state on every sector entry, not only at target-sector assists
+  - canonical entry speed is sector-kind / mechanic-specific; upstream drift, spin, and pad carry-over are intentionally discarded at the boundary
+  - the snap now anchors to exact sector `entry` frames when runtime sector metadata is available, and a short post-snap settle window reduces visible controller jitter
+  - corner-to-corner handoffs intentionally skip the snap and remain continuous at corner speed
+  - comfort-margin telemetry now exists in `RunMetrics`:
+    - `target_reacquire_distance`
+    - `target_peak_body_distance`
+    - `target_exit_angular_speed`
+    - `target_exit_vertical_speed`
+  - `RampJump`, `Chicane`, and `CrestDip` now reject borderline completions as `mechanic_integrity_failure` instead of letting them commit and flake later
 
 ## Current reliability posture
 
 - Working objective is still demo reliability over pure physics fidelity.
-- Target-sector entry normalization and recovery assists exist and are mechanic-specific.
+- Sector-entry normalization is now unconditional at every boundary; simulation continuity is no longer a goal when it conflicts with repeatability.
 - Non-corner straights currently use stronger yaw/roll damping and forward-heading pinning than corners.
 - Corner-exit acceleration is now heading-gated: on the exit shoulder and first `0.15` of the following straight, target speed stays pinned until forward alignment exceeds `0.992`, which removes the visible slide-before-rotate handoff from S1 into S2.
 - `VerifierController.runLap` now explicitly settles the verifier at lap completion (zero linear/angular velocity, align to final heading) so completed laps do not drift or steer off the track after control teardown.
@@ -90,16 +102,17 @@
 - `make test TEST=phase14_sector2_debug`
 - `make test TEST=phase15`
 - `make test TEST=phase16`
+- `make test TEST=phase18`
 - `make test TEST=phase13_unit`
 - `make test TEST=llm_trace_export`
 - `make export-llm-trace`
 - `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/sample.json`
 - `make inspect-llm-trace TRACE=traces/sample.json`
 - `make test TEST=phase4_rampjump`
+- `make test TEST=phase5_unit`
 - `make test TEST=phase4_5`
 - `make phase4_5_geometry`
 - `make phase4_5_speed`
-- `make test TEST=phase5_unit`
 - `make test TEST=phase9_unit`
 - `make test TEST=phase3`
 
@@ -108,6 +121,7 @@
 - Keep `phase14_5` in the fast gate set whenever endurance-policy or HUD-decision work changes.
 - Keep `phase14_integration` as the real acceptance gate for endurance retunes.
 - When verifier or RampJump behavior changes, check the actual `/demo rampitup` full-lap path in addition to the narrow suites.
+- Keep `phase18` in the verifier hardening gate set whenever sector handoff, damping, or integrity thresholds change.
 - When corner-exit feel changes, recheck `phase4_5_speed`; if the car starts sliding again, inspect heading-gated acceleration before retuning raw accel rates.
 - If CrestDip reliability regresses again, inspect straight lead-in speed and waypoint density before expanding mechanic-specific repair logic.
 - For future track-visual work, avoid mixing collision/verifier path, smooth visual overlay, and edge piping in one tweak; visual-only fixes are safer when those stay separate.

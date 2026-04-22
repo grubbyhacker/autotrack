@@ -41,26 +41,40 @@ function CrestDipIntegrity.evaluateRuntime(
 	local hints: { string } = {}
 	local verticalDisplacement = metrics.target_vertical_displacement or metrics.vertical_displacement
 	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
-	local airtimeDistance = metrics.target_airtime_distance or metrics.airtime_distance or 0
+	local airtimeDistance = if metrics.target_reacquire_distance ~= nil
+		then metrics.target_reacquire_distance
+		else metrics.target_airtime_distance or metrics.airtime_distance or 0
 	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
 	local apexMinSpeed = metrics.target_apex_min_speed or 0
+	local exitAngularSpeed = metrics.target_exit_angular_speed or 0
+	local exitVerticalSpeed = metrics.target_exit_vertical_speed or 0
+	local minVerticalDisplacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+		+ Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN
+	local minApexSpeed = Constants.CRESTDIP_APEX_MIN_SPEED + Constants.CRESTDIP_COMFORT_APEX_SPEED_MARGIN
+	local maxAirtimeDistance = math.max(0, Constants.CRESTDIP_MAX_AIRTIME_DISTANCE - Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN)
 
-	if verticalDisplacement < Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT then
+	if verticalDisplacement < minVerticalDisplacement then
 		table.insert(hints, "runtime vertical displacement too small")
 	end
 
-	if apexMinSpeed > 0 and apexMinSpeed < Constants.CRESTDIP_APEX_MIN_SPEED then
+	if apexMinSpeed > 0 and apexMinSpeed < minApexSpeed then
 		table.insert(hints, "crest apex speed too low")
 	end
 
 	-- Airtime cap — only enforced if the car actually left the surface.
 	-- PRD §4.3: CrestDip has no airborne requirement, so skip when never airborne.
-	if airborne and airtimeDistance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE then
+	if airborne and airtimeDistance > maxAirtimeDistance then
 		table.insert(hints, "airborne too long after liftoff")
 	end
 
 	if not reacquired then
 		table.insert(hints, "car did not reacquire semi-rail before sector exit")
+	end
+	if exitAngularSpeed > Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED then
+		table.insert(hints, "crest exit angular speed too high")
+	end
+	if exitVerticalSpeed > Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED then
+		table.insert(hints, "crest exit vertical speed too high")
 	end
 
 	return #hints == 0, hints
