@@ -324,6 +324,26 @@ local function summarizeRepeatPressure(repeatPressure): string
 	return table.concat(parts, " | ")
 end
 
+local function hasAuthoredEditableMechanic(context: OrchestratorContext): boolean
+	for _, sectorId in ipairs(context.editable_sectors or {}) do
+		local snapshot = context.sector_states and context.sector_states[sectorId]
+		if snapshot ~= nil and snapshot.mechanic ~= nil then
+			return true
+		end
+	end
+	return false
+end
+
+local function isPrematureBeginLoop(context: OrchestratorContext, attemptHistory, decision: OrchestratorDecision): boolean
+	if decision == nil or decision.action ~= "begin_loop" then
+		return false
+	end
+	if #attemptHistory > 0 then
+		return false
+	end
+	return not hasAuthoredEditableMechanic(context)
+end
+
 local function appendAttemptHistory(history, entry)
 	table.insert(history, 1, entry)
 	while #history > MAX_ORCHESTRATOR_HISTORY do
@@ -531,6 +551,15 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				deps.trace("endurance_orchestrate_fallback " .. orchestrateErr)
 				if deps.setLLMWarning then
 					deps.setLLMWarning("Orchestrator response invalid; using deterministic fallback")
+				end
+			elseif isPrematureBeginLoop(context, attemptHistory, decision) then
+				local prematureReason = "LLM orchestration chose begin_loop before any build; using deterministic fallback"
+				decision = MinimalOrchestrator.decide(context)
+				decisionNote = nil
+				deps.appendLog(prematureReason)
+				deps.trace("endurance_orchestrate_fallback premature_begin_loop")
+				if deps.setLLMWarning then
+					deps.setLLMWarning("Orchestrator chose track ready before any build; using deterministic fallback")
 				end
 			end
 			appendRoleMemory(runMemory, "orchestrator", decisionNote)

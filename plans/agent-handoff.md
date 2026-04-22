@@ -58,11 +58,14 @@
     - invalid orchestrator responses show the amber warning strip and fall back to `MinimalOrchestrator`
     - invalid proposal / repair responses set `llm_warning_text` with a short `"... response invalid: ..."` message
     - transport/backend failures still use the fatal `LLM error:` surface
+  - premature `begin_loop` is no longer trusted on an empty campaign:
+    - if the first orchestrator turn returns `begin_loop` before any authored editable-sector mechanic exists, the server overrides it with `MinimalOrchestrator`
+    - the HUD warning strip shows that the orchestrator chose track-ready before any build
   - trace prompt/response payloads now expose memory context and optional `memory_note` objects for all three roles
 - HUD semantics that matter now:
   - repair attempts only show in the top-edge repair banner when `attempt_current > 0`
   - endurance and hotfix are separate left badges
-  - LLM warnings live in the amber strip above the `LLM` panel
+  - LLM warnings now live in a wide left-side amber strip near the top of the screen, not in the narrow bottom-right `LLM` dock
   - repair explanation/action callouts are transient and de-duplicated
   - endurance now exposes a compact right-rail memory panel:
     - shared / proposal / repair notebook depths
@@ -87,6 +90,7 @@
 - Trimming corner visual shoulders to zero creates V-shaped corners.
 - The local Studio bridge is sequential. Do not start multiple `make test ...` runs at once.
 - Endurance orchestrator validation should stay strict on enums/shape but tolerant on prose length. Rejecting long `rationale` text can freeze live endurance before the first build.
+- Do not allow `begin_loop` on a flat fresh endurance run. Models can incorrectly declare `TRACK READY` before any obstacle exists; server-side orchestration must guard this.
 - Endurance memory notes are advisory, not authoritative. Invalid note formatting should be normalized or dropped instead of aborting endurance mode.
 - Invalid structured agent output should be operator-visible. Keep the amber warning strip wired for bad orchestrator / proposal / repair payloads so live failures are diagnosable without opening traces first.
 - Shared run memory is orchestrator-curated only. Proposal and repair may emit notes, but they should remain in `proposal` / `repair` scope and never write directly to `shared`.

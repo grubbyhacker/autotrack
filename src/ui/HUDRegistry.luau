@@ -26,6 +26,7 @@ local TOP_STATUS_RIGHT_RESERVE = 300
 local TOP_STATUS_MIN_LEFT = 196
 local TOP_STATUS_CHROME_CLEARANCE = 196
 local REPAIR_CALLOUT_RIGHT_MARGIN = 20
+local WARNING_RIGHT_MARGIN = 20
 
 local function addCorner(parent: Instance, radius: number)
 	local corner = Instance.new("UICorner")
@@ -707,12 +708,13 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(submitButton, 10)
 
 	-- BOTTOM RIGHT — LLM selector
-	local llmWarning = createFrame(gui, {
-		Size = UDim2.new(0, LLM_DOCK_WIDTH, 0, 34),
-		Position = UDim2.new(1, -20, 1, -(BOTTOM_DOCK_HEIGHT + 28)),
-		AnchorPoint = Vector2.new(1, 1),
+	local llmWarning = createFrame(overlayGui, {
+		Size = UDim2.new(1, -(statusLeft + WARNING_RIGHT_MARGIN), 0, 58),
+		Position = UDim2.new(0, statusLeft, 0, 112),
+		AnchorPoint = Vector2.new(0, 0),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.06,
+		ZIndex = 36,
 	})
 	llmWarning.Visible = false
 	addCorner(llmWarning, 14)
@@ -720,10 +722,11 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local llmWarningIcon = createFrame(llmWarning, {
 		Size = UDim2.new(0, 18, 0, 18),
-		Position = UDim2.new(0, 12, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 14, 0, 14),
+		AnchorPoint = Vector2.new(0, 0),
 		BackgroundColor3 = AMBER,
 		BackgroundTransparency = 0,
+		ZIndex = 37,
 	})
 	addCorner(llmWarningIcon, 9)
 
@@ -735,16 +738,19 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		TextSize = 12,
 		Font = Enum.Font.GothamBold,
 		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 38,
 	})
 
 	local llmWarningLabel = createLabel(llmWarning, {
-		Position = UDim2.new(0, 38, 0, 0),
-		Size = UDim2.new(1, -50, 1, 0),
+		Position = UDim2.new(0, 42, 0, 8),
+		Size = UDim2.new(1, -56, 1, -16),
 		Text = "",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 12,
 		Font = Enum.Font.Code,
-		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 37,
 	})
 
 	local llmDock = createFrame(gui, {

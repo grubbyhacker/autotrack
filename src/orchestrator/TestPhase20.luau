@@ -567,6 +567,94 @@ function TestPhase20.run()
 		})
 	)
 
+	local prematureSubmits = {}
+	local prematureWarnings = {}
+	local prematureLogs = {}
+	local prematureLoopStarted = false
+	local prematureJobs = {
+		{
+			request = makeRequest(EnduranceMemory.new()),
+			working_state = makeState(),
+			final_status = "committed",
+			proposal_memory_note = nil,
+			attempts = {
+				{
+					attempt_index = 0,
+					action = nil,
+					proposed_state = makeState(),
+					result = makeResult(true),
+					hints = {},
+					memory_note = nil,
+				},
+			},
+		},
+	}
+	local prematureJobIndex = 0
+	local prematureOrchestrateCalls = 0
+
+	local prematureOk, prematureErr = OrchestratorAgent.run({
+		submitDesignIntent = function(intent, rawText, memoryContext)
+			table.insert(prematureSubmits, {
+				intent = intent,
+				rawText = rawText,
+				memory = memoryContext,
+			})
+			prematureJobIndex = 1
+			return true, nil
+		end,
+		getLastJob = function()
+			return prematureJobs[prematureJobIndex]
+		end,
+		isCameraDemoActive = function()
+			return false
+		end,
+		deps = {
+			ensureBaseline = function()
+				return true, nil
+			end,
+			orchestrate = function()
+				prematureOrchestrateCalls += 1
+				if prematureOrchestrateCalls == 1 then
+					return { action = "begin_loop", rationale = "track ready immediately" }, nil, nil
+				end
+				return { action = "begin_loop", rationale = "track ready after first build" }, nil, nil
+			end,
+			setPhase = function() end,
+			setAttemptBudget = function() end,
+			setLLMWarning = function(text)
+				table.insert(prematureWarnings, text)
+			end,
+			appendLog = function(line)
+				table.insert(prematureLogs, line)
+			end,
+			trace = function() end,
+			setOrchestratorTelemetry = function() end,
+			startContinuousLoop = function()
+				prematureLoopStarted = true
+				return true, nil
+			end,
+		},
+	})
+	T.expect(
+		"phase20_premature_begin_loop_falls_back_to_candidate",
+		prematureOk == true
+			and prematureErr == nil
+			and prematureLoopStarted == true
+			and #prematureSubmits == 1
+			and prematureSubmits[1].intent ~= nil
+			and prematureSubmits[1].intent.action == nil
+			and prematureSubmits[1].intent.sector_id == 2
+			and prematureWarnings[1] == ""
+			and prematureWarnings[2] == "Orchestrator chose track ready before any build; using deterministic fallback"
+			and string.find(prematureLogs[1] or "", "before any build", 1, true) ~= nil,
+		HttpService:JSONEncode({
+			submits = prematureSubmits,
+			warnings = prematureWarnings,
+			logs = prematureLogs,
+			calls = prematureOrchestrateCalls,
+		})
+	)
+
 	LLMTraceJournal.clearForTests()
 	LLMTraceJournal.beginRun({
 		owner = "phase20_test",
