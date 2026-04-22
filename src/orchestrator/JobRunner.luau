@@ -35,6 +35,8 @@ local TestDispatcher = require(script.Parent.TestDispatcher)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 
 type CIJob = Types.CIJob
+type Request = Types.Request
+type DesignIntent = Types.DesignIntent
 
 local JobRunner = {}
 local _lastJob: CIJob? = nil
@@ -77,6 +79,10 @@ local function nextId(prefix: string): string
 	return string.format("%s-%03d", prefix, _idCounter)
 end
 
+local function trim(text: string): string
+	return string.match(text, "^%s*(.-)%s*$") or ""
+end
+
 local function cloneState(state)
 	local params = {}
 	for key, value in pairs(state.params) do
@@ -91,6 +97,158 @@ local function cloneState(state)
 			egress = state.pads.egress,
 		},
 		version = state.version,
+	}
+end
+
+local function cloneDesignIntent(intent: DesignIntent): DesignIntent
+	local constraints = {}
+	for _, constraint in ipairs(intent.constraints or {}) do
+		table.insert(constraints, constraint)
+	end
+	return {
+		sector_id = intent.sector_id,
+		mechanic = intent.mechanic,
+		params_hint = intent.params_hint,
+		rationale = intent.rationale,
+		target_score_band = intent.target_score_band,
+		target_budget_tolerance = intent.target_budget_tolerance,
+		target_reliability = intent.target_reliability,
+		spectacle_priority = intent.spectacle_priority,
+		novelty_priority = intent.novelty_priority,
+		replacement_intent = intent.replacement_intent,
+		desired_feel = intent.desired_feel,
+		constraints = constraints,
+	}
+end
+
+local DESIGN_INTENT_QUALIFIER_WORDS = {
+	really = true,
+	tall = true,
+	long = true,
+	short = true,
+	steep = true,
+	gentle = true,
+	tight = true,
+	wide = true,
+	narrow = true,
+	shallow = true,
+	deep = true,
+	extreme = true,
+}
+
+local DESIGN_INTENT_REPLACEMENT_INTENTS = {
+	open_slot_preferred = true,
+	replace_if_gain = true,
+	preserve_good_sector = true,
+}
+
+local DESIGN_INTENT_SCORE_BANDS = {
+	low = true,
+	medium = true,
+	high = true,
+	extreme = true,
+}
+
+local DESIGN_INTENT_TOLERANCES = {
+	low = true,
+	medium = true,
+	high = true,
+}
+
+local DESIGN_INTENT_RELIABILITY = {
+	conservative = true,
+	balanced = true,
+	risky = true,
+}
+
+local DESIGN_INTENT_PRIORITIES = {
+	low = true,
+	medium = true,
+	high = true,
+}
+
+local EDITABLE_INTENT_SECTORS = {
+	[2] = true,
+	[3] = true,
+	[4] = true,
+	[7] = true,
+	[8] = true,
+	[9] = true,
+}
+
+local function extractIntentQualifiers(paramsHint: string?): { string }
+	local qualifiers = {}
+	local seen = {}
+	for word in string.gmatch(string.lower(paramsHint or ""), "[%a%-]+") do
+		if DESIGN_INTENT_QUALIFIER_WORDS[word] and not seen[word] then
+			seen[word] = true
+			table.insert(qualifiers, word)
+		end
+	end
+	return qualifiers
+end
+
+local function validateDesignIntent(intent): (boolean, string?)
+	if type(intent) ~= "table" then
+		return false, "design intent missing"
+	end
+	if type(intent.sector_id) ~= "number" then
+		return false, "design intent sector_id missing"
+	end
+	if not EDITABLE_INTENT_SECTORS[intent.sector_id] then
+		return false, "design intent sector_id must be an editable straight"
+	end
+	if intent.mechanic ~= "RampJump" and intent.mechanic ~= "Chicane" and intent.mechanic ~= "CrestDip" then
+		return false, "design intent mechanic missing or unsupported"
+	end
+	if type(intent.params_hint) ~= "string" then
+		return false, "design intent params_hint missing"
+	end
+	if type(intent.rationale) ~= "string" or intent.rationale == "" then
+		return false, "design intent rationale missing"
+	end
+	if type(intent.desired_feel) ~= "string" or intent.desired_feel == "" then
+		return false, "design intent desired_feel missing"
+	end
+	if not DESIGN_INTENT_SCORE_BANDS[intent.target_score_band] then
+		return false, "design intent target_score_band invalid"
+	end
+	if not DESIGN_INTENT_TOLERANCES[intent.target_budget_tolerance] then
+		return false, "design intent target_budget_tolerance invalid"
+	end
+	if not DESIGN_INTENT_RELIABILITY[intent.target_reliability] then
+		return false, "design intent target_reliability invalid"
+	end
+	if not DESIGN_INTENT_PRIORITIES[intent.spectacle_priority] then
+		return false, "design intent spectacle_priority invalid"
+	end
+	if not DESIGN_INTENT_PRIORITIES[intent.novelty_priority] then
+		return false, "design intent novelty_priority invalid"
+	end
+	if not DESIGN_INTENT_REPLACEMENT_INTENTS[intent.replacement_intent] then
+		return false, "design intent replacement_intent invalid"
+	end
+	if type(intent.constraints) ~= "table" or #intent.constraints == 0 then
+		return false, "design intent constraints missing"
+	end
+	return true, nil
+end
+
+local function buildEnduranceRequest(requestId: string, rawText: string, designIntent: DesignIntent): Request
+	return {
+		request_id = requestId,
+		raw_text = trim(rawText),
+		parsed = {
+			sector_id = designIntent.sector_id,
+			mechanic = designIntent.mechanic,
+			request_kind = "Mechanic",
+			pad_side = nil,
+			pad_value = nil,
+		},
+		qualifiers = extractIntentQualifiers(designIntent.params_hint),
+		origin = "endurance",
+		design_intent = cloneDesignIntent(designIntent),
+		timestamp = os.time(),
 	}
 end
 
@@ -451,15 +609,20 @@ local function applyHUDDemo(kind: string)
 end
 
 -- Submit a plain-text request.  Returns false + reason if rejected without running.
-function JobRunner.submit(rawText: string): (boolean, string?)
+function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean, string?)
 	local sm = JobStateMachine.new()
 	local requestId = nextId("req")
-	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
+	local trimmed = trim(rawText)
 	local lowered = string.lower(trimmed)
-	local slashCommand, slashArg = parseSlashCommand(lowered)
+	local slashCommand, slashArg = nil, nil
 	local traceOwnedByThisJob = false
+	local request = requestOverride
 
-		if slashCommand == "demo" then
+	if requestOverride == nil then
+		slashCommand, slashArg = parseSlashCommand(lowered)
+	end
+
+		if requestOverride == nil and slashCommand == "demo" then
 			if slashArg == "repair" or slashArg == "llmerror" or slashArg == "ui-hotfix" then
 				if CameraDemo.isActive() then
 					local reason = activeDemoReason("/demo " .. slashArg)
@@ -535,6 +698,15 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			end
 			task.spawn(function()
 				OrchestratorAgent.run({
+					submitDesignIntent = function(designIntent, text: string)
+						_allowEnduranceInternalSubmit = true
+						local callOk, submitOk, submitReason = pcall(JobRunner.submitEnduranceDesignIntent, designIntent, text)
+						_allowEnduranceInternalSubmit = false
+						if not callOk then
+							return false, tostring(submitOk)
+						end
+						return submitOk, submitReason
+					end,
 					submit = function(text: string)
 						_allowEnduranceInternalSubmit = true
 						local callOk, submitOk, submitReason = pcall(JobRunner.submit, text)
@@ -702,7 +874,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			return false, "unknown demo; supported: /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix, /demo crest, /demo maximize, /demo endurance, /demo extreme, /demo hotfix"
 		end
 
-	if slashCommand == "llm" then
+	if requestOverride == nil and slashCommand == "llm" then
 		local subcmd, rest2 = string.match(slashArg, "^(%S+)%s*(.-)%s*$")
 		if subcmd == "on" then
 			LLMConfig.setEnabled(true)
@@ -727,7 +899,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 		return false, "usage: /llm on | /llm off | /llm model <id>"
 	end
 
-	if slashCommand == "test" then
+	if requestOverride == nil and slashCommand == "test" then
 		if slashArg == "" then
 			UIState.rejectRequest(rawText, "test name missing; use /test <suite>")
 			return false, "test name missing; use /test <suite>"
@@ -782,13 +954,16 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	end
 
 	sm:transition("ParseRequest")
-	local request, parseErr = RequestParser.parse(rawText, requestId)
-	if not request then
-		Tracer.log(string.format("job_reject reason=%s raw=%q", tostring(parseErr), rawText))
-		sm:transition("RejectRequest")
-		sm:transition("Idle")
-		UIState.rejectRequest(rawText, tostring(parseErr))
-		return false, parseErr
+	if request == nil then
+		local parseErr
+		request, parseErr = RequestParser.parse(rawText, requestId)
+		if not request then
+			Tracer.log(string.format("job_reject reason=%s raw=%q", tostring(parseErr), rawText))
+			sm:transition("RejectRequest")
+			sm:transition("Idle")
+			UIState.rejectRequest(rawText, tostring(parseErr))
+			return false, parseErr
+		end
 	end
 
 	if not JobLock.tryAcquire() then
@@ -809,6 +984,8 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 			target_sector_id = request.parsed.sector_id,
 			request_kind = request.parsed.request_kind,
 			mechanic = request.parsed.mechanic,
+			origin = request.origin,
+			design_intent = request.design_intent,
 		})
 		traceOwnedByThisJob = true
 	end
@@ -835,7 +1012,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 		sm:transition("GenerateInitialProposal")
 		UIState.setPhase("GenerateInitialProposal", "Generating proposal...")
-		local initialState, proposalErr = LLMAdapter.propose(request)
+		local initialState, proposalErr = LLMAdapter.propose(request, request.design_intent)
 		if not initialState then
 			sm:transition("RejectRequest")
 			sm:transition("Idle")
@@ -1139,7 +1316,7 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 
 			sm:transition("ApplyRepair")
 			UIState.setPhase("ApplyRepair", "Applying repair...")
-			local action, newState, explanation, repairErr = LLMAdapter.repair(packet, job.attempts)
+			local action, newState, explanation, repairErr = LLMAdapter.repair(packet, job.attempts, packet.design_intent)
 			if repairErr then
 				UIState.setError("LLM error: " .. repairErr)
 				UIState.appendLog("LLM error: " .. repairErr)
@@ -1242,6 +1419,16 @@ function JobRunner.submit(rawText: string): (boolean, string?)
 	return resultOrErr, reason
 end
 
+function JobRunner.submitEnduranceDesignIntent(designIntent: DesignIntent, rawText: string): (boolean, string?)
+	local validIntent, intentErr = validateDesignIntent(designIntent)
+	if not validIntent then
+		UIState.rejectRequest(rawText, tostring(intentErr))
+		return false, intentErr
+	end
+	local request = buildEnduranceRequest(nextId("req"), rawText, designIntent)
+	return JobRunner.submit(rawText, request)
+end
+
 -- Returns true if a job is currently running.
 function JobRunner.isBusy(): boolean
 	return JobLock.isHeld()
@@ -1269,6 +1456,10 @@ end
 
 function JobRunner._attemptLimitForResult(result, targetSectorId: number): number
 	return attemptLimitForResult(result, targetSectorId)
+end
+
+function JobRunner._buildEnduranceRequest(designIntent: DesignIntent, rawText: string, requestId: string?): Request
+	return buildEnduranceRequest(requestId or nextId("req"), rawText, designIntent)
 end
 
 return JobRunner

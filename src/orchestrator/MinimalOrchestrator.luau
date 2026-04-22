@@ -22,6 +22,26 @@ local function sectorIsFilled(context: OrchestratorContext, sectorId: number): b
 	return snapshot ~= nil and snapshot.mechanic ~= nil
 end
 
+local function buildIntent(sectorId: number, mechanic: string, paramsHint: string): OrchestratorDecision
+	return {
+		sector_id = sectorId,
+		mechanic = mechanic,
+		params_hint = paramsHint,
+		rationale = "push track variety without repeating stale failures",
+		target_score_band = "high",
+		target_budget_tolerance = "medium",
+		target_reliability = "balanced",
+		spectacle_priority = "high",
+		novelty_priority = "medium",
+		replacement_intent = "open_slot_preferred",
+		desired_feel = "memorable but recoverable obstacle",
+		constraints = {
+			"preserve downstream stability",
+			"stay within endurance budget",
+		},
+	}
+end
+
 function MinimalOrchestrator.decide(context: OrchestratorContext): OrchestratorDecision
 	if context.attempt_budget.used >= context.attempt_budget.total then
 		return { action = "begin_loop" }
@@ -35,11 +55,7 @@ function MinimalOrchestrator.decide(context: OrchestratorContext): OrchestratorD
 	for _, sectorId in ipairs(context.editable_sectors) do
 		if not sectorIsFilled(context, sectorId) then
 			local choice = PLAN[sectorId]
-			local decision = {
-				sector_id = sectorId,
-				mechanic = choice.mechanic,
-				params_hint = choice.params_hint,
-			}
+			local decision = buildIntent(sectorId, choice.mechanic, choice.params_hint)
 			if fallbackDecision == nil then
 				fallbackDecision = decision
 			end

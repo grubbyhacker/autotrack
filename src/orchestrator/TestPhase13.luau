@@ -88,6 +88,26 @@ local function makeOrchestratorContext()
 	}
 end
 
+local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: string)
+	return {
+		sector_id = sectorId,
+		mechanic = mechanic,
+		params_hint = paramsHint,
+		rationale = "spread risk across the track",
+		target_score_band = "high",
+		target_budget_tolerance = "medium",
+		target_reliability = "balanced",
+		spectacle_priority = "high",
+		novelty_priority = "medium",
+		replacement_intent = "replace_if_gain",
+		desired_feel = "dramatic but recoverable",
+		constraints = {
+			"preserve downstream stability",
+			"avoid budget blowout",
+		},
+	}
+end
+
 -- ── unit tests ───────────────────────────────────────────────────────────────
 
 function TestPhase13.runUnit()
@@ -318,12 +338,7 @@ function TestPhase13.runUnit()
 			})
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode({
-				sector_id = 3,
-				mechanic = "Chicane",
-				params_hint = "gentle wide",
-				rationale = "spread risk",
-			})
+			return HttpService:JSONEncode(makeDesignIntent(3, "Chicane", "gentle wide"))
 		end,
 	})
 	local traceRequest = makeRequest(3, "Chicane")

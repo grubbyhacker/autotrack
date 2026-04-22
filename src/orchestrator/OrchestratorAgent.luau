@@ -462,7 +462,12 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				attemptBudgetUsed
 			))
 
-			local submitOk, submitReason = args.submit(requestText)
+			local submitOk, submitReason
+			if args.submitDesignIntent ~= nil then
+				submitOk, submitReason = args.submitDesignIntent(decision, requestText)
+			else
+				submitOk, submitReason = args.submit(requestText)
+			end
 			local job = args.getLastJob()
 			if not submitOk then
 				return false, submitReason

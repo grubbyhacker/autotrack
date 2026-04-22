@@ -14,11 +14,22 @@ local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 type Request = Types.Request
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
+type DesignIntent = Types.DesignIntent
 
 local PromptBuilder = {}
 
 local function encode(value): string
 	return HttpService:JSONEncode(value)
+end
+
+local function effectiveDesignIntent(request: Request, packet: FailurePacket?, designIntent: DesignIntent?): DesignIntent?
+	if designIntent ~= nil then
+		return designIntent
+	end
+	if packet ~= nil and packet.design_intent ~= nil then
+		return packet.design_intent
+	end
+	return request.design_intent
 end
 
 -- System prompt for the mock/heuristic provider path (legacy string format).
@@ -138,7 +149,7 @@ end
 -- defaults: default params for the mechanic (from LevelMappings.DEFAULTS)
 function PromptBuilder.initialProposal(request: Request): string
 	if request.parsed.request_kind == "Pad" then
-		return table.concat({
+		local lines = {
 			"Initial proposal request.",
 			"Target sector: " .. tostring(request.parsed.sector_id),
 			"Request kind: Pad",
@@ -147,14 +158,18 @@ function PromptBuilder.initialProposal(request: Request): string
 			"Return a full SectorState for the sector with the requested pad change applied.",
 			"Return JSON matching:",
 			[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip|null","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
-		}, "\n")
+		}
+		if request.design_intent ~= nil then
+			table.insert(lines, 6, "Shared design intent: " .. encode(request.design_intent))
+		end
+		return table.concat(lines, "\n")
 	end
 
 	local mechanic = request.parsed.mechanic
 	local defaults = LevelMappings.DEFAULTS[mechanic]
 	local levers = LevelMappings.NUMERIC_LEVERS[mechanic]
 
-	return table.concat({
+	local lines = {
 		"Initial proposal request.",
 		"Target sector: " .. tostring(request.parsed.sector_id),
 		"Target mechanic: " .. mechanic,
@@ -163,12 +178,16 @@ function PromptBuilder.initialProposal(request: Request): string
 		"Default params: " .. encode(defaults),
 		"Return JSON matching:",
 		[[{"sector_id":number,"mechanic":"...","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}]],
-	}, "\n")
+	}
+	if request.design_intent ~= nil then
+		table.insert(lines, 5, "Shared design intent: " .. encode(request.design_intent))
+	end
+	return table.concat(lines, "\n")
 end
 
 -- Build the user turn for a repair step.
 function PromptBuilder.repairStep(packet: FailurePacket): string
-	return table.concat({
+	local lines = {
 		"Repair request.",
 		"Attempt index: " .. tostring(packet.attempt_index),
 		"Current sector state: " .. encode(packet.sector_state),
@@ -177,34 +196,49 @@ function PromptBuilder.repairStep(packet: FailurePacket): string
 		"Legal actions: " .. encode(packet.legal_actions),
 		"Return JSON matching:",
 		[[{"action":{"type":"SetNumericLever|SetPad"},"explanation":"short text"}]],
-	}, "\n")
+	}
+	if packet.design_intent ~= nil then
+		table.insert(lines, 3, "Shared design intent: " .. encode(packet.design_intent))
+	end
+	return table.concat(lines, "\n")
 end
 
 -- ── Real LLM message-array builders (Phase 13) ──────────────────────────────
 
 -- Build the messages array for an initial proposal to a real LLM.
-function PromptBuilder.proposeMessages(request: Request): { { role: string, content: string } }
+function PromptBuilder.proposeMessages(request: Request, designIntent: DesignIntent?): { { role: string, content: string } }
+	local sharedIntent = effectiveDesignIntent(request, nil, designIntent)
 	local userContent
 	if request.parsed.request_kind == "Pad" then
-		userContent = table.concat({
+		local lines = {
 			"Initial proposal.",
 			"Target sector: " .. tostring(request.parsed.sector_id),
 			"Request kind: Pad",
 			"Target pad side: " .. tostring(request.parsed.pad_side),
 			"Target pad value: " .. tostring(request.parsed.pad_value),
 			"Return a complete SectorState JSON with the requested pad change applied.",
-		}, "\n")
+		}
+		if sharedIntent ~= nil then
+			table.insert(lines, 6, "Shared design intent: " .. encode(sharedIntent))
+		end
+		userContent = table.concat(lines, "\n")
 	else
 		local mechanic = request.parsed.mechanic
 		local levers = LevelMappings.NUMERIC_LEVERS[mechanic]
-		userContent = table.concat({
+		local lines = {
 			"Initial proposal.",
 			"Target sector: " .. tostring(request.parsed.sector_id),
 			"Target mechanic: " .. mechanic,
 			"Qualifiers: " .. encode(request.qualifiers),
 			"Legal numeric levers: " .. encode(levers),
+			"Implement the shared design intent faithfully inside this one sector.",
+			"Preserve the intended feel unless hard numeric/legal constraints block it.",
 			"Return a complete SectorState JSON. Be ambitious — push params toward challenging values.",
-		}, "\n")
+		}
+		if sharedIntent ~= nil then
+			table.insert(lines, 5, "Shared design intent: " .. encode(sharedIntent))
+		end
+		userContent = table.concat(lines, "\n")
 	end
 	return {
 		{ role = "system", content = llmProposeSystemPrompt() },
@@ -215,21 +249,26 @@ end
 -- Build the multi-turn messages array for a repair step.
 -- history: the AttemptRecords from previous attempts in this job (capped externally).
 -- packet: the current failure packet.
-function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord }, packet: FailurePacket): { { role: string, content: string } }
+function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord }, packet: FailurePacket, designIntent: DesignIntent?): { { role: string, content: string } }
 	local mechanic = packet.sector_state.mechanic
 	local levers = mechanic and LevelMappings.NUMERIC_LEVERS[mechanic] or {}
+	local sharedIntent = effectiveDesignIntent(request, packet, designIntent)
 
 	local messages = {}
 	table.insert(messages, { role = "system", content = llmRepairSystemPrompt() })
 
 	-- Turn 0: initial proposal request (reconstructed from request context)
-	local initialUserContent = table.concat({
+	local initialLines = {
 		"Initial proposal.",
 		"Target sector: " .. tostring(request.parsed.sector_id),
 		"Target mechanic: " .. tostring(mechanic),
 		"Qualifiers: " .. encode(request.qualifiers),
 		"Legal numeric levers: " .. encode(levers),
-	}, "\n")
+	}
+	if sharedIntent ~= nil then
+		table.insert(initialLines, 5, "Shared design intent: " .. encode(sharedIntent))
+	end
+	local initialUserContent = table.concat(initialLines, "\n")
 	table.insert(messages, { role = "user", content = initialUserContent })
 
 	-- Interleave assistant proposals and user failure reports from history.
@@ -264,8 +303,13 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		"Diagnostics: " .. encode(packet.diagnostics),
 		"The car FAILED — make the obstacle easier.",
 		"If this is a downstream_failure, your sector already passed but harmed a later committed sector. Preserve downstream compatibility, especially exit speed and post-feature stability.",
+		"Preserve the shared design intent when possible. If you must soften it, keep the same overall feel.",
 		"Make small changes to 1-2 params or pads. Stay within the specified ranges.",
 	}
+	if sharedIntent ~= nil then
+		table.insert(finalLines, 3, "Shared design intent: " .. encode(sharedIntent))
+		table.insert(finalLines, 4, "Intent constraints: " .. encode(sharedIntent.constraints))
+	end
 	if packet.diagnostics.downstream_sector_state ~= nil then
 		table.insert(finalLines, "Downstream committed sector: " .. encode(packet.diagnostics.downstream_sector_state))
 	end

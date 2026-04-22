@@ -169,6 +169,8 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 				pad_value = padValue,
 			},
 			qualifiers = {},
+			origin = "player",
+			design_intent = nil,
 			timestamp = os.time(),
 		}, nil
 	end
@@ -200,6 +202,8 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 			pad_value = nil,
 		},
 		qualifiers = qualifiers,
+		origin = "player",
+		design_intent = nil,
 		timestamp = os.time(),
 	}, nil
 end

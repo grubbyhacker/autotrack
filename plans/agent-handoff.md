@@ -26,6 +26,7 @@
 | 16 | Complete — RampJump playability retune, `/demo rampitup`, full-lap ramp stabilization, `phase16` gate |
 | 17 | Complete — server-side LLM trace journal, export path, CLI bridge export command |
 | 18 | Complete — deterministic sector-entry snap isolation, comfort-margin integrity gates, `phase18` gate |
+| 19 | Complete — structured `DesignIntent` handoff for endurance orchestrate → propose → repair, direct structured endurance submit path, prompt-content fidelity tests |
 
 ## Current state
 
@@ -38,20 +39,19 @@
   - the old `60` stud corner-owned shoulder is down to `10`
   - Chicane geometry is a smooth wave: `amplitude` is wave height, `transition_length` is peak-to-peak spacing
   - chicane scoring now rewards taller waves and tighter spacing
+- Phase 19 is now the current endurance-agent baseline:
+  - endurance orchestration returns a full structured `DesignIntent`, not only `sector/mechanic/params_hint`
+  - endurance jobs submit from that structured intent directly; the English request text is now a derived HUD/log artifact only
+  - proposal and repair prompts both receive the same shared `DesignIntent`
+  - trace prompt payloads now expose `design_intent` for `orchestrate`, `propose`, and `repair`
+  - free-text orchestrator fields must be truncated/defaulted, not hard-rejected; Gemma 3 4B can emit verbose `rationale` / `desired_feel` text at endurance start
 - HUD semantics that matter now:
   - repair attempts only show in the top-edge repair banner when `attempt_current > 0`
   - endurance and hotfix are separate left badges
   - LLM warnings live in the amber strip above the `LLM` panel
   - repair explanation/action callouts are transient and de-duplicated
-- Demo/HUD commands in active use:
-  - `/demo camera`, `/demo rampitup`, `/demo repair`, `/demo llmerror`, `/demo ui-hotfix`
-- Chicane visual cleanup is now in a materially better state:
-  - collision remains segmented and gameplay-facing; the visible path stays visual-only
-  - visible chicane surface now uses one ribbon plus explicit round join caps at turning vertices
-  - chicane visual overlay intentionally omits underlay and segmented edge lines
-  - the old spoke/fan wedge artifact from dense rectangular segments is no longer the active local result
-  - accepted manual capture from this pass: `/mnt/c/Users/roger/screenshots/roblox-studio-20260421-214743.png`
-  - dedicated capture suite remains `phase4_chicane_capture`
+- Demo/HUD commands in active use: `/demo camera`, `/demo rampitup`, `/demo repair`, `/demo llmerror`, `/demo ui-hotfix`
+- Chicane visual cleanup baseline: collision remains gameplay-facing while the visible surface stays visual-only; accepted manual capture is `/mnt/c/Users/roger/screenshots/roblox-studio-20260421-214743.png`; dedicated capture suite remains `phase4_chicane_capture`
 
 ## Current reliability posture
 
@@ -68,6 +68,7 @@
 - Do not reintroduce a visible seam-cover ribbon or stacked underlay under the chicane top surface; that produced obvious spoke/rib artifacts.
 - Trimming corner visual shoulders to zero creates V-shaped corners.
 - The local Studio bridge is sequential. Do not start multiple `make test ...` runs at once.
+- Endurance orchestrator validation should stay strict on enums/shape but tolerant on prose length. Rejecting long `rationale` text can freeze live endurance before the first build.
 - If captures do not match the local diff, assume Studio was not really restarted or the wrong session is active.
 - The reliable manual capture loop is:
   - set the active Studio instance first
@@ -78,11 +79,11 @@
 
 - `make test TEST=phase4_chicane`
 - `make test TEST=phase4_chicane_capture`
-- `make test TEST=phase14_5`
-- `make test TEST=phase14_integration`
+- `make test TEST=phase14_5` and `make test TEST=phase14_integration`
 - `make test TEST=phase15`
 - `make test TEST=phase16`
 - `make test TEST=phase18`
+- `make test TEST=phase19`
 - `make test TEST=phase13_unit`
 - `make test TEST=llm_trace_export`
 - `make export-llm-trace`
@@ -93,5 +94,6 @@
 
 - Keep `phase18` in the gate set whenever sector handoff, damping, or integrity thresholds change.
 - Keep `phase14_5` and `phase14_integration` in the gate set for endurance-policy or HUD-decision work.
+- Keep `phase19` in the gate set whenever orchestrator prompt contracts, endurance submission flow, or proposal/repair prompt content changes.
 - For future track-visual work, treat `phase4_chicane_capture` as the manual screenshot harness and do not mix it with gameplay retunes.
 - If CrestDip reliability regresses, inspect lead-in speed and waypoint density before expanding repair logic.

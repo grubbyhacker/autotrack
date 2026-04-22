@@ -40,17 +40,33 @@ local function makeContext(): OrchestratorContext
 	}
 end
 
+local function withIntent(decision)
+	decision.rationale = decision.rationale or "advance variety without repeating stale failures"
+	decision.target_score_band = decision.target_score_band or "high"
+	decision.target_budget_tolerance = decision.target_budget_tolerance or "medium"
+	decision.target_reliability = decision.target_reliability or "balanced"
+	decision.spectacle_priority = decision.spectacle_priority or "high"
+	decision.novelty_priority = decision.novelty_priority or "medium"
+	decision.replacement_intent = decision.replacement_intent or "open_slot_preferred"
+	decision.desired_feel = decision.desired_feel or "memorable but recoverable"
+	decision.constraints = decision.constraints or {
+		"preserve downstream stability",
+		"stay within endurance budget",
+	}
+	return decision
+end
+
 function TestPhase14_5.runUnit()
-	local repeatedDecision = {
+	local repeatedDecision = withIntent({
 		sector_id = 2,
 		mechanic = "RampJump",
 		params_hint = "extreme tall",
-	}
-	local alternateDecision = {
+	})
+	local alternateDecision = withIntent({
 		sector_id = 3,
 		mechanic = "CrestDip",
 		params_hint = "extreme deep",
-	}
+	})
 
 	local objectiveContext = makeContext()
 	objectiveContext.attempt_history = {
@@ -162,6 +178,11 @@ function TestPhase14_5.runUnit()
 	local lastJobIndex = 0
 
 	local runOk, runErr = OrchestratorAgent.run({
+		submitDesignIntent = function(intent, rawText: string)
+			table.insert(orchestratorSubmits, { raw_text = rawText, intent = intent })
+			lastJobIndex += 1
+			return true, nil
+		end,
 		submit = function(rawText: string)
 			table.insert(orchestratorSubmits, rawText)
 			lastJobIndex += 1
@@ -200,7 +221,13 @@ function TestPhase14_5.runUnit()
 
 	T.expect(
 		"phase14_5_orchestrator_runs_until_begin_loop_with_history",
-		runOk == true and runErr == nil and loopStarted == true and orchestratorSubmits[1] == "add an extreme tall jump in sector 2",
+		runOk == true
+			and runErr == nil
+			and loopStarted == true
+			and type(orchestratorSubmits[1]) == "table"
+			and orchestratorSubmits[1].raw_text == "add an extreme tall jump in sector 2"
+			and orchestratorSubmits[1].intent ~= nil
+			and orchestratorSubmits[1].intent.desired_feel == repeatedDecision.desired_feel,
 		tostring(runErr)
 	)
 	T.expect(

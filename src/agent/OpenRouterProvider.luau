@@ -162,7 +162,7 @@ function OpenRouterProvider(modelId: string)
 	local provider = {}
 
 	function provider.propose(payload)
-		local messages = PromptBuilder.proposeMessages(payload.request)
+		local messages = payload.messages or PromptBuilder.proposeMessages(payload.request, payload.design_intent)
 		local json = callAPI(modelId, messages)
 		local state = HttpService:JSONDecode(json)
 		state = normalizeState(state, cfg.integerLevers)
@@ -172,7 +172,7 @@ function OpenRouterProvider(modelId: string)
 	function provider.repair(payload)
 		local history = payload.history or {}
 		local packet = payload.packet
-		local messages = PromptBuilder.repairMessages(packet.request, history, packet)
+		local messages = payload.messages or PromptBuilder.repairMessages(packet.request, history, packet, payload.design_intent)
 		local json = callAPI(modelId, messages)
 		local state = HttpService:JSONDecode(json)
 		state = normalizeState(state, cfg.integerLevers)

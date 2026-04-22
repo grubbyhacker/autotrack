@@ -5,8 +5,8 @@
 -- All LLM calls go through here. Reads LLMConfig on every call so model
 -- changes take effect immediately without requiring a restart.
 --
--- propose(request)          → (SectorState?, error?)
--- repair(packet, history)   → (AgentAction?, SectorState?, explanation?, error?)
+-- propose(request, designIntent?)          → (SectorState?, error?)
+-- repair(packet, history, designIntent?)   → (AgentAction?, SectorState?, explanation?, error?)
 --   heuristic path: (action, nil, explanation, nil)
 --   LLM path:       (nil, newSectorState, explanation, nil)
 --   error:          (nil, nil, nil, errorString)
@@ -30,6 +30,7 @@ type SectorState = Types.SectorState
 type AgentAction = Types.AgentAction
 type FailurePacket = Types.FailurePacket
 type AttemptRecord = Types.AttemptRecord
+type DesignIntent = Types.DesignIntent
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
 type LLMTraceRole = Types.LLMTraceRole
@@ -43,6 +44,37 @@ local _lastExchange = nil
 -- Optional injected provider used by tests (overrides LLMConfig routing).
 local _injectedProvider = nil
 local _injectedProviderName = nil
+
+local SCORE_BANDS = {
+	low = true,
+	medium = true,
+	high = true,
+	extreme = true,
+}
+
+local BUDGET_TOLERANCES = {
+	low = true,
+	medium = true,
+	high = true,
+}
+
+local RELIABILITY_LEVELS = {
+	conservative = true,
+	balanced = true,
+	risky = true,
+}
+
+local PRIORITY_LEVELS = {
+	low = true,
+	medium = true,
+	high = true,
+}
+
+local REPLACEMENT_INTENTS = {
+	open_slot_preferred = true,
+	replace_if_gain = true,
+	preserve_good_sector = true,
+}
 
 local function traceRoleForKind(kind: LLMTraceKind): LLMTraceRole
 	if kind == "orchestrate" then
@@ -130,11 +162,34 @@ local function decodeResponse(raw, kind: string)
 	return decoded
 end
 
-local function shortenExplanation(explanation): string?
-	if type(explanation) ~= "string" then return nil end
-	local trimmed = string.match(explanation, "^%s*(.-)%s*$") or ""
-	if trimmed == "" or #trimmed > 120 then return nil end
+local function shortenText(value, maxLen: number?): string?
+	if type(value) ~= "string" then return nil end
+	local trimmed = string.match(value, "^%s*(.-)%s*$") or ""
+	if trimmed == "" or #trimmed > (maxLen or 120) then return nil end
 	return trimmed
+end
+
+local function shortenExplanation(explanation): string?
+	return shortenText(explanation, 120)
+end
+
+local function truncateText(value: string, maxLen: number): string
+	if #value <= maxLen then
+		return value
+	end
+	local truncated = string.sub(value, 1, maxLen)
+	return string.match(truncated, "^%s*(.-)%s*$") or truncated
+end
+
+local function coerceShortText(value, maxLen: number, defaultText: string?): string?
+	if type(value) ~= "string" then
+		return defaultText
+	end
+	local trimmed = string.match(value, "^%s*(.-)%s*$") or ""
+	if trimmed == "" then
+		return defaultText
+	end
+	return truncateText(trimmed, maxLen)
 end
 
 local function cloneTableShallow(source)
@@ -183,6 +238,36 @@ local function mergeRepairState(currentState: SectorState, candidate): SectorSta
 	end
 
 	return merged
+end
+
+local function normalizeStringArray(value, fieldName: string): ({ string }?, string?)
+	if type(value) ~= "table" then
+		return nil, fieldName .. " must be an array"
+	end
+
+	local result = {}
+	for _, item in ipairs(value) do
+		local text = coerceShortText(item, 96, nil)
+		if text == nil then
+			return nil, fieldName .. " entries must be non-empty strings"
+		end
+		table.insert(result, text)
+		if #result >= 4 then
+			break
+		end
+	end
+	if #result == 0 then
+		return nil, fieldName .. " must contain at least one short string"
+	end
+	return result, nil
+end
+
+local function validateChoice(decoded, fieldName: string, allowed): (string?, string?)
+	local value = decoded[fieldName]
+	if type(value) ~= "string" or not allowed[value] then
+		return nil, "invalid orchestrate response: " .. fieldName .. " missing or unsupported"
+	end
+	return value, nil
 end
 
 local function isPlainCrestRequest(request: Request): boolean
@@ -311,15 +396,19 @@ end
 
 -- ── propose ─────────────────────────────────────────────────────────────────
 
-function LLMAdapter.propose(request: Request): (SectorState?, string?)
+function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (SectorState?, string?)
 	local provider, providerName, traceProvider, traceModel = activeProvider()
 	local systemPrompt = PromptBuilder.systemPrompt()
 	local userPrompt = PromptBuilder.initialProposal(request)
+	local sharedIntent = designIntent or request.design_intent
+	local messages = PromptBuilder.proposeMessages(request, sharedIntent)
 
 	tracePrompt("propose", traceProvider, traceModel, {
 		system_prompt = systemPrompt,
 		user_prompt = userPrompt,
 		request = request,
+		design_intent = sharedIntent,
+		messages = messages,
 	})
 
 	local ok, rawOrErr = pcall(function()
@@ -327,6 +416,8 @@ function LLMAdapter.propose(request: Request): (SectorState?, string?)
 			system_prompt = systemPrompt,
 			user_prompt = userPrompt,
 			request = request,
+			design_intent = sharedIntent,
+			messages = messages,
 		})
 	end)
 	if not ok then
@@ -441,7 +532,7 @@ end
 --   heuristic path: (action, nil, explanation, nil)
 --   LLM full-state path: (nil, newSectorState, explanation, nil)
 --   error: (nil, nil, nil, errorString)
-function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): (AgentAction?, SectorState?, string?, string?)
+function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, designIntent: DesignIntent?): (AgentAction?, SectorState?, string?, string?)
 	local provider, providerName, traceProvider, traceModel = activeProvider()
 
 	-- Cap history to MAX_HISTORY_DEPTH
@@ -456,12 +547,16 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 
 	local systemPrompt = PromptBuilder.systemPrompt()
 	local userPrompt = PromptBuilder.repairStep(packet)
+	local sharedIntent = designIntent or packet.design_intent or packet.request.design_intent
+	local messages = PromptBuilder.repairMessages(packet.request, cappedHistory, packet, sharedIntent)
 
 	tracePrompt("repair", traceProvider, traceModel, {
 		system_prompt = systemPrompt,
 		user_prompt = userPrompt,
 		packet = packet,
 		history = cappedHistory,
+		design_intent = sharedIntent,
+		messages = messages,
 	})
 
 	local ok, rawOrErr = pcall(function()
@@ -470,6 +565,8 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?): 
 			user_prompt = userPrompt,
 			packet = packet,
 			history = cappedHistory,
+			design_intent = sharedIntent,
+			messages = messages,
 		})
 	end)
 	if not ok then
@@ -589,7 +686,8 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 		return nil, "invalid orchestrate response"
 	end
 	if decoded.action == "begin_loop" then
-		return { action = "begin_loop" }, nil
+		local rationale = coerceShortText(decoded.rationale, 120, "track balanced enough to begin loop")
+		return { action = "begin_loop", rationale = rationale }, nil
 	end
 	if not EDITABLE_SECTORS[decoded.sector_id] then
 		return nil, "invalid orchestrate response: sector_id must be an editable sector"
@@ -597,11 +695,49 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 	if decoded.mechanic ~= "RampJump" and decoded.mechanic ~= "Chicane" and decoded.mechanic ~= "CrestDip" then
 		return nil, "invalid orchestrate response: mechanic missing or unsupported"
 	end
+	local rationale = coerceShortText(decoded.rationale, 120, "advance track objective")
+	local desiredFeel = coerceShortText(decoded.desired_feel, 120, "memorable but recoverable obstacle")
+	local targetScoreBand, scoreErr = validateChoice(decoded, "target_score_band", SCORE_BANDS)
+	if not targetScoreBand then
+		return nil, scoreErr
+	end
+	local targetBudgetTolerance, budgetErr = validateChoice(decoded, "target_budget_tolerance", BUDGET_TOLERANCES)
+	if not targetBudgetTolerance then
+		return nil, budgetErr
+	end
+	local targetReliability, reliabilityErr = validateChoice(decoded, "target_reliability", RELIABILITY_LEVELS)
+	if not targetReliability then
+		return nil, reliabilityErr
+	end
+	local spectaclePriority, spectacleErr = validateChoice(decoded, "spectacle_priority", PRIORITY_LEVELS)
+	if not spectaclePriority then
+		return nil, spectacleErr
+	end
+	local noveltyPriority, noveltyErr = validateChoice(decoded, "novelty_priority", PRIORITY_LEVELS)
+	if not noveltyPriority then
+		return nil, noveltyErr
+	end
+	local replacementIntent, replacementErr = validateChoice(decoded, "replacement_intent", REPLACEMENT_INTENTS)
+	if not replacementIntent then
+		return nil, replacementErr
+	end
+	local constraints, constraintsErr = normalizeStringArray(decoded.constraints, "constraints")
+	if not constraints then
+		return nil, "invalid orchestrate response: " .. tostring(constraintsErr)
+	end
 	return {
 		sector_id = decoded.sector_id,
 		mechanic = decoded.mechanic,
-		params_hint = if type(decoded.params_hint) == "string" then decoded.params_hint else "",
-		rationale = if type(decoded.rationale) == "string" then shortenExplanation(decoded.rationale) else nil,
+		params_hint = coerceShortText(decoded.params_hint, 96, "") or "",
+		rationale = rationale,
+		target_score_band = targetScoreBand,
+		target_budget_tolerance = targetBudgetTolerance,
+		target_reliability = targetReliability,
+		spectacle_priority = spectaclePriority,
+		novelty_priority = noveltyPriority,
+		replacement_intent = replacementIntent,
+		desired_feel = desiredFeel,
+		constraints = constraints,
 	}, nil
 end
 

@@ -249,6 +249,7 @@ function LapEvaluator.buildFailurePacket(
 		run_result    = result,
 		diagnostics   = diagnostics,
 		legal_actions = { numeric_levers = legalLevers, pads = { "ingress", "egress" } },
+		design_intent = request.design_intent,
 	}
 end
 

@@ -17,11 +17,35 @@ export type ParsedRequest = {
 	pad_value: PadValue?,
 }
 
+export type RequestOrigin = "player" | "endurance"
+export type TargetScoreBand = "low" | "medium" | "high" | "extreme"
+export type TargetBudgetTolerance = "low" | "medium" | "high"
+export type TargetReliability = "conservative" | "balanced" | "risky"
+export type PriorityLevel = "low" | "medium" | "high"
+export type ReplacementIntent = "open_slot_preferred" | "replace_if_gain" | "preserve_good_sector"
+
+export type DesignIntent = {
+	sector_id: number,
+	mechanic: Mechanic,
+	params_hint: string,
+	rationale: string,
+	target_score_band: TargetScoreBand,
+	target_budget_tolerance: TargetBudgetTolerance,
+	target_reliability: TargetReliability,
+	spectacle_priority: PriorityLevel,
+	novelty_priority: PriorityLevel,
+	replacement_intent: ReplacementIntent,
+	desired_feel: string,
+	constraints: { string },
+}
+
 export type Request = {
 	request_id: string,
 	raw_text: string,
 	parsed: ParsedRequest,
 	qualifiers: { string },
+	origin: RequestOrigin?,
+	design_intent: DesignIntent?,
 	timestamp: number,
 }
 
@@ -157,6 +181,7 @@ export type FailurePacket = {
 	run_result: RunResult,
 	diagnostics: Diagnostics,
 	legal_actions: LegalActions,
+	design_intent: DesignIntent?,
 }
 
 export type AttemptRecord = {
@@ -239,6 +264,14 @@ export type OrchestratorDecision = {
 	mechanic: Mechanic?,
 	params_hint: string?,
 	rationale: string?,
+	target_score_band: TargetScoreBand?,
+	target_budget_tolerance: TargetBudgetTolerance?,
+	target_reliability: TargetReliability?,
+	spectacle_priority: PriorityLevel?,
+	novelty_priority: PriorityLevel?,
+	replacement_intent: ReplacementIntent?,
+	desired_feel: string?,
+	constraints: { string }?,
 }
 
 export type LLMTraceDirection = "prompt" | "response" | "error"
