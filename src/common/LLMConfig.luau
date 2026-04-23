@@ -7,15 +7,15 @@ local LLMConfig = {}
 -- Ordered model list. "heuristic" is always first and means MinimalProposer.
 -- integerLevers: when true, float lever values from the LLM are rounded to integers.
 LLMConfig.MODELS = {
-	{ id = "heuristic",                    displayName = "Heuristic",     integerLevers = true  },
-	{ id = "google/gemma-3-4b-it",         displayName = "Gemma 3 4B",    integerLevers = true  },
-	{ id = "google/gemma-4-31b-it:free",   displayName = "Gemma 4 31B",   integerLevers = true  },
-	{ id = "qwen/qwen-turbo",              displayName = "Qwen Turbo",    integerLevers = true  },
-	{ id = "mistralai/mistral-small-2603", displayName = "Mistral Small 4",   integerLevers = true },
-	{ id = "mistralai/mistral-small-3.2-24b-instruct", displayName = "Mistral Small 3.2 24B", integerLevers = true  },
-	{ id = "qwen/qwen3-32b:nitro",                     displayName = "Qwen3 32B Nitro",  integerLevers = true  },
-	{ id = "google/gemini-2.5-flash-lite:nitro",      displayName = "Gemini 2.5 Flash-Lite", integerLevers = true  },
-	{ id = "anthropic/claude-3-haiku",     displayName = "Claude Haiku",  integerLevers = false },
+	{ id = "heuristic", displayName = "Heuristic", integerLevers = true },
+	{ id = "google/gemma-3-4b-it", displayName = "Gemma 3 4B", integerLevers = true },
+	{ id = "google/gemma-4-31b-it:free", displayName = "Gemma 4 31B", integerLevers = true },
+	{ id = "qwen/qwen-turbo", displayName = "Qwen Turbo", integerLevers = true },
+	{ id = "mistralai/mistral-small-2603", displayName = "Mistral Small 4", integerLevers = true },
+	{ id = "mistralai/mistral-small-3.2-24b-instruct", displayName = "Mistral Small 3.2 24B", integerLevers = true },
+	{ id = "qwen/qwen3-32b:nitro", displayName = "Qwen3 32B Nitro", integerLevers = true },
+	{ id = "google/gemini-2.5-flash-lite:nitro", displayName = "Gemini 2.5 Flash-Lite", integerLevers = true },
+	{ id = "anthropic/claude-3-haiku", displayName = "Claude Haiku", integerLevers = false },
 }
 
 LLMConfig.MAX_HISTORY_DEPTH = 7

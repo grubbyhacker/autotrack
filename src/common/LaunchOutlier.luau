@@ -25,12 +25,16 @@ function LaunchOutlier.classify(metrics)
 	if hangTime >= Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME then
 		table.insert(reasons, "hang_time")
 	end
-	if airtimeDistance >= Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE
-		and hangTime >= (Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME * 0.65) then
+	if
+		airtimeDistance >= Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE
+		and hangTime >= (Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME * 0.65)
+	then
 		table.insert(reasons, "airtime_distance")
 	end
-	if verticalDisplacement >= Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT
-		and hangTime >= (Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME * 0.65) then
+	if
+		verticalDisplacement >= Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT
+		and hangTime >= (Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME * 0.65)
+	then
 		table.insert(reasons, "vertical_displacement")
 	end
 

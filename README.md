@@ -95,6 +95,30 @@ Notes:
 - Unit-style suites automatically choose `skip_baseline` when configured
 - Integration suites run against the normal baseline boot flow
 
+## Code Hygiene
+
+The repo now includes a deterministic Luau hygiene toolchain with pinned versions in `rokit.toml`.
+
+Install/update pinned tools:
+
+```sh
+rokit install
+```
+
+Run commands:
+
+```sh
+make fmt
+make fmt-check
+make typecheck
+make lint
+make hygiene
+```
+
+`make hygiene` is the fast static gate (`fmt-check` + `typecheck` + `lint`) and is safe for frequent local/CI use.
+
+Hygiene is intentionally scoped to `src/common/*.luau` (with a conservative typecheck boundary) to avoid a disruptive whole-repo migration. See `docs/code-hygiene.md` for scope, rationale, and ratchet plan.
+
 ## LLM Trace Capture
 
 The maintained local workflow for LLM transcript capture is the CLI plus Studio bridge. Full transcripts stay server-side during Play and are exported as JSON on demand.

@@ -1,8 +1,28 @@
 PYTHON ?= python3
 TEST_CLI := tools/autotrack_test_cli.py
+ROKIT_BIN ?= $(HOME)/.rokit/bin
+STYLUA := $(ROKIT_BIN)/stylua
+LUAU_LSP := $(ROKIT_BIN)/luau-lsp
+SELENE := $(ROKIT_BIN)/selene
+HYGIENE_COMMON_FILES := \
+	src/common/Constants.luau \
+	src/common/LLMConfig.luau \
+	src/common/LaunchOutlier.luau \
+	src/common/LevelMappings.luau \
+	src/common/PadValueUtils.luau \
+	src/common/RuntimeTuning.luau \
+	src/common/Types.luau
+HYGIENE_TYPECHECK_FILES := \
+	src/common/Constants.luau \
+	src/common/LLMConfig.luau \
+	src/common/LaunchOutlier.luau \
+	src/common/LevelMappings.luau \
+	src/common/PadValueUtils.luau \
+	src/common/RuntimeTuning.luau
 
 .PHONY: test test-list \
 	test-contracts \
+	fmt fmt-check typecheck lint hygiene \
 	boot_smoke \
 	phase1 phase2 phase3 phase4 phase4_pads phase4_rampjump phase4_crestdip phase4_chicane phase4_chicane_capture \
 	phase4_5 phase4_5_geometry phase4_5_lap phase4_5_speed \
@@ -25,6 +45,20 @@ test-list:
 
 test-contracts:
 	@$(PYTHON) tools/check_test_contract.py
+
+fmt:
+	@$(STYLUA) $(HYGIENE_COMMON_FILES)
+
+fmt-check:
+	@$(STYLUA) --check $(HYGIENE_COMMON_FILES)
+
+typecheck:
+	@$(LUAU_LSP) analyze --platform=standard --definitions @base=tools/luau/globals.d.luau $(HYGIENE_TYPECHECK_FILES)
+
+lint:
+	@$(SELENE) --config selene.toml $(HYGIENE_COMMON_FILES)
+
+hygiene: fmt-check typecheck lint
 
 boot_smoke phase1 phase2 phase3 phase4 phase4_pads phase4_rampjump phase4_crestdip phase4_chicane phase4_chicane_capture phase4_5 phase4_5_geometry phase4_5_lap phase4_5_speed phase5 phase5_unit phase6 phase6_unit phase6_integration phase9 phase9_unit phase9_integration phase11 phase11_unit phase11_integration phase13 phase13_unit phase13_integration phase14 phase14_unit phase14_integration phase14_crestdip_pair phase14_crestdip_search phase14_sector2_debug phase14_5 phase15 phase16 phase18 phase19 phase20 phase21 phase21_unit phase21_integration phase21_experiment phase21_rampjump_torture phase22 phase22_command_surface phase22_endurance_entry phase23 phase24 phase26 phase27 refactor_fast mechanics_regression llm_trace_export:
 	@$(PYTHON) $(TEST_CLI) run "$@"

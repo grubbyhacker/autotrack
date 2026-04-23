@@ -8,65 +8,65 @@ local LevelMappings = {}
 -- Synonym → canonical mechanic name
 -- Keys are lowercase for case-insensitive matching.
 LevelMappings.MECHANIC_SYNONYMS = {
-	["jump"]         = "RampJump",
-	["ramp"]         = "RampJump",
-	["ramp jump"]    = "RampJump",
-	["chicane"]      = "Chicane",
-	["s-curve"]      = "Chicane",
-	["s curve"]      = "Chicane",
-	["snake"]        = "Chicane",
-	["crest"]        = "CrestDip",
-	["dip"]          = "CrestDip",
-	["crestdip"]     = "CrestDip",
-	["crest dip"]    = "CrestDip",
-	["hill"]         = "CrestDip",
-	["valley"]       = "CrestDip",
+	["jump"] = "RampJump",
+	["ramp"] = "RampJump",
+	["ramp jump"] = "RampJump",
+	["chicane"] = "Chicane",
+	["s-curve"] = "Chicane",
+	["s curve"] = "Chicane",
+	["snake"] = "Chicane",
+	["crest"] = "CrestDip",
+	["dip"] = "CrestDip",
+	["crestdip"] = "CrestDip",
+	["crest dip"] = "CrestDip",
+	["hill"] = "CrestDip",
+	["valley"] = "CrestDip",
 }
 
 -- Legal numeric levers per mechanic (used to populate FailurePacket.legal_actions)
 LevelMappings.NUMERIC_LEVERS = {
 	RampJump = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
-	Chicane  = { "amplitude", "transition_length", "corridor_width" },
+	Chicane = { "amplitude", "transition_length", "corridor_width" },
 	CrestDip = { "height_or_depth", "radius", "sector_length" },
 }
 
 -- Min/max bounds per lever. Applied as a hard clamp after LLM output.
 LevelMappings.LEVER_BOUNDS = {
 	RampJump = {
-		ramp_angle     = { min = 3,  max = 20  },
-		ramp_length    = { min = 20, max = 52  },
-		gap_length     = { min = 2,  max = 18  },
-		landing_length = { min = 18, max = 72  },
+		ramp_angle = { min = 3, max = 20 },
+		ramp_length = { min = 20, max = 52 },
+		gap_length = { min = 2, max = 18 },
+		landing_length = { min = 18, max = 72 },
 	},
 	Chicane = {
-		amplitude        = { min = 4,  max = 10  },
-		transition_length = { min = 5,  max = 32  },
-		corridor_width   = { min = 6,  max = 18  },
+		amplitude = { min = 4, max = 10 },
+		transition_length = { min = 5, max = 32 },
+		corridor_width = { min = 6, max = 18 },
 	},
 	CrestDip = {
-		height_or_depth = { min = 5,  max = 32  },
-		radius          = { min = 8,  max = 40  },
-		sector_length   = { min = 18, max = 36  },
+		height_or_depth = { min = 5, max = 32 },
+		radius = { min = 8, max = 40 },
+		sector_length = { min = 18, max = 36 },
 	},
 }
 
 -- Default parameter values per mechanic (initial proposal baseline before qualifier biasing)
 LevelMappings.DEFAULTS = {
 	RampJump = {
-		ramp_angle      = 10,
-		ramp_length     = 34,
-		gap_length      = 8,
-		landing_length  = 26,
+		ramp_angle = 10,
+		ramp_length = 34,
+		gap_length = 8,
+		landing_length = 26,
 	},
 	Chicane = {
-		amplitude          = 7,
-		transition_length  = 11,
-		corridor_width     = 12,
+		amplitude = 7,
+		transition_length = 11,
+		corridor_width = 12,
 	},
 	CrestDip = {
 		height_or_depth = 8,
-		radius          = 18,
-		sector_length   = 28,
+		radius = 18,
+		sector_length = 28,
 	},
 }
 
