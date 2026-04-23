@@ -151,8 +151,10 @@ function UIState.init(baselineLapTime: number)
 		repair_action_text = "",
 		baseline_lap_time = baselineLapTime,
 		last_lap_time = -1,
+		committed_lap_time = -1,
 		last_run_scope = "",
 		slowdown_ratio = 1,
+		committed_slowdown_ratio = 1,
 		current_speed = 0,
 		current_target_speed = 0,
 		current_commanded_speed = 0,
@@ -211,6 +213,7 @@ function UIState.initTrackCamera(sectors)
 		local center = sector.entry.Position:Lerp(sector.exit.Position, 0.5)
 		values[sectorAttr(sector.id, "kind")] = sector.kind
 		values[sectorAttr(sector.id, "mechanic")] = ""
+		values[sectorAttr(sector.id, "committed_score")] = -1
 		values[sectorAttr(sector.id, "center_x")] = center.X
 		values[sectorAttr(sector.id, "center_y")] = center.Y
 		values[sectorAttr(sector.id, "center_z")] = center.Z
@@ -381,6 +384,16 @@ function UIState.publishAttemptResult(result, runScope: string?)
 	})
 end
 
+function UIState.publishCommittedLap(result)
+	if result == nil or result.metrics == nil then
+		return
+	end
+	setAttributes({
+		committed_lap_time = result.metrics.lap_time or -1,
+		committed_slowdown_ratio = result.metrics.slowdown_ratio or 1,
+	})
+end
+
 -- Phase 11: publish a ChallengeScore. Called from JobRunner on successful
 -- commit so HUD observers can show the per-sector score.
 function UIState.publishScore(sectorId: number, score)
@@ -394,6 +407,7 @@ function UIState.publishScore(sectorId: number, score)
 		last_score_time_cost = score.time_cost,
 		last_score_budget_used = score.budget_used,
 		last_score_over_budget = score.over_budget,
+		[sectorAttr(sectorId, "committed_score")] = score.total,
 	})
 end
 

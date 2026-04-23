@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local AutoTrackUI = ReplicatedStorage:WaitForChild("AutoTrackUI")
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
@@ -32,11 +33,52 @@ local function percentString(value: number): string
 	return ("%d%%"):format(math.floor((value or 0) * 100 + 0.5))
 end
 
+local function sectorAttr(sectorId: number, suffix: string): string
+	return string.format("sector_%d_%s", sectorId, suffix)
+end
+
 local function compactLine(prefix: string, text: string): string
 	if text == nil or text == "" then
 		return prefix .. " -"
 	end
 	return prefix .. " " .. text
+end
+
+local function resolveSectorScoreLabel(sectorId: number): TextLabel?
+	local track = Workspace:FindFirstChild("Track")
+	if not (track and track:IsA("Folder")) then
+		return nil
+	end
+	local sectorFolder = track:FindFirstChild(string.format("Sector_%02d", sectorId))
+	if not (sectorFolder and sectorFolder:IsA("Folder")) then
+		return nil
+	end
+	local anchor = sectorFolder:FindFirstChild("Anchor")
+	if not (anchor and anchor:IsA("BasePart")) then
+		return nil
+	end
+	local billboard = anchor:FindFirstChild("SectorLabel")
+	if not (billboard and billboard:IsA("BillboardGui")) then
+		return nil
+	end
+	local scoreLabel = billboard:FindFirstChild("SectorScoreLabel", true)
+	if scoreLabel and scoreLabel:IsA("TextLabel") then
+		return scoreLabel
+	end
+	return nil
+end
+
+local function renderSectorScoreAnnotations()
+	local overviewActive = stateFolder:GetAttribute("overview_mode") == true
+	for sectorId = 1, 10 do
+		local scoreLabel = resolveSectorScoreLabel(sectorId)
+		if scoreLabel ~= nil then
+			local committedScore = stateFolder:GetAttribute(sectorAttr(sectorId, "committed_score"))
+			local showScore = overviewActive and type(committedScore) == "number" and committedScore >= 0
+			scoreLabel.Visible = showScore
+			scoreLabel.Text = if showScore then string.format("%.1f", committedScore) else ""
+		end
+	end
 end
 
 local function buildMemorySummary(): string
@@ -278,9 +320,21 @@ local function render()
 	end
 	StatusPanel.setLogLines(logLines)
 
-	StatsPanel.setBaseline(stateFolder:GetAttribute("baseline_lap_time") or -1)
-	StatsPanel.setLastLapTime(stateFolder:GetAttribute("last_lap_time") or -1)
-	StatsPanel.setSlowdown(stateFolder:GetAttribute("slowdown_ratio") or 1)
+	local baselineLapTime = stateFolder:GetAttribute("baseline_lap_time") or -1
+	local committedLapTime = stateFolder:GetAttribute("committed_lap_time") or -1
+	local committedSlowdown = nil
+	if committedLapTime > 0 and baselineLapTime > 0 then
+		committedSlowdown = committedLapTime / baselineLapTime
+	elseif stateFolder:GetAttribute("committed_slowdown_ratio") ~= nil then
+		committedSlowdown = stateFolder:GetAttribute("committed_slowdown_ratio")
+	end
+	if committedLapTime <= 0 then
+		committedSlowdown = nil
+	end
+
+	StatsPanel.setBaseline(baselineLapTime)
+	StatsPanel.setLastLapTime(committedLapTime)
+	StatsPanel.setSlowdown(committedSlowdown)
 	StatsPanel.setCurrentSpeed(
 		stateFolder:GetAttribute("current_speed") or 0,
 		stateFolder:GetAttribute("current_commanded_speed") or 0,
@@ -304,7 +358,7 @@ local function render()
 		stateFolder:GetAttribute("track_budget_headroom") or 1,
 		stateFolder:GetAttribute("track_over_budget") == true
 	)
-
+	renderSectorScoreAnnotations()
 end
 
 local observedAttributes = {
@@ -320,7 +374,10 @@ local observedAttributes = {
 	"busy",
 	"baseline_lap_time",
 	"last_lap_time",
+	"committed_lap_time",
+	"committed_slowdown_ratio",
 	"slowdown_ratio",
+	"overview_mode",
 	"current_speed",
 	"current_target_speed",
 	"current_commanded_speed",
@@ -386,6 +443,10 @@ local observedAttributes = {
 
 for _, attributeName in ipairs(observedAttributes) do
 	stateFolder:GetAttributeChangedSignal(attributeName):Connect(render)
+end
+
+for sectorId = 1, 10 do
+	stateFolder:GetAttributeChangedSignal(sectorAttr(sectorId, "committed_score")):Connect(render)
 end
 
 stateFolder:GetAttributeChangedSignal("endurance_hotfix_active"):Connect(syncHotfixPresentation)

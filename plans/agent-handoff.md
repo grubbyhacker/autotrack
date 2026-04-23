@@ -33,6 +33,7 @@
 | 23 | Complete — balanced-risk tuning milestone, production-baseline compare/promote tune controls, proposer-owned endurance challenge-up, reliability-as-telemetry objective |
 | 24 | Complete — endurance isolated proposal/repair verification (3-pass isolated + commit-lap gate), challenge-up profile alignment, commit-only budget refresh |
 | 25 | Complete — pad-neutral challenge scoring, realized-committed-score endurance objective, and prompt-policy shift away from repairable-risk wording |
+| 26 | Complete — Session HUD simplification (Base/Last/% + Track/Budget), committed-lap display attrs, and Overview-only per-sector committed score annotations |
 
 ## Current state
 
@@ -42,8 +43,7 @@
 - Tune mode remains the Phase 21 lab: staged-by-default, controlled run batches, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
 - Phase 24 endurance verification profile is now two-stage for endurance-origin jobs: isolated sector vetting first, then one commit-lap gate before commit.
 - Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
-- RampJump launch-outlier observability is now first-class: `RunMetrics.launch_outlier`/`launch_outlier_reasons`, trace hooks (`[TRACE] launch_outlier ...`, `[TRACE] tune_launch_outlier ...`), and tune pass telemetry (`hang_time`, `airtime_distance`, `vertical_displacement`).
-- Maintained stress suite: `phase21_rampjump_torture` (90 isolated attempts; parseable summary `phase21_rampjump_torture_summary outliers=... max_hang=... max_air=... max_vertical=...`).
+- Phase 26 Session HUD now reads commit-authoritative lap attrs (`committed_lap_time`/`committed_slowdown_ratio`) for `Last/%`, while per-sector committed scores move to Overview-only label annotations (`sector_<id>_committed_score`).
 
 ## Hard-won invariants
 
@@ -63,6 +63,7 @@
 - Endurance build-time budget/slowdown refresh should come from committed full-lap results only. Isolated-stage proposal/repair vetting telemetry is intentionally non-authoritative for budget state.
 - ChallengeScore is now pad-neutral by policy. Do not reintroduce mechanic/side-specific pad penalties unless product direction explicitly changes.
 - Endurance objective ranking is now realized-outcome-led (commit rate + committed score history), with only a small exploration nudge for underused mechanics.
+- Session `Last/%` is commit-authoritative. Do not bind those fields to `last_lap_time`/`slowdown_ratio`; those remain generic latest-run telemetry and can represent isolated-stage checks.
 - RampJump airborne guidance must not keep re-injecting positive Y velocity each frame. Preserve ballistic vertical motion and only cap extreme upward spikes.
 - RampJump target-sector stability vertical/angular caps must apply in any RampJump sector context, not only when that sector is the explicit target.
 - Launch-outlier classification should require prolonged hang-time gating; high airtime-distance alone can false-positive at high forward speeds.
@@ -89,6 +90,7 @@
 - `make test TEST=phase22_endurance_entry`
 - `make test TEST=phase23`
 - `make test TEST=phase24`
+- `make test TEST=phase26`
 - `make test TEST=llm_trace_export`
 
 ## Recommended next focus
@@ -96,5 +98,3 @@
 - Use the Phase 23 tune surface one mechanic at a time: `compare`, pause for lessons learned, then `promote` only after the new baseline is clearly better in both tune telemetry and full-lap validation.
 - After any RampJump verifier/control change, rerun `phase21_unit`, `phase21_experiment`, and `phase21_rampjump_torture` before full-lap/endurance validation.
 - After any further production tuning pass, rerun `phase21`, `phase23`, and `phase14_integration` sequentially through the maintained bridge.
-- After changes to endurance proposal/repair verification flow, rerun `phase24`, `phase22_endurance_entry`, and `phase23` sequentially through the maintained bridge.
-- Keep `phase22`, `phase20`, and `phase21_unit` in the gate set for future command-routing, endurance-entry, or tune-surface refactors.

@@ -1244,6 +1244,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 					))
 				end
 
+				UIState.publishCommittedLap(job.final_result)
 				UIState.publishCommit(targetSector)
 				Tracer.log(string.format("commit sector=%d version=%d", targetSectorId, job.working_state.version))
 				Tracer.log(string.format("job_end id=%s status=committed", job.job_id))

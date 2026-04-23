@@ -62,13 +62,14 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "SectorLabel"
-	gui.Size = UDim2.new(0, 64, 0, 30)
+	gui.Size = UDim2.new(0, 72, 0, 44)
 	gui.StudsOffset = Vector3.new(0, 24, 0)
 	gui.AlwaysOnTop = true
 	gui.LightInfluence = 0
 	gui.Parent = anchor
 
 	local bg = Instance.new("Frame")
+	bg.Name = "SectorLabelBackground"
 	bg.BackgroundColor3 = LABEL_GLOW_BG
 	bg.BackgroundTransparency = 0.72
 	bg.BorderSizePixel = 0
@@ -83,9 +84,26 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 	bgStroke.Thickness = 1.5
 	bgStroke.Parent = bg
 
+	local scoreLabel = Instance.new("TextLabel")
+	scoreLabel.Name = "SectorScoreLabel"
+	scoreLabel.BackgroundTransparency = 1
+	scoreLabel.Position = UDim2.new(0, 0, 0, 2)
+	scoreLabel.Size = UDim2.new(1, 0, 0, 16)
+	scoreLabel.Text = ""
+	scoreLabel.TextColor3 = LABEL_GREEN
+	scoreLabel.TextTransparency = 0.06
+	scoreLabel.TextSize = 13
+	scoreLabel.Font = Enum.Font.Code
+	scoreLabel.TextXAlignment = Enum.TextXAlignment.Center
+	scoreLabel.TextYAlignment = Enum.TextYAlignment.Center
+	scoreLabel.Visible = false
+	scoreLabel.Parent = bg
+
 	local label = Instance.new("TextLabel")
+	label.Name = "SectorNameLabel"
 	label.BackgroundTransparency = 1
-	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Position = UDim2.new(0, 0, 0, 17)
+	label.Size = UDim2.new(1, 0, 0, 24)
 	label.Text = "S" .. tostring(sectorId)
 	label.TextColor3 = LABEL_GREEN
 	label.TextSize = 17

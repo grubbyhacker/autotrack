@@ -18,7 +18,7 @@ local MUTED = Color3.fromRGB(168, 163, 154)
 local LEFT_RAIL_WIDTH = 282
 local LEFT_RAIL_MARGIN = 20
 local LEFT_RAIL_GAP = 20
-local RIGHT_RAIL_WIDTH = 188
+local RIGHT_RAIL_WIDTH = 176
 local LLM_DOCK_WIDTH = 320
 local BOTTOM_DOCK_HEIGHT = 78
 local BOTTOM_DOCK_GAP = 16
@@ -536,7 +536,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- RIGHT RAIL — session telemetry + set baseline + overview
 	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 160),
+		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 152),
 		Position = UDim2.new(1, -20, 0, 60),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
@@ -556,7 +556,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local baselineLabel = createLabel(rightRail, {
 		Position = UDim2.new(0, 14, 0, 34),
-		Size = UDim2.new(0, 58, 0, 18),
+		Size = UDim2.new(0, 68, 0, 18),
 		Text = "Base --",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -564,8 +564,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local lastLapLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 74, 0, 34),
-		Size = UDim2.new(0, 58, 0, 18),
+		Position = UDim2.new(0, 14, 0, 54),
+		Size = UDim2.new(1, -28, 0, 18),
 		Text = "Last --",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -575,8 +575,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local slowdownLabel = createLabel(rightRail, {
 		Position = UDim2.new(1, -14, 0, 34),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 40, 0, 18),
-		Text = "+0%",
+		Size = UDim2.new(0, 56, 0, 18),
+		Text = "% --",
 		TextColor3 = TEXT,
 		TextSize = 12,
 		Font = Enum.Font.Code,
@@ -584,9 +584,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local scoreLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 58),
-		Size = UDim2.new(1, -28, 0, 88),
-		Text = "Score  --\nAir    --\nEdge   --\nLat    --\nCost   --\nTrack  --\nBudget ░░░░░░░░",
+		Position = UDim2.new(0, 14, 0, 80),
+		Size = UDim2.new(1, -28, 0, 56),
+		Text = "Track  --\nBudget --",
 		TextColor3 = TEXT,
 		TextSize = 12,
 		Font = Enum.Font.Code,
@@ -595,7 +595,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local memoryPanel = createFrame(gui, {
 		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 104),
-		Position = UDim2.new(1, -20, 0, 228),
+		Position = UDim2.new(1, -20, 0, 220),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.12,

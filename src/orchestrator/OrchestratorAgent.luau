@@ -133,6 +133,9 @@ local function defaultDeps()
 		setOrchestratorTelemetry = function(payload)
 			UIState.setOrchestratorTelemetry(payload)
 		end,
+		publishTrackScore = function(total: number, sectorCount: number, budgetUsed: number, budgetHeadroom: number, overBudget: boolean)
+			UIState.publishTrackScore(total, sectorCount, budgetUsed, budgetHeadroom, overBudget)
+		end,
 	}
 end
 
@@ -164,6 +167,35 @@ local function scoreTotal(scoresBySector): number
 		total += score or 0
 	end
 	return total
+end
+
+local function scoreCount(scoresBySector): number
+	local count = 0
+	for _, score in pairs(scoresBySector) do
+		if type(score) == "number" and score >= 0 then
+			count += 1
+		end
+	end
+	return count
+end
+
+local function trackSummaryForHUD(trackIntent, slowdownRatio: number, scoresBySector)
+	local budgetUsed = math.clamp(trackIntent and trackIntent.target_budget_used or 0, 0, 1)
+	return {
+		total = trackIntent and trackIntent.target_total_score or 0,
+		sector_count = scoreCount(scoresBySector),
+		budget_used = budgetUsed,
+		budget_headroom = math.max(0, 1 - budgetUsed),
+		over_budget = (slowdownRatio or 1) > (1 + Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO),
+	}
+end
+
+local function publishCommittedTrackSummary(deps, trackIntent, slowdownRatio: number, scoresBySector)
+	if deps.publishTrackScore == nil then
+		return
+	end
+	local summary = trackSummaryForHUD(trackIntent, slowdownRatio, scoresBySector)
+	deps.publishTrackScore(summary.total, summary.sector_count, summary.budget_used, summary.budget_headroom, summary.over_budget)
 end
 
 local function buildTrackIntent(scoresBySector, slowdownRatio: number, repeatPressure)
@@ -543,6 +575,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 		local repeatPressure = {}
 		local trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
 		local runMemory = EnduranceMemory.new()
+		publishCommittedTrackSummary(deps, trackIntent, slowdownRatio, scoresBySector)
 
 		while attemptBudgetUsed < Constants.ENDURANCE_ATTEMPT_BUDGET do
 			local context = buildContext(
@@ -689,6 +722,7 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				sectorAttemptCounts = rebuildSectorAttemptCounts(attemptHistory)
 				repeatPressure = rebuildRepeatPressure(attemptHistory)
 				trackIntent = buildTrackIntent(scoresBySector, slowdownRatio, repeatPressure)
+				publishCommittedTrackSummary(deps, trackIntent, slowdownRatio, scoresBySector)
 				if deps.setOrchestratorTelemetry then
 					deps.setOrchestratorTelemetry(withMemoryTelemetry({
 						objective_total = success and (historyEntry.score or 0) or (objectiveScore and objectiveScore.total or 0),
@@ -748,6 +782,10 @@ end
 
 function OrchestratorAgent._commitLapSlowdownRatio(previous: number, job)
 	return commitLapSlowdownRatio(previous, job)
+end
+
+function OrchestratorAgent._trackSummaryForHUD(trackIntent, slowdownRatio: number, scoresBySector)
+	return trackSummaryForHUD(trackIntent, slowdownRatio, scoresBySector)
 end
 
 return OrchestratorAgent
