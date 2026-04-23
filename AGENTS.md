@@ -178,6 +178,7 @@ This workflow is now a maintained project contract, not an optional convenience.
   - unit/synthetic suites choose `skip_baseline` automatically
   - integration/live-lap suites choose `baseline` automatically
 - Keep the local runner sequential. Do not assume parallel `make phase...` invocations on the same Studio session are supported.
+- `tools/autotrack_test_cli.py` now enforces a bridge queue lock (`tools/.autotrack_bridge.lock`) so concurrent bridge commands serialize instead of racing the localhost port. This is a safety net, not a license to intentionally run parallel suites.
 - If a future change breaks the local plugin bridge, fix that before considering the phase complete.
 - Prefer this `make` path for Roblox/Studio-backed verification by default, especially for milestone-complete validation and final end-of-phase test runs.
 - The bridge startup contract now includes a boot-readiness gate before suite dispatch:
@@ -190,9 +191,14 @@ This workflow is now a maintained project contract, not an optional convenience.
 - It is still fine to use direct local shell commands for very small pure file/static checks that do not require Studio, such as:
   - syntax checks
   - `make test-contracts`
+  - `make hygiene` (static Luau hygiene gate)
+  - `make fmt`, `make fmt-check`, `make typecheck`, `make lint`
   - sourcemap generation
   - lint/format validation
   - listing available suites or config
+- Hygiene tooling is now pinned via `rokit.toml` and uses a conservative scoped file set (`src/common/*.luau`) for deterministic low-noise gating. Keep this workflow non-interactive and `make`-driven.
+- Formatting is non-negotiable inside the scoped hygiene set. Do not mass-format the whole repo unless the human explicitly asks for a broad formatting migration.
+- Do not perform bulk `--!strict` upgrades as part of routine hygiene; ratchet strictness module-by-module with explicit scope.
 - Do not route trivial non-Studio checks through the Studio bridge just for consistency.
 - For finalized milestone validation, the expected path is the maintained `make` workflow rather than Claude/MCP-triggered suite execution, unless the bridge is broken and the fallback is explicitly noted.
 
