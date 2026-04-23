@@ -12,6 +12,7 @@ local BRIDGE_EXPORT_RESULT_ATTR = "AutoTrack_BridgeExportLLMTraceResultId"
 local BRIDGE_EXPORT_ERROR_ATTR = "AutoTrack_BridgeExportLLMTraceError"
 local TEST_STATUS_FOLDER_NAME = "AutoTrackTestStatus"
 local TEST_STATUS_PAYLOAD_NAME = "PayloadJson"
+local TEST_STATUS_PAYLOAD_CHUNKS_FOLDER_NAME = "PayloadChunks"
 
 local toolbar = plugin:CreateToolbar("AutoTrack")
 local toggleButton = toolbar:CreateButton(
@@ -114,6 +115,55 @@ local function buildExportResult(command, exportPayload, summaryLine: string?)
 	}
 end
 
+local function decodeChunkedPayload(statusFolder: Folder, manifest)
+	if type(manifest) ~= "table" or manifest.chunked ~= true then
+		return nil, "invalid chunked payload manifest"
+	end
+
+	local chunkCount = tonumber(manifest.chunk_count)
+	if type(chunkCount) ~= "number" or chunkCount < 1 then
+		return nil, "chunked payload missing chunk_count"
+	end
+
+	local chunksFolder = statusFolder:FindFirstChild(TEST_STATUS_PAYLOAD_CHUNKS_FOLDER_NAME)
+	if not chunksFolder or not chunksFolder:IsA("Folder") then
+		return nil, "chunked payload folder missing"
+	end
+
+	local children = chunksFolder:GetChildren()
+	table.sort(children, function(a, b)
+		return a.Name < b.Name
+	end)
+
+	local parts = table.create(chunkCount)
+	local found = 0
+	for _, child in ipairs(children) do
+		if child:IsA("StringValue") then
+			found += 1
+			if found <= chunkCount then
+				parts[found] = child.Value
+			end
+		end
+	end
+	if found < chunkCount then
+		return nil, string.format("chunked payload incomplete (%d/%d)", found, chunkCount)
+	end
+
+	local encoded = table.concat(parts, "")
+	local totalLength = tonumber(manifest.total_length)
+	if type(totalLength) == "number" and totalLength > 0 and #encoded ~= totalLength then
+		return nil, string.format("chunked payload length mismatch (%d/%d)", #encoded, totalLength)
+	end
+
+	local ok, decoded = pcall(function()
+		return HttpService:JSONDecode(encoded)
+	end)
+	if not ok then
+		return nil, "chunked payload invalid json"
+	end
+	return decoded, nil
+end
+
 local function readLiveExportPayload()
 	local statusFolder = ReplicatedStorage:FindFirstChild(TEST_STATUS_FOLDER_NAME)
 	if not statusFolder or not statusFolder:IsA("Folder") then
@@ -133,6 +183,14 @@ local function readLiveExportPayload()
 	end)
 	if not ok then
 		return nil, "trace payload invalid json"
+	end
+
+	if type(decoded) == "table" and decoded.chunked == true then
+		local chunkedDecoded, chunkErr = decodeChunkedPayload(statusFolder, decoded)
+		if chunkedDecoded == nil then
+			return nil, chunkErr or "chunked payload decode failed"
+		end
+		decoded = chunkedDecoded
 	end
 
 	local exportPayload = decoded and decoded.llm_trace_export

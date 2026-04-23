@@ -4,6 +4,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local STATUS_FOLDER_NAME = "AutoTrackTestStatus"
 local LINES_FOLDER_NAME = "Lines"
 local PAYLOAD_VALUE_NAME = "PayloadJson"
+local PAYLOAD_CHUNKS_FOLDER_NAME = "PayloadChunks"
+local MAX_STRING_VALUE_CHARS = 180000
 
 local TestSession = {}
 local _payload = nil
@@ -36,6 +38,10 @@ local function getLinesFolder(): Folder
 	return ensureFolder(LINES_FOLDER_NAME, getStatusFolder())
 end
 
+local function getPayloadChunksFolder(): Folder
+	return ensureFolder(PAYLOAD_CHUNKS_FOLDER_NAME, getStatusFolder())
+end
+
 local function getPayloadValue(): StringValue
 	local folder = getStatusFolder()
 	local existing = folder:FindFirstChild(PAYLOAD_VALUE_NAME)
@@ -48,6 +54,13 @@ local function getPayloadValue(): StringValue
 	created.Value = ""
 	created.Parent = folder
 	return created
+end
+
+local function clearPayloadChunks()
+	local chunksFolder = getPayloadChunksFolder()
+	for _, child in ipairs(chunksFolder:GetChildren()) do
+		child:Destroy()
+	end
 end
 
 local function clearLines()
@@ -68,6 +81,7 @@ end
 function TestSession.beginSuite(suiteName: string)
 	local folder = getStatusFolder()
 	clearLines()
+	clearPayloadChunks()
 	_payload = nil
 	getPayloadValue().Value = ""
 
@@ -110,7 +124,36 @@ function TestSession.setPayload(payload)
 	if payload ~= nil then
 		encoded = HttpService:JSONEncode(payload)
 	end
-	getPayloadValue().Value = encoded
+
+	local payloadValue = getPayloadValue()
+	clearPayloadChunks()
+	if encoded == "" then
+		payloadValue.Value = ""
+		return
+	end
+
+	if #encoded < MAX_STRING_VALUE_CHARS then
+		payloadValue.Value = encoded
+		return
+	end
+
+	local chunksFolder = getPayloadChunksFolder()
+	local chunkCount = math.ceil(#encoded / MAX_STRING_VALUE_CHARS)
+	for index = 1, chunkCount do
+		local startAt = ((index - 1) * MAX_STRING_VALUE_CHARS) + 1
+		local endAt = math.min(index * MAX_STRING_VALUE_CHARS, #encoded)
+		local value = Instance.new("StringValue")
+		value.Name = string.format("%06d", index)
+		value.Value = string.sub(encoded, startAt, endAt)
+		value.Parent = chunksFolder
+	end
+
+	payloadValue.Value = HttpService:JSONEncode({
+		chunked = true,
+		encoding = "json_utf8",
+		chunk_count = chunkCount,
+		total_length = #encoded,
+	})
 end
 
 function TestSession.snapshot()

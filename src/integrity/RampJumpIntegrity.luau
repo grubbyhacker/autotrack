@@ -35,11 +35,17 @@ function RampJumpIntegrity.evaluateRuntime(
 			then metrics.target_airtime_distance
 			else metrics.airtime_distance
 	end
+	local reacquireLateralOffset = metrics.target_reacquire_lateral_offset
+	if reacquireLateralOffset == nil and metrics.target_peak_body_distance ~= nil then
+		reacquireLateralOffset = metrics.target_peak_body_distance
+	end
 	local verticalDisplacement = if metrics.target_vertical_displacement ~= nil
 		then metrics.target_vertical_displacement
 		else metrics.vertical_displacement
 	local exitAngularSpeed = metrics.target_exit_angular_speed or 0
 	local exitVerticalSpeed = metrics.target_exit_vertical_speed or 0
+	local touchdownUpDot = metrics.target_touchdown_up_dot
+	local touchdownDownSpeed = metrics.target_touchdown_down_speed or 0
 	local minVerticalDisplacement = RuntimeTuning.numberAttr(
 		"AutoTrack_RampJumpMinVerticalDisplacement",
 		Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
@@ -54,6 +60,44 @@ function RampJumpIntegrity.evaluateRuntime(
 		"AutoTrack_RampJumpComfortReacquireMargin",
 		Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN
 	))
+	local maxReacquireLateral = math.max(0, RuntimeTuning.numberAttr(
+		"AutoTrack_RampJumpReacquireLateralMax",
+		Constants.RAMPJUMP_REACQUIRE_LATERAL_MAX
+	))
+	local landingMinUpDot = math.clamp(
+		RuntimeTuning.numberAttr("AutoTrack_RampJumpLandingMinUpDot", Constants.RAMPJUMP_LANDING_MIN_UP_DOT),
+		0,
+		1
+	)
+	local uprightHardLanding = type(touchdownUpDot) == "number"
+		and touchdownUpDot >= landingMinUpDot
+		and touchdownDownSpeed > 0
+	local maxExitAngularSpeed = if uprightHardLanding
+		then RuntimeTuning.numberAttr(
+			"AutoTrack_RampJumpHardLandingExitMaxAngularSpeed",
+			Constants.RAMPJUMP_HARD_LANDING_EXIT_MAX_ANGULAR_SPEED
+		)
+		else RuntimeTuning.numberAttr(
+			"AutoTrack_RampJumpComfortExitMaxAngularSpeed",
+			Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
+		)
+	local maxExitVerticalSpeed = if uprightHardLanding
+		then RuntimeTuning.numberAttr(
+			"AutoTrack_RampJumpHardLandingExitMaxVerticalSpeed",
+			Constants.RAMPJUMP_HARD_LANDING_EXIT_MAX_VERTICAL_SPEED
+		)
+		else RuntimeTuning.numberAttr(
+			"AutoTrack_RampJumpComfortExitMaxVerticalSpeed",
+			Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED
+		)
+	if uprightHardLanding
+		and exitAngularSpeed <= maxExitAngularSpeed
+		and exitVerticalSpeed <= maxExitVerticalSpeed then
+		maxReacquireDistance += math.max(0, RuntimeTuning.numberAttr(
+			"AutoTrack_RampJumpUprightReacquireBonus",
+			Constants.RAMPJUMP_UPRIGHT_REACQUIRE_BONUS
+		))
+	end
 
 	if type(verticalDisplacement) ~= "number" then
 		table.insert(hints, "vertical displacement missing")
@@ -64,19 +108,31 @@ function RampJumpIntegrity.evaluateRuntime(
 	if not reacquired then
 		table.insert(hints, "semi-rail reacquisition failed after landing")
 	end
-	if type(reacquireDistance) == "number" and reacquireDistance > maxReacquireDistance then
-		table.insert(hints, "reacquire margin too small after landing")
+	local lateralOffsetNumber = if type(reacquireLateralOffset) == "number" then reacquireLateralOffset else nil
+	local lateralGateAvailable = lateralOffsetNumber ~= nil
+	local lateralWithinCorridor = lateralOffsetNumber ~= nil and lateralOffsetNumber <= maxReacquireLateral
+	if lateralOffsetNumber ~= nil and lateralOffsetNumber > maxReacquireLateral then
+		table.insert(hints, "landing reacquired outside centerline corridor")
 	end
-	if exitAngularSpeed > RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpComfortExitMaxAngularSpeed",
-		Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
-	) then
+	if type(reacquireDistance) == "number" and reacquireDistance > maxReacquireDistance then
+		-- Keep legacy distance guard when lateral data is unavailable.
+		-- If lateral data exists and reacquire stayed within the generous landing corridor,
+		-- do not fail only on distance.
+		if not lateralGateAvailable or not lateralWithinCorridor then
+			table.insert(hints, "reacquire margin too small after landing")
+		end
+	end
+	if type(touchdownUpDot) == "number"
+		and touchdownDownSpeed > 0
+		and touchdownUpDot < landingMinUpDot
+		and (exitAngularSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
+			or exitVerticalSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED) then
+		table.insert(hints, "hard landing not upright enough")
+	end
+	if exitAngularSpeed > maxExitAngularSpeed then
 		table.insert(hints, "exit angular speed too high after landing")
 	end
-	if exitVerticalSpeed > RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpComfortExitMaxVerticalSpeed",
-		Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED
-	) then
+	if exitVerticalSpeed > maxExitVerticalSpeed then
 		table.insert(hints, "exit vertical speed too high after landing")
 	end
 

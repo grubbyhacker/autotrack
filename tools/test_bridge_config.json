@@ -61,6 +61,7 @@
     "phase23": { "boot_mode": "skip_baseline" },
     "phase24": { "boot_mode": "skip_baseline" },
     "phase26": { "boot_mode": "skip_baseline" },
+    "phase27": { "boot_mode": "skip_baseline" },
     "refactor_fast": { "boot_mode": "skip_baseline" },
     "mechanics_regression": { "boot_mode": "baseline" },
     "llm_trace_export": { "boot_mode": "skip_baseline" }

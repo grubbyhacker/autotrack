@@ -42,8 +42,11 @@ local _targetLateralBand = 0
 local _targetLateralBandChanges = 0
 local _targetPeakBodyDistance = 0
 local _targetReacquireDistance = 0
+local _targetReacquireLateralOffset = 0
 local _targetExitAngularSpeed = 0
 local _targetExitVerticalSpeed = 0
+local _targetTouchdownUpDot = 0
+local _targetTouchdownDownSpeed = 0
 -- Phase 11 telemetry: time-based hang tracking, peak lateral acceleration,
 -- target-sector minimum speed. These feed ChallengeScore.compute.
 local _airStartClock = 0
@@ -90,8 +93,11 @@ function MetricCollector.reset(baselineY: number, targetSector: number?)
 	_targetLateralBandChanges = 0
 	_targetPeakBodyDistance = 0
 	_targetReacquireDistance = 0
+	_targetReacquireLateralOffset = 0
 	_targetExitAngularSpeed = 0
 	_targetExitVerticalSpeed = 0
+	_targetTouchdownUpDot = 0
+	_targetTouchdownDownSpeed = 0
 	_airStartClock = 0
 	_targetAirStartClock = 0
 	_hangTime = 0
@@ -210,6 +216,9 @@ function MetricCollector.record(
 		elseif not isAirborne and _targetAirborne then
 			_targetAirborne = false
 			_targetEverReacquired = true
+			if type(targetLocalX) == "number" then
+				_targetReacquireLateralOffset = math.max(_targetReacquireLateralOffset, math.abs(targetLocalX))
+			end
 			if _targetCurrentAirSegment > _targetReacquireDistance then
 				_targetReacquireDistance = _targetCurrentAirSegment
 			end
@@ -251,6 +260,11 @@ function MetricCollector.onSectorExit(sector_id: number, speed: number, angularS
 	end
 end
 
+function MetricCollector.onTargetTouchdown(upDot: number, downSpeed: number)
+	_targetTouchdownUpDot = math.max(_targetTouchdownUpDot, upDot)
+	_targetTouchdownDownSpeed = math.max(_targetTouchdownDownSpeed, math.max(0, downSpeed))
+end
+
 function MetricCollector.getTargetMetrics()
 	local targetMaxAirSegment = _targetMaxAirSegment
 	if _targetAirborne and _targetCurrentAirSegment > targetMaxAirSegment then
@@ -275,8 +289,11 @@ function MetricCollector.getTargetMetrics()
 		in_target_sector = _insideTargetSector,
 		peak_body_distance = _targetPeakBodyDistance,
 		reacquire_distance = targetReacquireDistance,
+		reacquire_lateral_offset = _targetReacquireLateralOffset,
 		exit_angular_speed = _targetExitAngularSpeed,
 		exit_vertical_speed = _targetExitVerticalSpeed,
+		touchdown_up_dot = _targetTouchdownUpDot,
+		touchdown_down_speed = _targetTouchdownDownSpeed,
 	}
 end
 
@@ -337,9 +354,12 @@ function MetricCollector.finalise(
 		target_progress = _targetMaxProgress,
 		target_entered = _targetEntered,
 		target_reacquire_distance = targetReacquireDistance,
+		target_reacquire_lateral_offset = _targetReacquireLateralOffset,
 		target_peak_body_distance = _targetPeakBodyDistance,
 		target_exit_angular_speed = _targetExitAngularSpeed,
 		target_exit_vertical_speed = _targetExitVerticalSpeed,
+		target_touchdown_up_dot = _targetTouchdownUpDot,
+		target_touchdown_down_speed = _targetTouchdownDownSpeed,
 		lap_time = lapTime,
 		slowdown_ratio = lapTime / math.max(baselineLapTime, 0.001),
 		hang_time = hangTime,

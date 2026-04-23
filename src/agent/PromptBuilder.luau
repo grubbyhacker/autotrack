@@ -119,21 +119,23 @@ local function llmRepairSystemPrompt(): string
 		"IMPORTANT: Your response must contain ONLY a valid JSON object. No prose, no markdown, no code fences.",
 		"",
 		"CRITICAL CONSTRAINT: The verifier car has FIXED, UNCHANGEABLE performance (speed, acceleration, handling).",
-		"The car FAILED. The obstacle is TOO DIFFICULT. You must make it EASIER.",
+		"The car FAILED. Fix the specific failure while preserving scoreable challenge whenever possible.",
+		"Do not flatten repaired RampJump sectors into trivial low-reward shapes unless every safer high-reward option has failed.",
 		"",
 		"Failure interpretation guide:",
 		"  off_track or lateral_error high → too wide/sharp; reduce amplitude (Chicane) or ramp_angle (RampJump)",
-		"  tumble, spinout, overturn, backward_facing, invalid_attitude → entry/setup unstable; prefer braking entry and softening geometry, not adding speed",
+		"  tumble, spinout, overturn, backward_facing, invalid_attitude → entry/setup unstable; stabilize entry first, then geometry",
 		"  vertical_displacement high or bad landing → ramp too steep or gap too long; reduce ramp_angle and/or gap_length",
-		"  slowdown_ratio high → too much speed loss; reduce severity of all params",
-		"  target_progress < 1 → car never reached the end; reduce ALL params toward defaults",
-		"  RampJump repairs should preserve visible challenge when possible; fix dead-end launches or chaotic landings before flattening it into a trivial obstacle.",
-		"  If a RampJump behaves like a wall at entry, soften the approach; do not make the base steeper.",
+		"  slowdown_ratio high → too much speed loss; preserve challenge but recover exit speed where possible",
+		"  target_progress < 1 → treat as a local failure; fix the bottleneck first, not blanket de-escalation",
+		"  RampJump no_progress / uphill speed bleed → add ingress momentum first, then shorten/soften climb if needed",
+		"  RampJump reacquire / landing instability → widen landing/rejoin and trim gap before heavy flattening",
+		"  If a RampJump behaves like a wall at entry, soften or shorten the climb; do not lengthen the climb on no_progress.",
 		"  downstream_failure → your sector passed but harmed a later committed sector; preserve exit speed and post-feature stability",
 		"  For downstream_failure, avoid adding egress brake unless diagnostics say exit attitude was unstable.",
 		"  For CrestDip specifically: do not add an egress brake by default. Prefer ingress brake plus softer geometry for crash repair; use egress brake only when diagnostics explicitly say the exit attitude is unstable.",
 		"  Avoid solving every failure with heavy brake pads if a geometry change can preserve more scoreable risk.",
-		"  When in doubt: move params TOWARD the defaults, not away from them.",
+		"  When in doubt: make the smallest targeted change that fixes the failure while preserving spectacle.",
 		"",
 		"Supported mechanics: RampJump, Chicane, CrestDip.",
 		"Pad values: " .. table.concat(PadValueUtils.allowedValues(), ", ") .. ".",
@@ -387,7 +389,7 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 	end
 
 	-- Final user turn: request the revised state.
-	-- Remind model of current params and direction: failures mean make it EASIER.
+	-- Keep repair targeted to diagnostics without flattening challenge by default.
 	local currentParams = packet.sector_state.params and encode(packet.sector_state.params) or "{}"
 	local finalLines = {
 		string.format("Provide a revised complete SectorState JSON for attempt %d.", packet.attempt_index + 1),
@@ -397,7 +399,8 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		"Current run metrics: " .. compactMetrics(packet.run_result.metrics),
 		"Diagnostics: " .. encode(packet.diagnostics),
 		"Relevant memory: " .. encode(relevantMemory(memoryContext, "repair")),
-		"The car FAILED — make the obstacle easier.",
+		"The car FAILED — fix the specific failure while preserving scoreable challenge.",
+		"Only reduce difficulty when diagnostics show that targeted repairs are insufficient.",
 		"If this is a downstream_failure, your sector already passed but harmed a later committed sector. Preserve downstream compatibility, especially exit speed and post-feature stability.",
 		"Preserve the shared design intent when possible. If you must soften it, keep the same overall feel.",
 		"Use shared memory for durable constraints and repair memory for prior repair lessons, but let current diagnostics win when they disagree.",

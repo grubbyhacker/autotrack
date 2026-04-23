@@ -456,6 +456,60 @@ function TestPhase13.runUnit()
 			and recentRuns[2].meta.job_id == "job-3"
 			and recentRuns[3].meta.job_id == "job-2",
 		HttpService:JSONEncode(LLMTraceJournal.exportLatestRun() or {}))
+
+	-- 17: large payloads are chunked so trace export never exceeds StringValue limits
+	local largeTracePayload = {
+		llm_trace_export = {
+			run_id = "chunk-test",
+			event_count = 0,
+			events = {},
+			large_blob = string.rep("x", 220500),
+		},
+	}
+	local setOk, setErr = pcall(function()
+		TestSession.setPayload(largeTracePayload)
+	end)
+	local statusFolder = ReplicatedStorage:FindFirstChild("AutoTrackTestStatus")
+	local payloadValue = if statusFolder and statusFolder:IsA("Folder")
+		then statusFolder:FindFirstChild("PayloadJson")
+		else nil
+	local chunksFolder = if statusFolder and statusFolder:IsA("Folder")
+		then statusFolder:FindFirstChild("PayloadChunks")
+		else nil
+	local manifest = nil
+	if payloadValue and payloadValue:IsA("StringValue") then
+		local decodeOk, decoded = pcall(function()
+			return HttpService:JSONDecode(payloadValue.Value)
+		end)
+		if decodeOk then
+			manifest = decoded
+		end
+	end
+	local chunkValues = 0
+	if chunksFolder and chunksFolder:IsA("Folder") then
+		for _, child in ipairs(chunksFolder:GetChildren()) do
+			if child:IsA("StringValue") then
+				chunkValues += 1
+			end
+		end
+	end
+	T.expect(
+		"llm_trace_export_large_payload_uses_chunked_status_storage",
+		setOk == true
+			and setErr == nil
+			and type(manifest) == "table"
+			and manifest.chunked == true
+			and type(manifest.chunk_count) == "number"
+			and manifest.chunk_count >= 2
+			and chunkValues >= manifest.chunk_count,
+		HttpService:JSONEncode({
+			set_ok = setOk,
+			set_err = tostring(setErr),
+			manifest = manifest,
+			chunk_values = chunkValues,
+		})
+	)
+
 	LLMTraceJournal.clearForTests()
 	LLMAdapter.useMockProvider()
 

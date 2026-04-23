@@ -411,11 +411,61 @@ local ENDURANCE_CHALLENGE_UP_SCORE_FLOORS = {
 	extreme = 10.5,
 }
 
+local RAMPJUMP_REPAIR_SCORE_FLOORS = {
+	low = Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_MEDIUM,
+	medium = Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_MEDIUM,
+	high = Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_HIGH,
+	extreme = Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_EXTREME,
+}
+
 local function challengeUpScoreFloor(intent: DesignIntent?): number
 	if intent == nil then
 		return ENDURANCE_CHALLENGE_UP_SCORE_FLOORS.medium
 	end
 	return ENDURANCE_CHALLENGE_UP_SCORE_FLOORS[intent.target_score_band] or ENDURANCE_CHALLENGE_UP_SCORE_FLOORS.medium
+end
+
+local function scoreBandForRequest(request: Request): string
+	local intent = request.design_intent
+	if intent ~= nil and DESIGN_INTENT_SCORE_BANDS[intent.target_score_band] then
+		return intent.target_score_band
+	end
+	for _, qualifier in ipairs(request.qualifiers or {}) do
+		if qualifier == "extreme" then
+			return "extreme"
+		end
+	end
+	return "medium"
+end
+
+local function rampJumpRepairScoreFloorForRequest(request: Request): number
+	return RAMPJUMP_REPAIR_SCORE_FLOORS[scoreBandForRequest(request)] or Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_MEDIUM
+end
+
+local function evaluateRampJumpRepairScoreRetention(
+	request: Request,
+	attemptIndex: number,
+	priorBestSuccessfulScore: number?,
+	result
+): (boolean, number, string?)
+	if attemptIndex <= 0 then
+		return true, 0, nil
+	end
+	if result == nil or result.score == nil then
+		return true, 0, nil
+	end
+	local currentScore = result.score.total or 0
+	local floor = rampJumpRepairScoreFloorForRequest(request)
+	local retentionTarget = (priorBestSuccessfulScore or 0) * Constants.RAMPJUMP_REPAIR_SCORE_RETENTION
+	local requiredScore = math.max(floor, retentionTarget)
+	if currentScore >= requiredScore then
+		return true, requiredScore, nil
+	end
+	return false, requiredScore, string.format(
+		"RampJump retained %.1f but requires %.1f to avoid neutral repair",
+		currentScore,
+		requiredScore
+	)
 end
 
 local function budgetHeadroom(result): number
@@ -435,7 +485,30 @@ local function buildChallengeUpReason(intent: DesignIntent, result, scoreFloor: 
 	)
 end
 
-local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?): (boolean, string?, string?)
+local function isHighEnergyRampJumpState(state): boolean
+	if state == nil or state.mechanic ~= "RampJump" then
+		return false
+	end
+	local bounds = LevelMappings.LEVER_BOUNDS.RampJump
+	local params = state.params or {}
+	local angle = params.ramp_angle or 0
+	local rampLength = params.ramp_length or 0
+	local gapLength = params.gap_length or 0
+	local ingressDelta = PadValueUtils.speedDelta(tostring(state.pads and state.pads.ingress or "None"))
+	local highAngle = angle >= (bounds.ramp_angle.max - 2)
+	local highRampLength = rampLength >= (bounds.ramp_length.max - 8)
+	local highGap = gapLength >= (bounds.gap_length.max - 6)
+	local highIngressBoost = ingressDelta >= 25
+	return highAngle and highRampLength and highGap and highIngressBoost
+end
+
+local function shouldRunChallengeUp(
+	request,
+	result,
+	enduranceBuildActiveOverride: boolean?,
+	commitAttemptIndex: number?,
+	committedState
+): (boolean, string?, string?)
 	if result == nil or result.score == nil then
 		return false, "no_score", nil
 	end
@@ -452,6 +525,14 @@ local function shouldRunChallengeUp(request, result, enduranceBuildActiveOverrid
 		end
 		if designIntent.target_reliability == "conservative" then
 			return false, "conservative_target", nil
+		end
+		if (designIntent.mechanic == "RampJump" or (committedState and committedState.mechanic == "RampJump")) then
+			if (commitAttemptIndex or 0) > 0 then
+				return false, "rampjump_repaired_success", nil
+			end
+			if isHighEnergyRampJumpState(committedState) then
+				return false, "rampjump_already_high_energy", nil
+			end
 		end
 		local headroom = budgetHeadroom(result)
 		if headroom < Constants.ENDURANCE_CHALLENGE_UP_MIN_HEADROOM then
@@ -1034,6 +1115,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		local nextAction = nil
 		local attemptIndex = 0
 		local lastAction = nil
+		local rampJumpPeakSuccessfulScore: number? = nil
 		local upstreamFailCount = 0
 		local upstreamFailSectorId: number? = nil
 		local useIsolatedProfile = isEnduranceVerificationProfileEnabled(request)
@@ -1133,6 +1215,40 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				tostring(result.score and result.score.total or "-")
 			))
 
+			if result.success and result.score ~= nil and job.working_state.mechanic == "RampJump" then
+				local priorBestScore = rampJumpPeakSuccessfulScore
+				local gatePassed, requiredScore, gateHint = evaluateRampJumpRepairScoreRetention(
+					request,
+					attemptIndex,
+					priorBestScore,
+					result
+				)
+				rampJumpPeakSuccessfulScore = if priorBestScore == nil
+					then (result.score.total or 0)
+					else math.max(priorBestScore, result.score.total or 0)
+				if not gatePassed then
+					result.success = false
+					result.failure = {
+						type = "mechanic_integrity_failure",
+						sector_id = targetSectorId,
+						detail = "rampjump_score_retention",
+					}
+					table.insert(hints, gateHint or "rampjump score retention gate failed")
+					UIState.appendLog(gateHint or string.format(
+						"RampJump score retention failed (required %.1f)",
+						requiredScore
+					))
+					Tracer.log(string.format(
+						"rampjump_retention_gate_fail sector=%d attempt=%d score=%.2f required=%.2f prior_best=%s",
+						targetSectorId,
+						attemptIndex,
+						result.score.total or 0,
+						requiredScore,
+						tostring(priorBestScore or "-")
+					))
+				end
+			end
+
 			sm:transition("EvaluateResult")
 			if result.success then
 				sm:transition("Commit")
@@ -1148,7 +1264,13 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 
 				-- Baseline commit stands first. Any challenge-up branch only supersedes it
 				-- if the follow-up proposal validates cleanly and beats the baseline score.
-				local wantsChallengeUp, challengeSkipReason, challengeStrategy = shouldRunChallengeUp(request, result)
+				local wantsChallengeUp, challengeSkipReason, challengeStrategy = shouldRunChallengeUp(
+					request,
+					result,
+					nil,
+					attemptIndex,
+					job.working_state
+				)
 				if wantsChallengeUp then
 					UIState.setPhase("ChallengeUp", "Challenging up...")
 					if challengeStrategy == "proposal_do_over" then
@@ -1538,8 +1660,14 @@ function JobRunner.getLastJob(): CIJob?
 	return _lastJob
 end
 
-function JobRunner._shouldRunChallengeUp(request, result, enduranceBuildActiveOverride: boolean?)
-	return shouldRunChallengeUp(request, result, enduranceBuildActiveOverride)
+function JobRunner._shouldRunChallengeUp(
+	request,
+	result,
+	enduranceBuildActiveOverride: boolean?,
+	commitAttemptIndex: number?,
+	committedState
+)
+	return shouldRunChallengeUp(request, result, enduranceBuildActiveOverride, commitAttemptIndex, committedState)
 end
 
 function JobRunner._shouldRevertPreTargetFailure(result, targetSectorId: number): boolean
@@ -1560,6 +1688,15 @@ end
 
 function JobRunner._runVerificationProfile(args)
 	return runVerificationProfile(args)
+end
+
+function JobRunner._evaluateRampJumpRepairScoreRetention(
+	request: Request,
+	attemptIndex: number,
+	priorBestSuccessfulScore: number?,
+	result
+)
+	return evaluateRampJumpRepairScoreRetention(request, attemptIndex, priorBestSuccessfulScore, result)
 end
 
 return JobRunner

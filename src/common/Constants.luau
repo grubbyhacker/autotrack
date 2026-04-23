@@ -2,7 +2,7 @@
 -- Tuning constants and fixed thresholds shared across AutoTrack modules.
 
 local Constants = {}
-Constants.BUILD_STAMP = "u24-endurance-isolated-verification"
+Constants.BUILD_STAMP = "u27-rampjump-containment-pass"
 
 -- Track generator defaults
 Constants.TRACK_ROWS = 2
@@ -36,6 +36,10 @@ Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR = 0.40 -- keep post-corner sec
 Constants.RAMPJUMP_ENTRY_SPEED_FACTOR = 0.42 -- ramps should launch with visible intent instead of defaulting to the old low-risk posture
 Constants.POST_CORNER_RAMPJUMP_ENTRY_SPEED_FACTOR = 0.28 -- still calmer after corners, but with enough speed headroom for meaningful jump tuning
 Constants.RAMPJUMP_ENTRY_BLEND_POWER = 2.4 -- hold the lower RampJump lead-in cap longer so speed does not spike right before takeoff
+Constants.RAMPJUMP_PROFILE_MODE = "linear_blend" -- selectable profile: linear_blend | curved_lift
+Constants.RAMPJUMP_ENTRY_RUNOUT_MIN = 10 -- reserve visible setup distance before authored jump geometry
+Constants.RAMPJUMP_EXIT_RUNOUT_MIN = 14 -- reserve explicit post-landing runout to sector exit when space allows
+Constants.RAMPJUMP_CURVED_LIFT_LIP_SLOPE_FACTOR = 1.25 -- curved_lift profile exits with a steeper lip attitude than linear_blend
 Constants.CRESTDIP_ENTRY_SPEED_FACTOR = 0.56 -- crest entries should carry more speed so airtime/apex-speed tradeoffs are visible
 Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR = 0.36 -- post-corner crests still recover first, but no longer start from an overly safe crawl
 Constants.POST_CORNER_ENTRY_BLEND_POWER = 2.2 -- keep the post-corner recovery cap active much longer before blending back to full speed
@@ -93,6 +97,19 @@ Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED = true -- once airborne on a 
 Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING = 12            -- resist spin/yaw while airborne on a RampJump
 Constants.RAMPJUMP_AIRBORNE_ORIENTATION_MAX_TORQUE = 3500 -- lower airborne torque in ramp context so the verifier does not twist itself mid-flight
 Constants.RAMPJUMP_AIRBORNE_MAX_UPWARD_SPEED = 36       -- cap extreme upward seam impulses while still allowing playable jump arcs
+Constants.RAMPJUMP_SURFACE_STABILIZATION_ENABLED = true -- damp angular/lateral instability while grounded on ramp/landing surfaces to avoid unnecessary on-ramp spinouts
+Constants.RAMPJUMP_SURFACE_STABILIZATION_START_SLACK = 0.05 -- allow stabilization to engage slightly before the computed ramp start progress
+Constants.RAMPJUMP_SURFACE_STABILIZATION_END_SLACK = 0.08 -- keep stabilization briefly after computed feature end for landing settle
+Constants.RAMPJUMP_CONTAINMENT_FORGIVENESS_ENABLED = true -- RampJump landings may yaw hard; use centerline containment in the ramp window when still upright
+Constants.RAMPJUMP_CONTAINMENT_CENTERLINE_MAX = Constants.TRACK_WIDTH * 0.5 -- forgiving reacquire/landing corridor target around centerline
+Constants.RAMPJUMP_CONTAINMENT_MIN_UP_DOT = 0.45 -- keep forgiveness only when the car top is still mostly pointing up
+Constants.RAMPJUMP_GROUNDED_PITCH_DAMPING = 26
+Constants.RAMPJUMP_GROUNDED_YAW_DAMPING = 34
+Constants.RAMPJUMP_GROUNDED_ROLL_DAMPING = 34
+Constants.RAMPJUMP_GROUNDED_MAX_PITCH_RATE = 2.2
+Constants.RAMPJUMP_GROUNDED_MAX_YAW_RATE = 1.4
+Constants.RAMPJUMP_GROUNDED_MAX_ROLL_RATE = 1.6
+Constants.RAMPJUMP_GROUNDED_LATERAL_DAMPING = 7.5 -- horizontal side-slip damping while grounded on ramp surfaces
 Constants.SECTOR_ENTRY_SNAP_ENABLED = true              -- authoritative state reset on every sector entry to stop upstream physics bleed
 Constants.SECTOR_ENTRY_SNAP_CORNER_SPEED_FACTOR = Constants.CORNER_SPEED_FACTOR
 Constants.SECTOR_ENTRY_SNAP_STRAIGHT_SPEED_FACTOR = 1.0
@@ -143,6 +160,10 @@ Constants.FRONT_BODY_CONTAINMENT_DISTANCE = Constants.TRACK_WIDTH * 0.95 -- fron
 -- CI loop
 Constants.MAX_REPAIR_ATTEMPTS = 7
 Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS = 2
+Constants.RAMPJUMP_REPAIR_SCORE_RETENTION = 0.70
+Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_MEDIUM = 5.5
+Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_HIGH = 7.5
+Constants.RAMPJUMP_REPAIR_SCORE_FLOOR_EXTREME = 9.0
 
 -- Pad effect magnitudes (fixed, not agent-tunable)
 Constants.BOOST_SPEED_DELTA = 10    -- legacy medium-boost alias
@@ -151,12 +172,17 @@ Constants.BRAKE_SPEED_DELTA = -10   -- legacy medium-brake alias
 -- RampJump integrity thresholds
 Constants.RAMPJUMP_MIN_GAP = 2              -- studs
 Constants.RAMPJUMP_MIN_AIR_DISTANCE = 2.0   -- retained as telemetry guidance only; Phase 16 no longer requires dramatic airtime for a playable ramp
-Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT = 1.5 -- low-risk ramps should still visibly lift the car above the flat road
-Constants.RAMPJUMP_REACQUIRE_MAX = 12       -- studs after landing (phase 14: tightened from 20)
-Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN = 0.5
-Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN = 2.0
-Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED = 2.5
-Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 10.0
+Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT = 1.25 -- entry snapping reduced upstream noise; do not over-reject visually valid launches
+Constants.RAMPJUMP_REACQUIRE_MAX = 14       -- studs after landing
+Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN = 0.3
+Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN = 1.0
+Constants.RAMPJUMP_REACQUIRE_LATERAL_MAX = Constants.TRACK_WIDTH * 0.5 -- forgiving landing corridor: allow reacquire roughly within half-track from centerline
+Constants.RAMPJUMP_UPRIGHT_REACQUIRE_BONUS = 2.0 -- when touchdown is upright and exit energy is controlled, allow slightly larger reacquire distance
+Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED = 4.5
+Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED = 16.0
+Constants.RAMPJUMP_LANDING_MIN_UP_DOT = 0.78 -- allow harder landing exits when touchdown orientation is still mostly upright
+Constants.RAMPJUMP_HARD_LANDING_EXIT_MAX_ANGULAR_SPEED = 6.5
+Constants.RAMPJUMP_HARD_LANDING_EXIT_MAX_VERTICAL_SPEED = 22.0
 Constants.RAMPJUMP_LAUNCH_OUTLIER_HANG_TIME = 1.25 -- seconds airborne in one segment; unusually long launches should be highlighted explicitly in traces
 Constants.RAMPJUMP_LAUNCH_OUTLIER_AIRTIME_DISTANCE = 90 -- studs airborne in one segment; catches rare "launched hundreds of feet" failures
 Constants.RAMPJUMP_LAUNCH_OUTLIER_VERTICAL_DISPLACEMENT = 18 -- studs above baseline while airborne; helps flag catapult-like launches

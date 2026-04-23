@@ -112,7 +112,7 @@ end
 
 local function normalizeParams(mechanic, params)
 	if mechanic == "RampJump" then
-		return RampJumpTuner.tune(params)
+		return RampJumpTuner.tune(params, { mode = "opening" })
 	elseif mechanic == "Chicane" then
 		params.amplitude = math.clamp(
 			params.amplitude or 1,
@@ -343,7 +343,7 @@ local function buildInitialState(
 
 	local params = cloneParams(defaults)
 	local pads = {
-		ingress = if mechanic == "CrestDip" then "Brake10" elseif mechanic == "RampJump" then "Brake10" else "None",
+		ingress = if mechanic == "CrestDip" then "Brake10" else "None",
 		egress = "None",
 	}
 	local mechanicBiases = QUALIFIER_BIASES[mechanic] or {}
@@ -375,7 +375,7 @@ local function buildInitialState(
 	if mechanic == "RampJump" then
 		params = RampJumpTuner.tune(params, {
 			postCorner = postCornerSector,
-			preferGentle = #qualifiers == 0,
+			mode = "opening",
 		})
 	end
 
@@ -385,13 +385,6 @@ local function buildInitialState(
 	if postCornerCrest then
 		pads.ingress = "Brake25"
 	end
-	if mechanic == "RampJump" and postCornerSector then
-		pads.ingress = "Brake25"
-	end
-	if mechanic == "RampJump" and postCornerSector then
-		pads.egress = "Brake10"
-	end
-
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -452,12 +445,33 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 	local explanation = "adjusted the target sector"
 
 	if state.mechanic == "RampJump" and failure.type == "downstream_failure" then
-		table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-		table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-		table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 6) })
-		table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
-		table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
-		explanation = "post-jump instability detected; braking the exit and widening the recovery"
+		local downstreamNeedsSpeed = string.find(hintsText, "exit speed too low", 1, true) ~= nil
+			or string.find(hintsText, "no_progress", 1, true) ~= nil
+			or string.find(hintsText, "stall", 1, true) ~= nil
+		local downstreamUnstable = metrics.target_reacquired == false
+			or string.find(hintsText, "exit attitude unstable", 1, true) ~= nil
+			or string.find(hintsText, "reacquire", 1, true) ~= nil
+		local ingressPad = if PadValueUtils.kind(state.pads.ingress) == "Brake"
+			then weakerBrake(state.pads.ingress)
+			else strongerBoost(state.pads.ingress)
+		if downstreamNeedsSpeed then
+			table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressPad })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) - 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 1) })
+			explanation = "downstream lost too much speed after the jump; carrying more momentum out"
+		elseif downstreamUnstable then
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+			explanation = "downstream exit attitude was unstable; widening the rejoin before flattening"
+		else
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 2) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+			explanation = "post-jump downstream instability detected; stabilizing the rejoin"
+		end
 	elseif state.mechanic == "CrestDip" and failure.type == "downstream_failure" then
 		local downstreamNeedsSpeed = string.find(hintsText, "exit speed too low", 1, true) ~= nil
 			or string.find(hintsText, "no_progress", 1, true) ~= nil
@@ -528,6 +542,12 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			or string.find(hintsText, "stall", 1, true) ~= nil
 			or failureDetail == "no_progress"
 			or failureDetail == "stall"
+		local reacquireIssue = metrics.target_reacquired == false
+			or string.find(hintsText, "reacquire", 1, true) ~= nil
+			or string.find(hintsText, "reacquisition", 1, true) ~= nil
+		local landingInstability = string.find(hintsText, "exit angular speed", 1, true) ~= nil
+			or string.find(hintsText, "exit vertical speed", 1, true) ~= nil
+			or string.find(hintsText, "landing", 1, true) ~= nil
 		local unstableOnTakeoff = failureDetail == "invalid_attitude"
 			or failureDetail == "overturn"
 			or failureDetail == "backward_facing"
@@ -537,57 +557,57 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			or failureDetail == "fell_below_kill_plane"
 		if failure.type == "local_execution_failure" then
 			if stalledOnTakeoff then
+				local ingressPad = if PadValueUtils.kind(state.pads.ingress) == "Brake"
+					then weakerBrake(state.pads.ingress)
+					else strongerBoost(state.pads.ingress)
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressPad })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.max(landingLengthFloor(), (params.landing_length or 0) - 2) })
+				explanation = "speed bled off climbing the ramp; boosting entry first, then shortening the climb"
+			elseif unstableOnTakeoff and progress < 0.35 then
+				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4) })
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				explanation = "ramp bogged down on the climb; softened the approach and extended the runout"
-			elseif unstableOnTakeoff and progress < 0.30 then
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 3) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2) })
+				explanation = "entry attitude was unstable; softening launch while keeping visible challenge"
+			elseif reacquireIssue or landingInstability or progress >= 0.35 then
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 6) })
-				explanation = "ramp entry was acting like a wall; flattened the approach and widened the landing"
-			elseif progress >= 0.30 then
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 6) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
-				explanation = "landing was too lively; lengthened the runout and reduced the launch severity"
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+				explanation = "landing and rejoin were unstable; widening the recovery before flattening"
 			else
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 1) })
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				explanation = "ramp approach was unstable; softened the climb"
+				explanation = "ramp approach was unstable; softening entry state"
 			end
 		elseif string.find(hintsText, "vertical displacement too small", 1, true) then
 			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max, (params.gap_length or 0) + 1) })
-			explanation = "ramp was too flat to read; added a small amount of lift without turning it into a stunt jump"
-		elseif string.find(hintsText, "reacquire", 1, true)
-			or string.find(hintsText, "reacquisition", 1, true) then
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 6) })
-			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
+			explanation = "jump was too flat to score; increasing lift while keeping it recoverable"
+		elseif reacquireIssue or landingInstability then
+			table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4) })
 			table.insert(candidates, { type = "SetNumericLever", lever = "gap_length", value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1) })
-			explanation = "landing was unstable; trimmed speed and lengthened the landing"
+			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+			table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+			explanation = "reacquisition was unstable; widening the landing window"
 		else
 			if progress >= 0.30 then
+				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 3) })
 				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "landing_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4) })
 				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
-				explanation = "ramp landing stayed rough; softened the exit"
+				explanation = "jump remained rough through the landing; smoothing the rejoin"
 			else
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2) })
-				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_angle", value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1) })
+				table.insert(candidates, { type = "SetNumericLever", lever = "ramp_length", value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 1) })
 				table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-				explanation = "ramp was unstable before the crest; flattened the approach"
+				explanation = "entry stayed unstable; trimming launch severity"
 			end
 		end
 	elseif state.mechanic == "Chicane" then

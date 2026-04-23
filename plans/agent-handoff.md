@@ -34,6 +34,7 @@
 | 24 | Complete — endurance isolated proposal/repair verification (3-pass isolated + commit-lap gate), challenge-up profile alignment, commit-only budget refresh |
 | 25 | Complete — pad-neutral challenge scoring, realized-committed-score endurance objective, and prompt-policy shift away from repairable-risk wording |
 | 26 | Complete — Session HUD simplification (Base/Last/% + Track/Budget), committed-lap display attrs, and Overview-only per-sector committed score annotations |
+| 27 | Complete — RampJump return: mode-aware tuning/repair policy, profile-mode pathing, upright hard-landing telemetry + integrity, and repaired-score retention gate |
 
 ## Current state
 
@@ -44,6 +45,12 @@
 - Phase 24 endurance verification profile is now two-stage for endurance-origin jobs: isolated sector vetting first, then one commit-lap gate before commit.
 - Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
 - Phase 26 Session HUD now reads commit-authoritative lap attrs (`committed_lap_time`/`committed_slowdown_ratio`) for `Last/%`, while per-sector committed scores move to Overview-only label annotations (`sector_<id>_committed_score`).
+- Phase 27 now shifts RampJump back toward high-risk/high-reward with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance backed by touchdown telemetry.
+- Phase 27 follow-up pass now hardens LLM RampJump repairs: full-state repairs are guardrailed in `LLMAdapter` (bounded deltas, no-progress boost-first, anti-brake-escalation for speed-bleed/downstream-speed cases), and repair prompts no longer include blanket "make it easier" wording.
+- Phase 27 stability follow-up now adds grounded RampJump surface stabilization in `VerifierController` plus repeated zero-progress instability escape in `LLMAdapter`; Gemma 3 4B traces now move from early tumble/body-off-track loops into mostly full-progress runs, with remaining failures concentrated on reacquire-margin integrity.
+- Phase 27 containment follow-up now adds cross-track containment/off-track logic and RampJump upright-gated centerline containment forgiveness in `VerifierController`; Gemma traces no longer die immediately on `body_off_track` with zero progress from clamped-segment distance artifacts.
+- Phase 27 challenge-up follow-up now blocks proposer-owned RampJump `challenge_up` do-overs after repaired successes or already-high-energy baselines, preventing runaway re-escalation on giant ramps in endurance traces.
+- Latest long-run validation (`traces/endurance-gemma-after-challenge-gate-120.json`, 120s) still shows one challenge-up prompt, but it was CrestDip (`req-003`, sector 8), not RampJump.
 
 ## Hard-won invariants
 
@@ -67,6 +74,12 @@
 - RampJump airborne guidance must not keep re-injecting positive Y velocity each frame. Preserve ballistic vertical motion and only cap extreme upward spikes.
 - RampJump target-sector stability vertical/angular caps must apply in any RampJump sector context, not only when that sector is the explicit target.
 - Launch-outlier classification should require prolonged hang-time gating; high airtime-distance alone can false-positive at high forward speeds.
+- Repaired RampJump commits are now score-gated: success is not commit-authoritative if repaired score drops below the configured retention threshold and score-band floor.
+- `AutoTrack_RampJumpProfileMode` supports both string mode values (`linear_blend`/`curved_lift`) and numeric tune-lab toggles (`0`/`1`).
+- RampJump `no_progress` repair policy is boost-first then shorten/soften climb; do not lengthen ramp length for uphill speed-bleed failures.
+- For RampJump on real LLM full-state repair path, sanitize the returned state before validation: cap per-attempt lever deltas, cap cumulative drift from the first proposal, and prevent brake escalation when failure evidence says the issue is speed-bleed rather than instability.
+- RampJump on-ramp/landing instability should be corrected in the verifier first (grounded surface stabilization) before widening failure tolerances globally; otherwise weaker models overfit around physics noise and churn repair attempts.
+- Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
 
 ## Maintained verification snapshot
 
@@ -91,7 +104,10 @@
 - `make test TEST=phase23`
 - `make test TEST=phase24`
 - `make test TEST=phase26`
+- `make test TEST=phase27`
 - `make test TEST=llm_trace_export`
+- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma-after-challenge-gate.json`
+- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=120 OUT=traces/endurance-gemma-after-challenge-gate-120.json`
 
 ## Recommended next focus
 

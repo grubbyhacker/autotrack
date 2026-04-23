@@ -106,6 +106,8 @@ local function runSuiteBody(cmd)
 		require(script.Parent.TestPhase24).run()
 	elseif cmd == "phase26" then
 		require(script.Parent.TestPhase26).run()
+	elseif cmd == "phase27" then
+		require(script.Parent.TestPhase27).run()
 	elseif cmd == "refactor_fast" then
 		TestGates.runRefactorFast()
 	elseif cmd == "mechanics_regression" then

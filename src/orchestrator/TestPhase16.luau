@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local TestSession = require(script.Parent.TestSession)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
@@ -108,16 +109,16 @@ function TestPhase16.run()
 	local plainRequest = makeRequest("add ramp in sector 3")
 	local initialState, initialErr = MinimalProposer.initial(plainRequest)
 	T.expect(
-		"phase16_plain_ramp_default_is_conservative",
+		"phase16_plain_ramp_default_is_ambitious_opening",
 		initialErr == nil
 			and initialState ~= nil
 			and initialState.mechanic == "RampJump"
-			and initialState.params.ramp_angle <= 5
-			and initialState.params.gap_length <= 3
-			and initialState.params.ramp_length >= 22
-			and initialState.params.landing_length >= 34
-			and initialState.pads.ingress == "Brake25"
-			and initialState.pads.egress == "Brake10",
+			and initialState.params.ramp_angle >= 9
+			and initialState.params.gap_length >= 6
+			and initialState.params.ramp_length >= 30
+			and initialState.params.landing_length >= 18
+			and initialState.pads.ingress == "None"
+			and initialState.pads.egress == "None",
 		tostring(initialErr or HttpService:JSONEncode(initialState or {}))
 	)
 
@@ -152,16 +153,20 @@ function TestPhase16.run()
 
 	local normalizedProposal, _, normalizedErr = LLMAdapter.propose(plainRequest)
 	T.expect(
-		"phase16_llm_ramp_proposal_normalized_safe",
+		"phase16_llm_ramp_proposal_normalized_to_ambitious_bounds",
 		normalizedErr == nil
 			and normalizedProposal ~= nil
 			and normalizedProposal.mechanic == "RampJump"
-			and normalizedProposal.params.ramp_angle <= 5
-			and normalizedProposal.params.gap_length <= 3
-			and normalizedProposal.params.ramp_length >= 22
-			and normalizedProposal.params.landing_length >= 34
-			and normalizedProposal.pads.ingress == "Brake25"
-			and normalizedProposal.pads.egress == "Brake10",
+			and normalizedProposal.params.ramp_angle >= 9
+			and normalizedProposal.params.ramp_angle <= LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max
+			and normalizedProposal.params.gap_length >= 6
+			and normalizedProposal.params.gap_length <= LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max
+			and normalizedProposal.params.ramp_length >= 30
+			and normalizedProposal.params.ramp_length <= LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max
+			and normalizedProposal.params.landing_length >= 18
+			and normalizedProposal.params.landing_length <= LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max
+			and normalizedProposal.pads.ingress == "None"
+			and normalizedProposal.pads.egress == "None",
 		tostring(normalizedErr or HttpService:JSONEncode(normalizedProposal or {}))
 	)
 	LLMAdapter.useMockProvider()

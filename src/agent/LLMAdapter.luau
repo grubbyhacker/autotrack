@@ -16,6 +16,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
+local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local OrchestratorPromptBuilder = require(script.Parent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.PromptBuilder)
 local ActionValidator = require(script.Parent.ActionValidator)
@@ -350,31 +352,16 @@ local function isPlainCrestRequest(request: Request): boolean
 		and #request.qualifiers == 0
 end
 
-local function isPlainRampRequest(request: Request): boolean
-	return request.parsed.request_kind == "Mechanic"
-		and request.parsed.mechanic == "RampJump"
-		and #request.qualifiers == 0
-end
-
 local function isPostCornerEditableSector(sectorId: number): boolean
 	return sectorId == 2 or sectorId == 7
 end
 
 local function normalizeInitialProposalForRequest(request: Request, state: SectorState): SectorState
 	if state.mechanic == "RampJump" then
-		local postCornerRamp = isPostCornerEditableSector(request.parsed.sector_id)
-		local plainRamp = isPlainRampRequest(request)
 		state.params = RampJumpTuner.tune(state.params, {
-			postCorner = postCornerRamp,
-			preferGentle = plainRamp,
+			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
+			mode = "opening",
 		})
-		if postCornerRamp then
-			state.pads.ingress = "Brake50"
-			state.pads.egress = "Brake25"
-		elseif plainRamp then
-			state.pads.ingress = "Brake25"
-			state.pads.egress = "Brake10"
-		end
 		return state
 	end
 
@@ -402,7 +389,7 @@ local function normalizeChallengeUpProposalForRequest(request: Request, state: S
 	if state.mechanic == "RampJump" then
 		state.params = RampJumpTuner.tune(state.params, {
 			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
-			preferGentle = false,
+			mode = "challenge_up",
 		})
 		return state
 	end
@@ -415,6 +402,247 @@ local function normalizeChallengeUpProposalForRequest(request: Request, state: S
 	end
 
 	return state
+end
+
+local RAMPJUMP_UNSTABLE_FAILURE_DETAILS = {
+	invalid_attitude = true,
+	overturn = true,
+	backward_facing = true,
+	tumble = true,
+	spinout = true,
+	off_track = true,
+	fell_below_kill_plane = true,
+}
+
+local function normalizePadValue(value, fallback: string): string
+	if type(value) ~= "string" or not PadValueUtils.isValid(value) then
+		return fallback
+	end
+	return PadValueUtils.normalize(value)
+end
+
+local function hasText(text: string, needle: string): boolean
+	return string.find(text, needle, 1, true) ~= nil
+end
+
+local function clampDelta(candidate: number, baseline: number, maxDelta: number): number
+	return math.clamp(candidate, baseline - maxDelta, baseline + maxDelta)
+end
+
+local function strongerBoost(current: string): string
+	return PadValueUtils.stronger("Boost", current)
+end
+
+local function weakerBoost(current: string): string
+	return PadValueUtils.weaker("Boost", current)
+end
+
+local function capBrakeEscalation(candidate: string, baseline: string): string
+	local normalizedCandidate = normalizePadValue(candidate, "None")
+	local normalizedBaseline = normalizePadValue(baseline, "None")
+	if PadValueUtils.kind(normalizedCandidate) ~= "Brake" then
+		return normalizedCandidate
+	end
+	local baselineBrakeAmount = if PadValueUtils.kind(normalizedBaseline) == "Brake" then PadValueUtils.amount(normalizedBaseline) else 0
+	local candidateBrakeAmount = PadValueUtils.amount(normalizedCandidate)
+	if candidateBrakeAmount <= baselineBrakeAmount then
+		return normalizedCandidate
+	end
+	if baselineBrakeAmount <= 0 then
+		return "None"
+	end
+	return PadValueUtils.fromKindAmount("Brake", baselineBrakeAmount)
+end
+
+local RAMPJUMP_ZERO_PROGRESS_INSTABILITY_DETAILS = {
+	body_off_track = true,
+	off_track = true,
+	tumble = true,
+	spinout = true,
+	invalid_attitude = true,
+	overturn = true,
+	backward_facing = true,
+}
+
+local function countRecentRampJumpZeroProgressInstability(history: { AttemptRecord }?): number
+	if type(history) ~= "table" then
+		return 0
+	end
+
+	local count = 0
+	for index = #history, 1, -1 do
+		local record = history[index]
+		if type(record) ~= "table" then
+			break
+		end
+
+		local proposedState = record.proposed_state
+		if type(proposedState) ~= "table" or proposedState.mechanic ~= "RampJump" then
+			break
+		end
+
+		local result = record.result
+		local failure = if type(result) == "table" then result.failure else nil
+		if type(failure) ~= "table" then
+			break
+		end
+		local detail = string.lower(tostring(failure.detail or ""))
+		if not RAMPJUMP_ZERO_PROGRESS_INSTABILITY_DETAILS[detail] then
+			break
+		end
+
+		local metrics = if type(result) == "table" then result.metrics else nil
+		local progress = if type(metrics) == "table" and type(metrics.target_progress) == "number"
+			then metrics.target_progress
+			else 0
+		if progress > 0.2 then
+			break
+		end
+
+		count += 1
+	end
+
+	return count
+end
+
+local function firstRampJumpAnchor(history: { AttemptRecord }?, fallback: SectorState): SectorState
+	if type(history) ~= "table" then
+		return fallback
+	end
+	for _, record in ipairs(history) do
+		if type(record) == "table" and type(record.proposed_state) == "table" and record.proposed_state.mechanic == "RampJump" then
+			return record.proposed_state
+		end
+	end
+	return fallback
+end
+
+local function guardRampJumpRepairState(newState: SectorState, packet: FailurePacket, history: { AttemptRecord }?): SectorState
+	local currentState = packet.sector_state
+	local anchorState = firstRampJumpAnchor(history, currentState)
+	local bounds = LevelMappings.LEVER_BOUNDS.RampJump
+	local current = currentState.params
+	local anchor = anchorState.params
+	local params = newState.params
+
+	local currentRampAngle = current.ramp_angle or 0
+	local currentRampLength = current.ramp_length or 0
+	local currentGapLength = current.gap_length or 0
+	local currentLandingLength = current.landing_length or 0
+
+	params.ramp_angle = math.round(clampDelta(params.ramp_angle or currentRampAngle, currentRampAngle, 2))
+	params.ramp_length = math.round(clampDelta(params.ramp_length or currentRampLength, currentRampLength, 4))
+	params.gap_length = math.round(clampDelta(params.gap_length or currentGapLength, currentGapLength, 3))
+	params.landing_length = math.round(clampDelta(params.landing_length or currentLandingLength, currentLandingLength, 6))
+
+	params.ramp_angle = math.max(params.ramp_angle, math.max(bounds.ramp_angle.min, (anchor.ramp_angle or currentRampAngle) - 4))
+	params.ramp_length = math.max(params.ramp_length, math.max(bounds.ramp_length.min, (anchor.ramp_length or currentRampLength) - 8))
+	params.gap_length = math.max(params.gap_length, math.max(bounds.gap_length.min, (anchor.gap_length or currentGapLength) - 4))
+	params.landing_length = math.min(
+		params.landing_length,
+		math.min(bounds.landing_length.max, (anchor.landing_length or currentLandingLength) + 12)
+	)
+
+	local metrics = packet.run_result and packet.run_result.metrics or {}
+	local failure = packet.run_result and packet.run_result.failure or nil
+	local failureType = if failure and type(failure.type) == "string" then failure.type else ""
+	local failureDetailRaw = packet.diagnostics.failure_detail
+	if type(failureDetailRaw) ~= "string" and failure ~= nil and type(failure.detail) == "string" then
+		failureDetailRaw = failure.detail
+	end
+	local failureDetail = string.lower(tostring(failureDetailRaw or ""))
+	local hintsText = string.lower(table.concat(packet.diagnostics.hints or {}, " | "))
+
+	local stalledOnTakeoff = failureDetail == "no_progress"
+		or failureDetail == "stall"
+		or hasText(hintsText, "no_progress")
+		or hasText(hintsText, "stall")
+	local reacquireIssue = metrics.target_reacquired == false
+		or hasText(hintsText, "reacquire")
+		or hasText(hintsText, "reacquisition")
+	local landingInstability = hasText(hintsText, "landing")
+		or hasText(hintsText, "exit angular speed")
+		or hasText(hintsText, "exit vertical speed")
+		or hasText(hintsText, "hard landing")
+	local unstableTakeoff = RAMPJUMP_UNSTABLE_FAILURE_DETAILS[failureDetail] == true
+		or hasText(hintsText, "invalid attitude")
+	local downstreamFailure = failureType == "downstream_failure"
+	local downstreamNeedsSpeed = downstreamFailure and (
+		hasText(hintsText, "exit speed too low")
+		or hasText(hintsText, "slowdown")
+		or stalledOnTakeoff
+	)
+	local downstreamUnstable = downstreamFailure and (
+		metrics.target_reacquired == false
+		or hasText(hintsText, "exit attitude unstable")
+		or reacquireIssue
+	)
+	local repeatedZeroProgressInstability = countRecentRampJumpZeroProgressInstability(history)
+
+	local currentIngress = normalizePadValue(currentState.pads.ingress, "None")
+	local currentEgress = normalizePadValue(currentState.pads.egress, "None")
+	local ingress = normalizePadValue(newState.pads.ingress, currentIngress)
+	local egress = normalizePadValue(newState.pads.egress, currentEgress)
+
+	if stalledOnTakeoff then
+		if PadValueUtils.kind(ingress) ~= "Boost" or PadValueUtils.amount(ingress) < 10 then
+			ingress = if PadValueUtils.kind(currentIngress) == "Boost" then strongerBoost(currentIngress) else "Boost10"
+		end
+		egress = capBrakeEscalation(egress, currentEgress)
+		params.ramp_length = math.min(params.ramp_length, currentRampLength)
+		params.gap_length = math.min(params.gap_length, currentGapLength)
+		params.ramp_angle = math.max(params.ramp_angle, math.max(bounds.ramp_angle.min, currentRampAngle - 1))
+		params.landing_length = math.clamp(
+			params.landing_length,
+			math.max(bounds.landing_length.min, currentLandingLength - 2),
+			math.min(bounds.landing_length.max, currentLandingLength + 4)
+		)
+	elseif reacquireIssue or landingInstability then
+		params.landing_length = math.max(params.landing_length, math.min(bounds.landing_length.max, currentLandingLength + 2))
+		params.gap_length = math.min(params.gap_length, currentGapLength)
+		params.ramp_angle = math.max(params.ramp_angle, math.max(bounds.ramp_angle.min, currentRampAngle - 2))
+	end
+
+	if downstreamNeedsSpeed then
+		ingress = capBrakeEscalation(ingress, currentIngress)
+		egress = capBrakeEscalation(egress, currentEgress)
+		params.ramp_angle = math.max(params.ramp_angle, math.max(bounds.ramp_angle.min, currentRampAngle - 1))
+		params.ramp_length = math.max(params.ramp_length, math.max(bounds.ramp_length.min, currentRampLength - 2))
+		params.gap_length = math.max(params.gap_length, math.max(bounds.gap_length.min, currentGapLength - 1))
+	end
+
+	if not downstreamUnstable then
+		egress = capBrakeEscalation(egress, currentEgress)
+	end
+
+	if not unstableTakeoff and not stalledOnTakeoff and not downstreamUnstable then
+		ingress = capBrakeEscalation(ingress, currentIngress)
+	end
+	if repeatedZeroProgressInstability >= 2
+		and not stalledOnTakeoff
+		and not downstreamNeedsSpeed
+		and not downstreamUnstable then
+		if PadValueUtils.kind(ingress) == "Boost" and PadValueUtils.amount(ingress) >= 25 then
+			ingress = weakerBoost(ingress)
+		end
+		if repeatedZeroProgressInstability >= 4 and PadValueUtils.kind(ingress) == "Boost" and PadValueUtils.amount(ingress) > 10 then
+			ingress = "Boost10"
+		end
+
+		params.ramp_angle = math.min(params.ramp_angle, math.max(bounds.ramp_angle.min, currentRampAngle - 1))
+		params.ramp_length = math.min(params.ramp_length, math.max(bounds.ramp_length.min, currentRampLength - 2))
+		params.gap_length = math.min(params.gap_length, math.max(bounds.gap_length.min, currentGapLength - 1))
+		params.landing_length = math.max(
+			params.landing_length,
+			math.min(bounds.landing_length.max, currentLandingLength + 2)
+		)
+		egress = capBrakeEscalation(egress, currentEgress)
+	end
+
+	newState.pads.ingress = ingress
+	newState.pads.egress = egress
+
+	return newState
 end
 
 local function mockProvider()
@@ -608,7 +836,7 @@ function LLMAdapter.propose(request: Request, designIntent: DesignIntent?): (Sec
 	elseif state.mechanic == "RampJump" then
 		state.params = RampJumpTuner.tune(state.params, {
 			postCorner = isPostCornerEditableSector(request.parsed.sector_id),
-			preferGentle = isPlainRampRequest(request),
+			mode = "opening",
 		})
 	end
 	local valid, err = ActionValidator.validateSectorState(state)
@@ -859,6 +1087,12 @@ function LLMAdapter.repair(packet: FailurePacket, history: { AttemptRecord }?, d
 		elseif newState.mechanic == "RampJump" then
 			newState.params = RampJumpTuner.tune(newState.params, {
 				postCorner = isPostCornerEditableSector(newState.sector_id),
+				mode = "repair",
+			})
+			newState = guardRampJumpRepairState(newState, packet, cappedHistory)
+			newState.params = RampJumpTuner.tune(newState.params, {
+				postCorner = isPostCornerEditableSector(newState.sector_id),
+				mode = "repair",
 			})
 		end
 		local explanation = shortenExplanation(decoded.explanation)

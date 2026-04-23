@@ -155,7 +155,7 @@ local function testProductionBaselineReset()
 			and baselineSnapshot.params.gap_length == expectedBaseline.params.gap_length
 			and baselineSnapshot.pads.ingress == expectedBaseline.pads.ingress
 			and baselineSnapshot.pads.egress == expectedBaseline.pads.egress
-			and expectedBaseline.pads.ingress == "Brake10"
+			and expectedBaseline.pads.ingress == "None"
 			and expectedBaseline.pads.egress == "None",
 		HttpService:JSONEncode({
 			expected = expectedBaseline,
@@ -421,7 +421,7 @@ local function testPromptAndObjectiveShift()
 	local repairSystem = repairMessages[1].content
 	T.expect(
 		"phase23_repair_prompt_preserves_challenge_language",
-		string.find(repairSystem, "preserve visible challenge", 1, true) ~= nil
+		string.find(repairSystem, "preserving scoreable challenge", 1, true) ~= nil
 			and string.find(repairSystem, "low-risk", 1, true) == nil,
 		repairSystem
 	)
