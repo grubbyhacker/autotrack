@@ -378,12 +378,13 @@ function TestPhase14.runUnit()
 		newState ~= nil
 			and newState.sector_id == 2
 			and newState.mechanic == "RampJump"
-			and newState.params.gap_length <= 2
-			and newState.params.ramp_angle <= 4
-			and newState.params.ramp_length >= 22
-			and newState.params.landing_length >= 36
+			and newState.params.ramp_angle == 8
+			and newState.params.ramp_length == currentState.params.ramp_length
+			and newState.params.gap_length == currentState.params.gap_length
+			and newState.params.landing_length >= currentState.params.landing_length
+			and newState.params.landing_length <= currentState.params.landing_length + 6
 			and newState.pads.ingress == "Brake10"
-			and newState.pads.egress == "None",
+			and newState.pads.egress == currentState.pads.egress,
 		HttpService:JSONEncode(newState or {}))
 	T.expect("phase14_partial_repair_state_explanation",
 		type(explanation) == "string" and explanation ~= "",
