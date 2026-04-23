@@ -129,18 +129,21 @@ end
 
 local function runPass(sectorId: number, state: SectorState)
 	local sector = activeSector(sectorId)
-	local result = select(1, AttemptRunner.run({
-		mode = "isolated_sector",
-		workingState = state,
-		action = nil,
-		targetSectorId = sectorId,
-		entryFrame = sector.entry,
-		exitFrame = sector.exit,
-		sectors = RuntimeContext.getSectors(),
-		car = RuntimeContext.getCar(),
-		canonicalStart = RuntimeContext.getCanonicalStart(),
-		onSectorChange = nil,
-	}))
+	local result = select(
+		1,
+		AttemptRunner.run({
+			mode = "isolated_sector",
+			workingState = state,
+			action = nil,
+			targetSectorId = sectorId,
+			entryFrame = sector.entry,
+			exitFrame = sector.exit,
+			sectors = RuntimeContext.getSectors(),
+			car = RuntimeContext.getCar(),
+			canonicalStart = RuntimeContext.getCanonicalStart(),
+			onSectorChange = nil,
+		})
+	)
 	return result
 end
 
@@ -152,11 +155,9 @@ function TuneExperiment.runCandidate(candidate)
 	local previousAttrs = applyAttrs(candidate.attr_overrides, candidate.clear_all_attrs == true)
 	local records = {}
 
-	UIState.appendLog(string.format(
-		"Experiment %s x%d",
-		tostring(candidate.label or normalizedState.mechanic or "candidate"),
-		passes
-	))
+	UIState.appendLog(
+		string.format("Experiment %s x%d", tostring(candidate.label or normalizedState.mechanic or "candidate"), passes)
+	)
 
 	local ok, runErr = pcall(function()
 		for passIndex = 1, passes do
@@ -166,12 +167,14 @@ function TuneExperiment.runCandidate(candidate)
 				attr_overrides = candidate.attr_overrides or {},
 			}, result)
 			table.insert(records, record)
-			Tracer.log(string.format(
-				"tune_experiment_pass label=%s pass=%d %s",
-				tostring(candidate.label or normalizedState.mechanic or "candidate"),
-				passIndex,
-				HttpService:JSONEncode(record)
-			))
+			Tracer.log(
+				string.format(
+					"tune_experiment_pass label=%s pass=%d %s",
+					tostring(candidate.label or normalizedState.mechanic or "candidate"),
+					passIndex,
+					HttpService:JSONEncode(record)
+				)
+			)
 		end
 	end)
 
@@ -206,8 +209,10 @@ function TuneExperiment.compareCandidates(candidates)
 		if best == nil or (result.aggregate.score or 0) > (best.aggregate.score or 0) then
 			best = result
 		end
-		if bestProduction == nil
-			or (result.aggregate.average_challenge_total or 0) > (bestProduction.aggregate.average_challenge_total or 0)
+		if
+			bestProduction == nil
+			or (result.aggregate.average_challenge_total or 0)
+				> (bestProduction.aggregate.average_challenge_total or 0)
 		then
 			bestProduction = result
 		end

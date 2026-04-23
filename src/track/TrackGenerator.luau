@@ -4,9 +4,15 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
-local ChicanePath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath"))
-local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
-local RampJumpPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("RampJumpPath"))
+local ChicanePath = require(
+	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("ChicanePath")
+)
+local CrestDipPath = require(
+	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath")
+)
+local RampJumpPath = require(
+	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("RampJumpPath")
+)
 local CornerPath = require(script.Parent.CornerPath)
 local TrackVisuals = require(script.Parent.TrackVisuals)
 
@@ -59,7 +65,17 @@ local function straightSector(id, center, lookVector)
 	}
 end
 
-local function cornerSector(id, center, entryOffset, entryLook, exitOffset, exitLook, cellSize, entryShoulderLength, exitShoulderLength)
+local function cornerSector(
+	id,
+	center,
+	entryOffset,
+	entryLook,
+	exitOffset,
+	exitLook,
+	cellSize,
+	entryShoulderLength,
+	exitShoulderLength
+)
 	local cellCFrame = CFrame.lookAt(center, center + exitLook)
 	return {
 		id = id,
@@ -141,20 +157,15 @@ local function buildSectors(rows, cols)
 		local nextSector = sectors[index % #sectors + 1]
 		assert(
 			(sector.exit.Position - nextSector.entry.Position).Magnitude < 0.001,
-			string.format("TrackGenerator.generate: sector %d exit does not mate with sector %d entry", sector.id, nextSector.id)
+			string.format(
+				"TrackGenerator.generate: sector %d exit does not mate with sector %d entry",
+				sector.id,
+				nextSector.id
+			)
 		)
 	end
 
 	return sectors
-end
-
-local function slerpDir(a, b, t)
-	local cosTheta = math.clamp(a:Dot(b), -1, 1)
-	local theta = math.acos(cosTheta)
-	if math.abs(theta) < 1e-6 then return a end
-	local sinTheta = math.sin(theta)
-	return a * (math.sin((1 - t) * theta) / sinTheta)
-		+ b * (math.sin(t * theta) / sinTheta)
 end
 
 local function buildLapWaypoint(position, forward)
@@ -168,12 +179,7 @@ local function worldPoint(entryFrame, point)
 		+ entryFrame.LookVector * point.Z
 end
 
-local function buildStraightWaypoints(
-	waypoints,
-	waypointSectorIds,
-	sector,
-	overrideState
-)
+local function buildStraightWaypoints(waypoints, waypointSectorIds, sector, overrideState)
 	local function ridePos(p)
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
@@ -208,12 +214,8 @@ local function buildStraightWaypoints(
 		assert(params.gap_length, "TrackGenerator.buildStraightWaypoints: rampjump gap_length missing")
 		assert(params.landing_length, "TrackGenerator.buildStraightWaypoints: rampjump landing_length missing")
 
-		local profile = RampJumpPath.buildProfile(
-			params.ramp_angle,
-			params.ramp_length,
-			params.gap_length,
-			params.landing_length
-		)
+		local profile =
+			RampJumpPath.buildProfile(params.ramp_angle, params.ramp_length, params.gap_length, params.landing_length)
 		for index = 2, #profile.guidePoints do
 			local currentLocal = profile.guidePoints[index]
 			local previousLocal = profile.guidePoints[index - 1]
@@ -261,13 +263,7 @@ local function buildStraightWaypoints(
 	end
 end
 
-local function appendSectorWaypoints(
-	waypoints,
-	waypointSectorIds,
-	sectorKinds,
-	sector,
-	overrideState
-)
+local function appendSectorWaypoints(waypoints, waypointSectorIds, sectorKinds, sector, overrideState)
 	local function ridePos(p)
 		return Vector3.new(p.X, CAR_RIDE_Y, p.Z)
 	end
@@ -284,9 +280,7 @@ local function appendSectorWaypoints(
 		for index = 1, #points do
 			local current = points[index]
 			local previous = points[math.max(index - 1, 1)]
-			local forward = (current - previous).Magnitude > 0
-				and (current - previous).Unit
-				or sector.entry.LookVector
+			local forward = (current - previous).Magnitude > 0 and (current - previous).Unit or sector.entry.LookVector
 			table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
 			table.insert(waypointSectorIds, sector.id)
 		end
@@ -307,10 +301,7 @@ function TrackGenerator.canonicalStart()
 	return CFrame.new(entry.Position + Vector3.new(0, CAR_RIDE_Y - TRACK_Y, 0)) * (entry - entry.Position)
 end
 
-function TrackGenerator.getLapPath(
-	sectors,
-	stateOverrides
-)
+function TrackGenerator.getLapPath(sectors, stateOverrides)
 	local waypoints = {}
 	local waypointSectorIds = {}
 	local sectorKinds = {}
@@ -320,7 +311,13 @@ function TrackGenerator.getLapPath(
 
 	for _, rawSector in ipairs(sectors) do
 		local sector = rawSector
-		appendSectorWaypoints(waypoints, waypointSectorIds, sectorKinds, sector, stateOverrides and stateOverrides[sector.id] or nil)
+		appendSectorWaypoints(
+			waypoints,
+			waypointSectorIds,
+			sectorKinds,
+			sector,
+			stateOverrides and stateOverrides[sector.id] or nil
+		)
 	end
 
 	table.insert(waypoints, buildLapWaypoint(ridePos(sectors[1].entry.Position), sectors[1].entry.LookVector))
@@ -349,9 +346,7 @@ function TrackGenerator.getSectorPath(sector, overrideState)
 		for index = 2, #points do
 			local current = points[index]
 			local previous = points[index - 1]
-			local forward = (current - previous).Magnitude > 0
-				and (current - previous).Unit
-				or sector.entry.LookVector
+			local forward = (current - previous).Magnitude > 0 and (current - previous).Unit or sector.entry.LookVector
 			table.insert(waypoints, buildLapWaypoint(ridePos(current), forward))
 			table.insert(waypointSectorIds, sector.id)
 		end
@@ -403,9 +398,21 @@ function TrackGenerator.buildParts(sectors)
 		)
 
 		if sector.kind == "Straight" then
-			TrackVisuals.renderStraightFlatVisuals(visualFolder, sector.cellCFrame, sector.cellSize, sector.entry, sector.exit)
+			TrackVisuals.renderStraightFlatVisuals(
+				visualFolder,
+				sector.cellCFrame,
+				sector.cellSize,
+				sector.entry,
+				sector.exit
+			)
 		else
-			TrackVisuals.renderCornerFlatVisuals(visualFolder, sector.cellCFrame, sector.cellSize, sector.entry, sector.exit)
+			TrackVisuals.renderCornerFlatVisuals(
+				visualFolder,
+				sector.cellCFrame,
+				sector.cellSize,
+				sector.entry,
+				sector.exit
+			)
 		end
 
 		sector.partGroup = sectorFolder

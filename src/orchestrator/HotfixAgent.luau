@@ -17,14 +17,12 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
-local SectorRollback = require(script.Parent.Parent.Track.SectorRollback)
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local RuntimeContext = require(script.Parent.RuntimeContext)
-local JobLock = require(script.Parent.JobLock)
 local UIState = require(script.Parent.UIState)
 local Tracer = require(script.Parent.Tracer)
 
@@ -45,14 +43,10 @@ function HotfixAgent.attemptMode(): string
 end
 
 local function cloneState(state: SectorState): SectorState
-	local params = {}
-	for key, value in pairs(state.params) do
-		params[key] = value
-	end
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = params,
+		params = table.clone(state.params),
 		pads = { ingress = state.pads.ingress, egress = state.pads.egress },
 		version = state.version,
 	}
@@ -73,7 +67,9 @@ local function rerecordBaseline(): number?
 	VerifierCar.reset(RuntimeContext.getCanonicalStart())
 	local ok, result = pcall(function()
 		return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, function(id, entering)
-			if entering then UIState.setCurrentSector(id) end
+			if entering then
+				UIState.setCurrentSector(id)
+			end
 		end)
 	end)
 	if ok and result.success then
@@ -133,36 +129,32 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		end
 
 		-- Build failure packet with hotfix constraint injected into the description
-		local packet = LapEvaluator.buildFailurePacket(
-			{
-				raw_text = string.format(
-					"[HOTFIX] Repair sector %d — only parameter/pad changes allowed, do NOT change mechanic type",
-					sectorId
-				),
-				parsed = {
-					sector_id = sectorId,
-					mechanic = committedState.mechanic,
-					request_kind = "Mechanic",
-				},
-				request_id = string.format("hotfix-%d-a%d", sectorId, attemptIndex),
-				qualifiers = {},
-				timestamp = os.time(),
+		local packet = LapEvaluator.buildFailurePacket({
+			raw_text = string.format(
+				"[HOTFIX] Repair sector %d — only parameter/pad changes allowed, do NOT change mechanic type",
+				sectorId
+			),
+			parsed = {
+				sector_id = sectorId,
+				mechanic = committedState.mechanic,
+				request_kind = "Mechanic",
 			},
-			workingState,
-			attemptIndex,
-			nil,
-			lastResult,
-			sectorId,
-			hints,
-			extraDiagnostics
-		)
+			request_id = string.format("hotfix-%d-a%d", sectorId, attemptIndex),
+			qualifiers = {},
+			timestamp = os.time(),
+		}, workingState, attemptIndex, nil, lastResult, sectorId, hints, extraDiagnostics)
 
-		UIState.setPhase("HotfixRepair", string.format("Hotfix: attempt %d/%d", attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS))
+		UIState.setPhase(
+			"HotfixRepair",
+			string.format("Hotfix: attempt %d/%d", attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS)
+		)
 		UIState.setAttempt(attemptIndex + 1, Constants.HOTFIX_MAX_ATTEMPTS)
 
 		local action, newState, explanation, _, repairErr = LLMAdapter.repair(packet, history)
 		if repairErr then
-			Tracer.log(string.format("hotfix_repair_error sector=%d attempt=%d err=%s", sectorId, attemptIndex, repairErr))
+			Tracer.log(
+				string.format("hotfix_repair_error sector=%d attempt=%d err=%s", sectorId, attemptIndex, repairErr)
+			)
 			UIState.appendLog("Hotfix repair error: " .. repairErr)
 			break
 		end
@@ -179,7 +171,14 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		elseif action then
 			local actionOk, actionErr = ActionValidator.validateAction(action, workingState.mechanic)
 			if not actionOk then
-				Tracer.log(string.format("hotfix_action_invalid sector=%d attempt=%d err=%s", sectorId, attemptIndex, tostring(actionErr)))
+				Tracer.log(
+					string.format(
+						"hotfix_action_invalid sector=%d attempt=%d err=%s",
+						sectorId,
+						attemptIndex,
+						tostring(actionErr)
+					)
+				)
 				UIState.appendLog("Hotfix: invalid action — " .. tostring(actionErr))
 				break
 			end
@@ -201,7 +200,9 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 			car = RuntimeContext.getCar(),
 			canonicalStart = RuntimeContext.getCanonicalStart(),
 			onSectorChange = function(id, entering)
-				if entering then UIState.setCurrentSector(id) end
+				if entering then
+					UIState.setCurrentSector(id)
+				end
 			end,
 		})
 
@@ -216,17 +217,23 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		})
 		attemptIndex += 1
 
-		Tracer.log(string.format(
-			"hotfix_attempt sector=%d attempt=%d success=%s",
-			sectorId, attemptIndex, tostring(result.success)
-		))
+		Tracer.log(
+			string.format(
+				"hotfix_attempt sector=%d attempt=%d success=%s",
+				sectorId,
+				attemptIndex,
+				tostring(result.success)
+			)
+		)
 
 		if result.success then
 			-- Commit the fixed state
 			workingState.version = committedState.version + 1
 			SectorRegistry.commit(workingState)
 			UIState.setSectorMechanic(sectorId, workingState.mechanic)
-			UIState.appendLog(string.format("Hotfix: sector %d repaired and committed (v%d)", sectorId, workingState.version))
+			UIState.appendLog(
+				string.format("Hotfix: sector %d repaired and committed (v%d)", sectorId, workingState.version)
+			)
 			Tracer.log(string.format("hotfix_commit sector=%d version=%d", sectorId, workingState.version))
 
 			-- Re-record baseline over the now-fixed track
@@ -275,7 +282,9 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		UIState.setEnduranceTerminal(sectorId)
 		UIState.setPhase("EnduranceFailed", "ENDURANCE FAILED")
 		UIState.showFailureBanner(string.format("ENDURANCE FAILED — Sector %d unfixable", sectorId))
-		UIState.appendLog(string.format("Hotfix exhausted — sector %d unfixable after %d attempts", sectorId, attemptIndex))
+		UIState.appendLog(
+			string.format("Hotfix exhausted — sector %d unfixable after %d attempts", sectorId, attemptIndex)
+		)
 		_active = false
 		return false
 	end

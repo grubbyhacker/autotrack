@@ -40,7 +40,7 @@ local ESCALATION_DELTA = {
 	CrestDip = {
 		height_or_depth = 2,
 		sector_length = -4,
-		radius = 0,   -- cosmetic; do not bother
+		radius = 0, -- cosmetic; do not bother
 	},
 }
 
@@ -68,12 +68,10 @@ local LEVER_FLOOR = {
 }
 
 local function cloneState(state: SectorState): SectorState
-	local params = {}
-	for key, value in pairs(state.params) do params[key] = value end
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = params,
+		params = table.clone(state.params),
 		pads = { ingress = state.pads.ingress, egress = state.pads.egress },
 		version = state.version,
 	}
@@ -85,18 +83,28 @@ end
 -- below the floor).
 local function escalateState(state: SectorState, score: Types.ChallengeScore): (SectorState?, string?, string?)
 	local lever, reason = ChallengeScore.suggestEscalation(state, score)
-	if lever == nil then return nil, nil, reason end
+	if lever == nil then
+		return nil, nil, reason
+	end
 
 	local mechanic = state.mechanic
-	if not mechanic then return nil, nil, "no mechanic" end
+	if not mechanic then
+		return nil, nil, "no mechanic"
+	end
 	local deltaTable = ESCALATION_DELTA[mechanic]
-	if not deltaTable then return nil, nil, "no delta table" end
+	if not deltaTable then
+		return nil, nil, "no delta table"
+	end
 
 	local delta = deltaTable[lever]
-	if delta == nil or delta == 0 then return nil, nil, "no delta for " .. lever end
+	if delta == nil or delta == 0 then
+		return nil, nil, "no delta for " .. lever
+	end
 
 	local current = state.params[lever]
-	if type(current) ~= "number" then return nil, nil, "lever not numeric" end
+	if type(current) ~= "number" then
+		return nil, nil, "lever not numeric"
+	end
 
 	local candidate = current + delta
 	local ceiling = LEVER_CEILING[lever]
@@ -139,7 +147,9 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 		return bestState, bestResult, 0
 	end
 	if bestResult.score.over_budget then
-		if args.onRound then args.onRound(0, nil, false, "over budget; no escalation") end
+		if args.onRound then
+			args.onRound(0, nil, false, "over budget; no escalation")
+		end
 		return bestState, bestResult, 0
 	end
 
@@ -147,7 +157,9 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 		rounds = round
 		local candidateState, lever, skipReason = escalateState(bestState, bestResult.score)
 		if not candidateState then
-			if args.onRound then args.onRound(round, nil, false, skipReason or "no candidate") end
+			if args.onRound then
+				args.onRound(round, nil, false, skipReason or "no candidate")
+			end
 			break
 		end
 
@@ -171,25 +183,35 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 		})
 
 		if not result.success then
-			if args.onRound then args.onRound(round, attempt, false, "integrity regressed") end
+			if args.onRound then
+				args.onRound(round, attempt, false, "integrity regressed")
+			end
 			break
 		end
 		if result.score == nil then
-			if args.onRound then args.onRound(round, attempt, false, "no score on result") end
+			if args.onRound then
+				args.onRound(round, attempt, false, "no score on result")
+			end
 			break
 		end
 		if result.score.over_budget then
-			if args.onRound then args.onRound(round, attempt, false, "over budget") end
+			if args.onRound then
+				args.onRound(round, attempt, false, "over budget")
+			end
 			break
 		end
 		if result.score.total < bestResult.score.total + Constants.MIN_ESCALATION_DELTA then
-			if args.onRound then args.onRound(round, attempt, false, "insufficient improvement") end
+			if args.onRound then
+				args.onRound(round, attempt, false, "insufficient improvement")
+			end
 			break
 		end
 
 		bestState = cloneState(updatedState)
 		bestResult = result
-		if args.onRound then args.onRound(round, attempt, true, nil) end
+		if args.onRound then
+			args.onRound(round, attempt, true, nil)
+		end
 	end
 
 	return bestState, bestResult, rounds

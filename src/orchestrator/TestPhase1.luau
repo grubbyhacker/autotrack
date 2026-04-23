@@ -37,12 +37,20 @@ function TestPhase1.run()
 			local pads = folder:FindFirstChild("Pads")
 			local collisionCount = collision and collision:IsA("Folder") and #collision:GetChildren() or -1
 			local visualCount = visual and visual:IsA("Folder") and #visual:GetChildren() or -1
-			if not (anchor and anchor:IsA("BasePart")
-				and collision and collision:IsA("Folder")
-				and visual and visual:IsA("Folder")
-				and pads and pads:IsA("Folder")
-				and collisionCount >= 1
-				and visualCount >= 1) then
+			if
+				not (
+					anchor
+					and anchor:IsA("BasePart")
+					and collision
+					and collision:IsA("Folder")
+					and visual
+					and visual:IsA("Folder")
+					and pads
+					and pads:IsA("Folder")
+					and collisionCount >= 1
+					and visualCount >= 1
+				)
+			then
 				table.insert(badSectors, folder.Name)
 			end
 		end
@@ -57,8 +65,11 @@ function TestPhase1.run()
 	T.expect("car_spawned", car ~= nil, "VerifierCar not in workspace")
 	if car then
 		local y = car.Position.Y
-		T.expect("car_height", math.abs(y - CAR_RIDE_Y) < 1.0,
-			string.format("car Y=%.2f, expected ~%.2f", y, CAR_RIDE_Y))
+		T.expect(
+			"car_height",
+			math.abs(y - CAR_RIDE_Y) < 1.0,
+			string.format("car Y=%.2f, expected ~%.2f", y, CAR_RIDE_Y)
+		)
 	end
 
 	-- Sector registry
@@ -78,7 +89,11 @@ function TestPhase1.run()
 	T.expect("job_lock_free", not JobLock.isHeld(), "job lock still held after baseline lap")
 
 	-- Player model
-	T.expect("player_characters_disabled", Players.CharacterAutoLoads == false, "Players.CharacterAutoLoads should be false")
+	T.expect(
+		"player_characters_disabled",
+		Players.CharacterAutoLoads == false,
+		"Players.CharacterAutoLoads should be false"
+	)
 	local hasCharacter = false
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character ~= nil then
@@ -92,9 +107,11 @@ function TestPhase1.run()
 	local lapDone = workspace:GetAttribute("AutoTrack_BaselineLapDone")
 	local lapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime")
 	T.expect("baseline_lap_done", lapDone == true, "AutoTrack_BaselineLapDone not true (main not ready?)")
-	T.expect("baseline_lap_time",
+	T.expect(
+		"baseline_lap_time",
 		type(lapTime) == "number" and lapTime > 0 and lapTime < Constants.LAP_TIMEOUT,
-		string.format("lap time %.2f out of range", lapTime or -1))
+		string.format("lap time %.2f out of range", lapTime or -1)
+	)
 end
 
 return TestPhase1

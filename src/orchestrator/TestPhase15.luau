@@ -132,7 +132,10 @@ function TestPhase15.run()
 					and segment.startLocal.Z >= profile.landingStartZ - 0.75
 				if not isIntentionalGap and math.abs(gap) > 0.6 then
 					continuityOk = false
-					table.insert(continuityErrors, string.format("%.2f between %s and %s", gap, segments[index - 1].part.Name, segment.part.Name))
+					table.insert(
+						continuityErrors,
+						string.format("%.2f between %s and %s", gap, segments[index - 1].part.Name, segment.part.Name)
+					)
 				end
 			end
 		end
@@ -152,12 +155,14 @@ function TestPhase15.run()
 		T.expect(
 			"phase15_rampjump_starts_flat",
 			firstFlatStartOk,
-			#segments > 0 and string.format(
-				"first segment start=(%.2f, %.2f) endY=%.2f",
-				segments[1].startLocal.Z,
-				segments[1].startLocal.Y,
-				segments[1].endLocal.Y
-			) or "no segments built"
+			#segments > 0
+					and string.format(
+						"first segment start=(%.2f, %.2f) endY=%.2f",
+						segments[1].startLocal.Z,
+						segments[1].startLocal.Y,
+						segments[1].endLocal.Y
+					)
+				or "no segments built"
 		)
 		T.expect(
 			"phase15_rampjump_blends_into_full_angle",
@@ -176,14 +181,20 @@ function TestPhase15.run()
 		T.expect(
 			"phase15_rampjump_preserves_only_designed_gap",
 			largestGap >= state.params.gap_length - 1.0 and continuityOk,
-			string.format("largestGap=%.2f continuity=%s %s", largestGap, tostring(continuityOk), table.concat(continuityErrors, "; "))
+			string.format(
+				"largestGap=%.2f continuity=%s %s",
+				largestGap,
+				tostring(continuityOk),
+				table.concat(continuityErrors, "; ")
+			)
 		)
 		T.expect(
 			"phase15_rampjump_runout_reaches_sector_exit",
 			lastSegment ~= nil
 				and math.abs(lastSegment.endLocal.Z - Constants.STRAIGHT_LENGTH) <= 0.5
 				and math.abs(lastSegment.endLocal.Y) <= 0.25,
-			lastSegment and string.format("lastEnd=(%.2f, %.2f)", lastSegment.endLocal.Z, lastSegment.endLocal.Y) or "no segments built"
+			lastSegment and string.format("lastEnd=(%.2f, %.2f)", lastSegment.endLocal.Z, lastSegment.endLocal.Y)
+				or "no segments built"
 		)
 
 		local _, sectors = getSectorMeta(TARGET_SECTOR_ID)

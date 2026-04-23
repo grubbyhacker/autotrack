@@ -48,9 +48,7 @@ function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFr
 		pad.Material = Enum.Material.Neon
 		local normalized = PadValueUtils.normalize(padValue)
 		local kind = PadValueUtils.kind(normalized)
-		pad.BrickColor = if kind == "Boost"
-			then BrickColor.new("Bright green")
-			else BrickColor.new("Bright red")
+		pad.BrickColor = if kind == "Boost" then BrickColor.new("Bright green") else BrickColor.new("Bright red")
 		pad:SetAttribute("PadType", normalized)
 		pad:SetAttribute("PadKind", kind)
 		pad:SetAttribute("PadDelta", PadValueUtils.amount(normalized))

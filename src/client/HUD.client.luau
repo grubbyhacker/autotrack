@@ -177,7 +177,10 @@ hud.llmPrevButton.MouseButton1Click:Connect(function()
 	local currentModel = if currentEnabled then (stateFolder:GetAttribute("llm_model") or "heuristic") else "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
-		if m.id == currentModel then idx = i; break end
+		if m.id == currentModel then
+			idx = i
+			break
+		end
 	end
 	local count = #LLMConfig.MODELS
 	local newIdx = ((idx - 2) % count) + 1
@@ -193,7 +196,10 @@ hud.llmNextButton.MouseButton1Click:Connect(function()
 	local currentModel = if currentEnabled then (stateFolder:GetAttribute("llm_model") or "heuristic") else "heuristic"
 	local idx = 1
 	for i, m in ipairs(LLMConfig.MODELS) do
-		if m.id == currentModel then idx = i; break end
+		if m.id == currentModel then
+			idx = i
+			break
+		end
 	end
 	local count = #LLMConfig.MODELS
 	local newIdx = (idx % count) + 1
@@ -242,10 +248,16 @@ local function render()
 
 	StatusPanel.setPhase(stateFolder:GetAttribute("phase_label") or "Ready for request")
 	StatusPanel.setRequestSummary(
-		(stateFolder:GetAttribute("endurance_mode_active") == true and (stateFolder:GetAttribute("orchestrator_last_decision") or "") ~= "")
+		(
+			stateFolder:GetAttribute("endurance_mode_active") == true
+			and (stateFolder:GetAttribute("orchestrator_last_decision") or "") ~= ""
+		)
 				and (stateFolder:GetAttribute("orchestrator_last_decision") or "")
 			or (stateFolder:GetAttribute("request_summary") or ""),
-		(stateFolder:GetAttribute("endurance_mode_active") == true and (stateFolder:GetAttribute("request_summary") or "") ~= "")
+		(
+			stateFolder:GetAttribute("endurance_mode_active") == true
+			and (stateFolder:GetAttribute("request_summary") or "") ~= ""
+		)
 				and (stateFolder:GetAttribute("request_summary") or "")
 			or (stateFolder:GetAttribute("request_text") or "")
 	)
@@ -268,17 +280,12 @@ local function render()
 				)
 			or nil
 	)
-	StatusPanel.setMemorySummary(
-		stateFolder:GetAttribute("endurance_mode_active") == true,
-		buildMemorySummary()
-	)
+	StatusPanel.setMemorySummary(stateFolder:GetAttribute("endurance_mode_active") == true, buildMemorySummary())
 	StatusPanel.setRuntimeIdentity(
 		stateFolder:GetAttribute("build_stamp") or "",
 		stateFolder:GetAttribute("controller_profile") or ""
 	)
-	StatusPanel.setExplanation(
-		(if attemptCurrent > 0 then (stateFolder:GetAttribute("explanation") or "") else "")
-	)
+	StatusPanel.setExplanation((if attemptCurrent > 0 then (stateFolder:GetAttribute("explanation") or "") else ""))
 	StatusPanel.setRepairAction(
 		(if attemptCurrent > 0 then (stateFolder:GetAttribute("repair_action_text") or "") else "")
 	)

@@ -111,13 +111,18 @@ Run commands:
 make fmt
 make fmt-check
 make typecheck
+make typecheck-report
 make lint
 make hygiene
 ```
 
 `make hygiene` is the fast static gate (`fmt-check` + `typecheck` + `lint`) and is safe for frequent local/CI use.
 
-Hygiene is intentionally scoped to `src/common/*.luau` (with a conservative typecheck boundary) to avoid a disruptive whole-repo migration. See `docs/code-hygiene.md` for scope, rationale, and ratchet plan.
+Phase 30 expands `fmt` / `fmt-check` / `lint` repo-wide across tracked `.luau` source under `src/` and `studio/`.
+
+`make typecheck` remains intentionally conservative and green on a documented subset while `make typecheck-report` exposes the current full-repo analyzer backlog without gating local iteration.
+
+See `docs/code-hygiene.md` for scope, rationale, and the current typecheck boundary.
 
 ## LLM Trace Capture
 

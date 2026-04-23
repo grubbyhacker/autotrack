@@ -5,10 +5,7 @@ local CornerPath = {}
 
 local function cubicBezier(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: number): Vector3
 	local u = 1 - t
-	return p0 * (u * u * u)
-		+ p1 * (3 * u * u * t)
-		+ p2 * (3 * u * t * t)
-		+ p3 * (t * t * t)
+	return p0 * (u * u * u) + p1 * (3 * u * u * t) + p2 * (3 * u * t * t) + p3 * (t * t * t)
 end
 
 local function appendLinearSamples(points: { Vector3 }, startPoint: Vector3, endPoint: Vector3, sampleSpacing: number?)

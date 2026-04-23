@@ -31,13 +31,19 @@ type RunMetrics = Types.RunMetrics
 local ChallengeScore = {}
 
 local function clamp01(x: number): number
-	if x < 0 then return 0 end
-	if x > 1 then return 1 end
+	if x < 0 then
+		return 0
+	end
+	if x > 1 then
+		return 1
+	end
 	return x
 end
 
 local function safeDiv(num: number, denom: number): number
-	if denom <= 0 then return 0 end
+	if denom <= 0 then
+		return 0
+	end
 	return num / denom
 end
 
@@ -73,7 +79,9 @@ local function lateralComponent(state: SectorState, metrics: RunMetrics): number
 	local transition = state.params.transition_length or 1
 	-- Coarse lateral acceleration proxy: (2 * swing) / transition² * speed²
 	local entrySpeed = metrics.entry_speed
-	if entrySpeed <= 0 then entrySpeed = Constants.BASELINE_SPEED end
+	if entrySpeed <= 0 then
+		entrySpeed = Constants.BASELINE_SPEED
+	end
 	local approxG = (2 * swing * entrySpeed * entrySpeed) / math.max(1, transition * transition)
 	return clamp01(safeDiv(approxG, Constants.LATERAL_G_FULL_SCORE)) * 10
 end
@@ -90,21 +98,23 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 		-- scores 0.7; long-airtime scores 1.0 if airborne at sector exit.
 		local air = metrics.target_air_distance or 0
 		local maxAir = Constants.RAMPJUMP_REACQUIRE_MAX
-		if maxAir <= 0 then return 0 end
+		if maxAir <= 0 then
+			return 0
+		end
 		-- Tuning note: once a RAMPJUMP_REACQUIRE_MARGIN field lands in metrics,
 		-- swap this for the true margin computation.
 		local approxMargin = clamp01(safeDiv(air, maxAir))
 		return approxMargin * 1.0
-
 	elseif mechanic == "CrestDip" then
 		local airtime = metrics.target_airtime_distance or 0
 		local cap = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE
-		if cap <= 0 then return 0 end
+		if cap <= 0 then
+			return 0
+		end
 		local ratio = safeDiv(airtime, cap)
 		-- Reward a ratio that is close to 1 but not over. The integrity check
 		-- already rejects > 1; clamp here defensively.
 		return clamp01(ratio)
-
 	elseif mechanic == "Chicane" then
 		local leftOffset = metrics.target_left_offset or 0
 		local rightOffset = metrics.target_right_offset or 0
@@ -114,7 +124,9 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 		-- Use absolute track half-width as denominator so amplitude drives the score,
 		-- not corridor_width. amplitude=TRACK_WIDTH/2 (max swing) → occupancy=1.
 		local trackHalf = Constants.TRACK_WIDTH * 0.5
-		if trackHalf <= 0 then return 0 end
+		if trackHalf <= 0 then
+			return 0
+		end
 		local leftOccupancy = clamp01(safeDiv(leftOffset, trackHalf))
 		local rightOccupancy = clamp01(safeDiv(rightOffset, trackHalf))
 		local balancedOccupancy = math.min(leftOccupancy, rightOccupancy)
@@ -123,17 +135,16 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 		local alternationScore = clamp01(safeDiv(bandChanges, Constants.CHICANE_SCORE_ALT_FULL))
 		local targetMinSpeed = metrics.target_min_speed or metrics.exit_speed or 0
 		local entrySpeed = metrics.entry_speed
-		if entrySpeed <= 0 then entrySpeed = Constants.BASELINE_SPEED end
+		if entrySpeed <= 0 then
+			entrySpeed = Constants.BASELINE_SPEED
+		end
 		local speedRatio = safeDiv(targetMinSpeed, entrySpeed)
-		local speedScore = clamp01(safeDiv(
-			speedRatio - Constants.CHICANE_SPEED_RETENTION_FLOOR,
-			1 - Constants.CHICANE_SPEED_RETENTION_FLOOR
-		))
+		local speedScore = clamp01(
+			safeDiv(speedRatio - Constants.CHICANE_SPEED_RETENTION_FLOOR, 1 - Constants.CHICANE_SPEED_RETENTION_FLOOR)
+		)
 		local amplitudeScore = clamp01(safeDiv(amplitude, trackHalf))
-		local spacingScore = clamp01(safeDiv(
-			transitionBounds.max - transitionLength,
-			transitionBounds.max - transitionBounds.min
-		))
+		local spacingScore =
+			clamp01(safeDiv(transitionBounds.max - transitionLength, transitionBounds.max - transitionBounds.min))
 		local geometrySeverity = amplitudeScore * (0.35 + 0.65 * spacingScore)
 		return occupancyScore
 			* (0.6 + 0.4 * alternationScore)
@@ -199,10 +210,16 @@ function ChallengeScore.aggregate(sectorScores: { Types.ChallengeScore })
 	local maxBudgetUsed = 0
 	for _, s in ipairs(sectorScores) do
 		total += s.total
-		if s.over_budget then anyOverBudget = true end
-		if s.budget_used > maxBudgetUsed then maxBudgetUsed = s.budget_used end
+		if s.over_budget then
+			anyOverBudget = true
+		end
+		if s.budget_used > maxBudgetUsed then
+			maxBudgetUsed = s.budget_used
+		end
 	end
-	if anyOverBudget then total = total * 0.5 end
+	if anyOverBudget then
+		total = total * 0.5
+	end
 	return {
 		total = total,
 		sector_count = #sectorScores,
@@ -224,7 +241,9 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 	end
 
 	local mechanic = state.mechanic
-	if not mechanic then return nil, "no mechanic" end
+	if not mechanic then
+		return nil, "no mechanic"
+	end
 
 	-- Identify the lowest non-saturated reward component. Time_cost is not a
 	-- reward, so it does not enter the "raise me" comparison.
@@ -251,12 +270,20 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 	-- Per-mechanic lever selection. Phase 11d can extend this with a full
 	-- EscalationLadder; this is the v1 mapping sufficient for Stage B.
 	if mechanic == "RampJump" then
-		if lowestName == "air" then return "ramp_angle", "raise hang time" end
-		if lowestName == "near_miss" then return "gap_length", "push landing margin" end
+		if lowestName == "air" then
+			return "ramp_angle", "raise hang time"
+		end
+		if lowestName == "near_miss" then
+			return "gap_length", "push landing margin"
+		end
 		return "ramp_length", "extend ramp" -- lateral is typically 0 for jumps
 	elseif mechanic == "CrestDip" then
-		if lowestName == "air" then return "height_or_depth", "raise peak" end
-		if lowestName == "near_miss" then return "sector_length", "compress feature for tighter margin" end
+		if lowestName == "air" then
+			return "height_or_depth", "raise peak"
+		end
+		if lowestName == "near_miss" then
+			return "sector_length", "compress feature for tighter margin"
+		end
 		return "height_or_depth", "raise peak"
 	elseif mechanic == "Chicane" then
 		local amplitude = state.params.amplitude or 0

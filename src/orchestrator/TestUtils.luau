@@ -18,7 +18,11 @@ function T.fail(name: string, reason: string?)
 end
 
 function T.expect(name: string, cond: boolean, reason: string?)
-	if cond then T.pass(name) else T.fail(name, reason) end
+	if cond then
+		T.pass(name)
+	else
+		T.fail(name, reason)
+	end
 end
 
 return T

@@ -93,16 +93,7 @@ local function runCommittedLap()
 	local car = RuntimeContext.getCar()
 	local canonicalStart = RuntimeContext.getCanonicalStart()
 	VerifierCar.reset(canonicalStart)
-	return VerifierController.runLap(
-		car,
-		waypoints,
-		waypointSectors,
-		sectorKinds,
-		nil,
-		nil,
-		nil,
-		nil
-	)
+	return VerifierController.runLap(car, waypoints, waypointSectors, sectorKinds, nil, nil, nil, nil)
 end
 
 function TestPhase16.run()
@@ -201,16 +192,8 @@ function TestPhase16.run()
 		})
 	)
 
-	local frozenDirection, frozenVelocity, nextFrozen = VerifierController._resolveRampJumpAirborneGuidance(
-		true,
-		true,
-		true,
-		nil,
-		Vector3.zAxis,
-		Vector3.xAxis,
-		14,
-		80
-	)
+	local frozenDirection, frozenVelocity, nextFrozen =
+		VerifierController._resolveRampJumpAirborneGuidance(true, true, true, nil, Vector3.zAxis, Vector3.xAxis, 14, 80)
 	T.expect(
 		"phase16_ramp_airborne_guidance_freezes_takeoff_heading",
 		nextFrozen ~= nil
@@ -239,15 +222,13 @@ function TestPhase16.run()
 	T.expect(
 		"phase16_ramp_airborne_guidance_caps_upward_velocity",
 		cappedVelocity ~= nil and math.abs(cappedVelocity.Y - 14) < 1e-4,
-		HttpService:JSONEncode(cappedVelocity and { x = cappedVelocity.X, y = cappedVelocity.Y, z = cappedVelocity.Z } or {})
+		HttpService:JSONEncode(
+			cappedVelocity and { x = cappedVelocity.X, y = cappedVelocity.Y, z = cappedVelocity.Z } or {}
+		)
 	)
 
-	local pinnedAngularVelocity = VerifierController._resolveStraightPinnedAngularVelocity(
-		false,
-		true,
-		1,
-		Vector3.new(2.5, 5, -4)
-	)
+	local pinnedAngularVelocity =
+		VerifierController._resolveStraightPinnedAngularVelocity(false, true, 1, Vector3.new(2.5, 5, -4))
 	T.expect(
 		"phase16_straight_pin_kills_yaw_and_roll",
 		math.abs(pinnedAngularVelocity.X - 2.5) < 1e-4
@@ -263,7 +244,9 @@ function TestPhase16.run()
 	local integrityOk, integrityHints = RampJumpIntegrity.evaluateRuntime({
 		target_airborne = false,
 		target_air_distance = 0,
-		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT + Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN + 0.25,
+		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
+			+ Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN
+			+ 0.25,
 		target_reacquired = true,
 		target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN - 1,
 		target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED - 0.5,
@@ -292,17 +275,20 @@ function TestPhase16.run()
 		gap_length = 2,
 		landing_length = 36,
 	}, "Brake25", "Brake10")
-	local result = select(1, AttemptRunner.run({
-		workingState = liveState,
-		action = nil,
-		targetSectorId = liveState.sector_id,
-		entryFrame = sector.entry,
-		exitFrame = sector.exit,
-		sectors = RuntimeContext.getSectors(),
-		car = RuntimeContext.getCar(),
-		canonicalStart = RuntimeContext.getCanonicalStart(),
-		onSectorChange = nil,
-	}))
+	local result = select(
+		1,
+		AttemptRunner.run({
+			workingState = liveState,
+			action = nil,
+			targetSectorId = liveState.sector_id,
+			entryFrame = sector.entry,
+			exitFrame = sector.exit,
+			sectors = RuntimeContext.getSectors(),
+			car = RuntimeContext.getCar(),
+			canonicalStart = RuntimeContext.getCanonicalStart(),
+			onSectorChange = nil,
+		})
+	)
 	debugLine("phase16_live_result=" .. HttpService:JSONEncode({
 		success = result.success,
 		failure = result.failure,
@@ -329,11 +315,7 @@ function TestPhase16.run()
 		loop = true,
 		runVerifier = false,
 	})
-	T.expect(
-		"phase16_rampitup_demo_preset_starts",
-		demoStartOk == true and demoStartErr == nil,
-		tostring(demoStartErr)
-	)
+	T.expect("phase16_rampitup_demo_preset_starts", demoStartOk == true and demoStartErr == nil, tostring(demoStartErr))
 	local demoLap = runCommittedLap()
 	debugLine("phase16_rampitup_demo_result=" .. HttpService:JSONEncode({
 		success = demoLap.success,
@@ -355,11 +337,7 @@ function TestPhase16.run()
 		})
 	)
 	local demoStopOk, demoStopErr = CameraDemo.stop()
-	T.expect(
-		"phase16_rampitup_demo_preset_stops",
-		demoStopOk == true and demoStopErr == nil,
-		tostring(demoStopErr)
-	)
+	T.expect("phase16_rampitup_demo_preset_stops", demoStopOk == true and demoStopErr == nil, tostring(demoStopErr))
 
 	resetEditableSectors()
 end

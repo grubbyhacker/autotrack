@@ -105,7 +105,10 @@ function HUDPreviewDemo.toggle(kind: string): (boolean, string?)
 		folder:SetAttribute("request_summary", "Sector 3 · RampJump")
 		folder:SetAttribute("attempt_current", 2)
 		folder:SetAttribute("attempt_max", Constants.MAX_REPAIR_ATTEMPTS)
-		folder:SetAttribute("explanation", "Entry speed bled off before takeoff, so the repair adds an ingress boost to carry momentum up the ramp")
+		folder:SetAttribute(
+			"explanation",
+			"Entry speed bled off before takeoff, so the repair adds an ingress boost to carry momentum up the ramp"
+		)
 		folder:SetAttribute("repair_action_text", "Entry boost")
 		folder:SetAttribute("final_status", "")
 		folder:SetAttribute("error_text", "")
@@ -135,7 +138,10 @@ function HUDPreviewDemo.toggle(kind: string): (boolean, string?)
 		folder:SetAttribute("final_status", "")
 		folder:SetAttribute("llm_enabled", true)
 		folder:SetAttribute("llm_model", "google/gemma-3-4b-it")
-		folder:SetAttribute("error_text", "LLM error: OpenRouter HTTP 429: rate limit exceeded for google/gemma-3-4b-it; retry after 22s")
+		folder:SetAttribute(
+			"error_text",
+			"LLM error: OpenRouter HTTP 429: rate limit exceeded for google/gemma-3-4b-it; retry after 22s"
+		)
 		folder:SetAttribute("log_1", "Attempt 1: ENTRY BOOST10")
 		folder:SetAttribute("log_2", "Attempt 2: LANDING LENGTH 18")
 		folder:SetAttribute("log_3", "Target exited but reacquire failed at sector 3")

@@ -159,7 +159,9 @@ function TestPhase13.runUnit()
 	local shimState = makeState(3, "Chicane", { amplitude = 6, transition_length = 15, corridor_width = 14 })
 	local shim = {
 		propose = function(_)
-			return HttpService:JSONEncode(makeState(3, "Chicane", { amplitude = 5, transition_length = 15, corridor_width = 14 }))
+			return HttpService:JSONEncode(
+				makeState(3, "Chicane", { amplitude = 5, transition_length = 15, corridor_width = 14 })
+			)
 		end,
 		repair = function(_)
 			return HttpService:JSONEncode({ newState = shimState, explanation = "adjusted amplitude" })
@@ -190,13 +192,18 @@ function TestPhase13.runUnit()
 			})
 		end,
 		repair = function()
-			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 10 },
+				explanation = "x",
+			})
 		end,
 	})
 	local _, _, sectorMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
-	T.expect("llmadapter_rejects_sector_mismatch",
+	T.expect(
+		"llmadapter_rejects_sector_mismatch",
 		sectorMismatchErr == "invalid proposal: sector_id mismatch",
-		tostring(sectorMismatchErr))
+		tostring(sectorMismatchErr)
+	)
 	LLMAdapter.useMockProvider()
 
 	-- 10: mechanic mismatch on propose → rejected
@@ -211,13 +218,18 @@ function TestPhase13.runUnit()
 			})
 		end,
 		repair = function()
-			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 10 }, explanation = "x" })
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 10 },
+				explanation = "x",
+			})
 		end,
 	})
 	local _, _, mechanicMismatchErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
-	T.expect("llmadapter_rejects_mechanic_mismatch",
+	T.expect(
+		"llmadapter_rejects_mechanic_mismatch",
 		mechanicMismatchErr == "invalid proposal: mechanic mismatch",
-		tostring(mechanicMismatchErr))
+		tostring(mechanicMismatchErr)
+	)
 	LLMAdapter.useMockProvider()
 
 	-- 11: invalid repair action lever for mechanic → rejected
@@ -238,25 +250,34 @@ function TestPhase13.runUnit()
 	local repairPacket = fakePacket(repairRequest, validChicaneState, 0)
 	repairPacket.legal_actions.numeric_levers = { "amplitude", "transition_length", "corridor_width" }
 	local _, _, _, _, invalidRepairErr = LLMAdapter.repair(repairPacket, {})
-	T.expect("llmadapter_rejects_invalid_repair_action",
+	T.expect(
+		"llmadapter_rejects_invalid_repair_action",
 		string.find(tostring(invalidRepairErr), "invalid repair", 1, true) ~= nil,
-		tostring(invalidRepairErr))
+		tostring(invalidRepairErr)
+	)
 	LLMAdapter.useMockProvider()
 
 	-- 12: last exchange is recorded after propose
 	LLMAdapter.setProvider("exchange-recorder", {
 		propose = function()
-			return HttpService:JSONEncode(makeState(3, "Chicane", { amplitude = 9, transition_length = 15, corridor_width = 16 }))
+			return HttpService:JSONEncode(
+				makeState(3, "Chicane", { amplitude = 9, transition_length = 15, corridor_width = 16 })
+			)
 		end,
 		repair = function()
-			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 11 }, explanation = "x" })
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 11 },
+				explanation = "x",
+			})
 		end,
 	})
 	LLMAdapter.propose(makeRequest(3, "Chicane"))
 	local exchange = LLMAdapter.getLastExchange()
-	T.expect("llmadapter_records_last_exchange",
+	T.expect(
+		"llmadapter_records_last_exchange",
 		exchange ~= nil and exchange.provider == "exchange-recorder" and exchange.kind == "propose",
-		tostring(exchange and exchange.provider))
+		tostring(exchange and exchange.provider)
+	)
 	LLMAdapter.useMockProvider()
 
 	-- 13: partial initial proposal state is merged with request-shaped defaults
@@ -270,11 +291,15 @@ function TestPhase13.runUnit()
 			})
 		end,
 		repair = function()
-			return HttpService:JSONEncode({ action = { type = "SetNumericLever", lever = "amplitude", value = 11 }, explanation = "x" })
+			return HttpService:JSONEncode({
+				action = { type = "SetNumericLever", lever = "amplitude", value = 11 },
+				explanation = "x",
+			})
 		end,
 	})
 	local partialProposed, _, partialProposeErr = LLMAdapter.propose(makeRequest(3, "CrestDip"))
-	T.expect("llmadapter_merges_partial_initial_proposal",
+	T.expect(
+		"llmadapter_merges_partial_initial_proposal",
 		partialProposeErr == nil
 			and partialProposed ~= nil
 			and type(partialProposed.params.height_or_depth) == "number"
@@ -284,35 +309,46 @@ function TestPhase13.runUnit()
 			and partialProposed.pads.egress == "None"
 			and partialProposed.params.height_or_depth >= 4
 			and partialProposed.params.sector_length >= 20,
-		tostring(partialProposeErr or HttpService:JSONEncode(partialProposed or {})))
+		tostring(partialProposeErr or HttpService:JSONEncode(partialProposed or {}))
+	)
 	LLMAdapter.useMockProvider()
 
 	-- 14: Boost50 is a valid pad value (phase 14 wiring check)
 	do
 		local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
-		local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
-		T.expect("boost50_is_valid_pad_value",
+		T.expect(
+			"boost50_is_valid_pad_value",
 			PadValueUtils.isValid("Boost50") and PadValueUtils.isValid("Brake50"),
-			"expected Boost50 and Brake50 to be valid pad values")
+			"expected Boost50 and Brake50 to be valid pad values"
+		)
 
 		local boost50Action = { type = "SetPad", pad = "ingress", value = "Boost50" }
 		local actionOk, actionErr = ActionValidator.validateAction(boost50Action, "RampJump")
-		T.expect("boost50_passes_action_validator",
+		T.expect(
+			"boost50_passes_action_validator",
 			actionOk == true,
-			"expected Boost50 to pass ActionValidator: " .. tostring(actionErr))
+			"expected Boost50 to pass ActionValidator: " .. tostring(actionErr)
+		)
 
-		local stateWithBoost50 = makeState(3, "RampJump", { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 })
+		local stateWithBoost50 =
+			makeState(3, "RampJump", { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 })
 		stateWithBoost50.pads.ingress = "Boost50"
 		local stateOk, stateErr = ActionValidator.validateSectorState(stateWithBoost50)
-		T.expect("boost50_passes_state_validator",
+		T.expect(
+			"boost50_passes_state_validator",
 			stateOk == true,
-			"expected Boost50 state to pass validateSectorState: " .. tostring(stateErr))
+			"expected Boost50 state to pass validateSectorState: " .. tostring(stateErr)
+		)
 	end
 
 	-- 14: error shim → error string returned, no crash
 	local errorShim = {
-		propose = function(_) error("simulated API failure") end,
-		repair = function(_) error("simulated API failure") end,
+		propose = function(_)
+			error("simulated API failure")
+		end,
+		repair = function(_)
+			error("simulated API failure")
+		end,
 	}
 	LLMAdapter.setProvider("error-shim", errorShim)
 	local _, _, propErr = LLMAdapter.propose(makeRequest(3, "Chicane"))
@@ -329,7 +365,9 @@ function TestPhase13.runUnit()
 	})
 	LLMAdapter.setProvider("trace-shim", {
 		propose = function()
-			return HttpService:JSONEncode(makeState(3, "Chicane", { amplitude = 7, transition_length = 15, corridor_width = 16 }))
+			return HttpService:JSONEncode(
+				makeState(3, "Chicane", { amplitude = 7, transition_length = 15, corridor_width = 16 })
+			)
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
@@ -347,9 +385,11 @@ function TestPhase13.runUnit()
 	local _, _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext())
 	local _, _, proposeTraceErr = LLMAdapter.propose(traceRequest)
 	local _, _, _, _, repairTraceErr = LLMAdapter.repair(tracePacket, {})
-	T.expect("llm_trace_seed_calls_succeeded",
+	T.expect(
+		"llm_trace_seed_calls_succeeded",
 		orchestrateErr == nil and proposeTraceErr == nil and repairTraceErr == nil,
-		tostring(orchestrateErr or proposeTraceErr or repairTraceErr))
+		tostring(orchestrateErr or proposeTraceErr or repairTraceErr)
+	)
 
 	LLMAdapter.setProvider("trace-error-shim", {
 		propose = function()
@@ -393,38 +433,46 @@ function TestPhase13.runUnit()
 		if event.direction == "response" and event.payload and event.payload.stage == "raw" then
 			sawRawResponse = true
 		end
-		if event.direction == "response"
+		if
+			event.direction == "response"
 			and event.payload
 			and event.payload.stage == "decoded"
 			and event.payload.raw_response ~= nil
-			and event.payload.decoded_response ~= nil then
+			and event.payload.decoded_response ~= nil
+		then
 			sawDecodedResponse = true
 		end
-		if event.direction == "error"
+		if
+			event.direction == "error"
 			and event.kind == "propose"
 			and type(event.provider) == "string"
-			and type(event.model) == "string" then
+			and type(event.model) == "string"
+		then
 			sawErrorEvent = true
 		end
 	end
 
-	T.expect("llm_trace_export_has_required_top_level_fields",
+	T.expect(
+		"llm_trace_export_has_required_top_level_fields",
 		exportPayload ~= nil
 			and type(exportPayload.run_id) == "string"
 			and type(exportPayload.started_at_ms) == "number"
 			and type(exportPayload.finished_at_ms) == "number"
 			and type(exportPayload.event_count) == "number"
 			and type(exportPayload.events) == "table",
-		HttpService:JSONEncode(exportPayload or {}))
-	T.expect("llm_trace_export_events_monotonic_and_shared_run",
+		HttpService:JSONEncode(exportPayload or {})
+	)
+	T.expect(
+		"llm_trace_export_events_monotonic_and_shared_run",
 		ordered and sharedRun and #exportEvents == exportPayload.event_count,
-		HttpService:JSONEncode(exportPayload or {}))
-	T.expect("llm_trace_export_includes_raw_and_decoded_response_payloads",
+		HttpService:JSONEncode(exportPayload or {})
+	)
+	T.expect(
+		"llm_trace_export_includes_raw_and_decoded_response_payloads",
 		sawRawResponse and sawDecodedResponse,
-		HttpService:JSONEncode(exportPayload or {}))
-	T.expect("llm_trace_export_includes_error_metadata",
-		sawErrorEvent,
-		HttpService:JSONEncode(exportPayload or {}))
+		HttpService:JSONEncode(exportPayload or {})
+	)
+	T.expect("llm_trace_export_includes_error_metadata", sawErrorEvent, HttpService:JSONEncode(exportPayload or {}))
 
 	-- 16: retention keeps most recent completed runs only
 	LLMTraceJournal.clearForTests()
@@ -450,12 +498,14 @@ function TestPhase13.runUnit()
 	end
 
 	local recentRuns = LLMTraceJournal.getRecentRuns()
-	T.expect("llm_trace_retention_keeps_recent_completed_runs",
+	T.expect(
+		"llm_trace_retention_keeps_recent_completed_runs",
 		#recentRuns == 3
 			and recentRuns[1].meta.job_id == "job-4"
 			and recentRuns[2].meta.job_id == "job-3"
 			and recentRuns[3].meta.job_id == "job-2",
-		HttpService:JSONEncode(LLMTraceJournal.exportLatestRun() or {}))
+		HttpService:JSONEncode(LLMTraceJournal.exportLatestRun() or {})
+	)
 
 	-- 17: large payloads are chunked so trace export never exceeds StringValue limits
 	local largeTracePayload = {
@@ -546,12 +596,20 @@ function TestPhase13.runIntegration()
 				local valid, verr = ActionValidator.validateSectorState(job.working_state)
 				T.expect("llm_integration_committed_state_valid", valid, tostring(verr))
 				T.expect("llm_integration_mechanic_chicane", job.working_state.mechanic == "Chicane")
-				print(string.format("[Phase13] LLM committed Chicane amplitude=%s", tostring(job.working_state.params.amplitude)))
+				print(
+					string.format(
+						"[Phase13] LLM committed Chicane amplitude=%s",
+						tostring(job.working_state.params.amplitude)
+					)
+				)
 			else
 				local stateFolder = UIState.getStateFolder()
 				local errText = stateFolder:GetAttribute("error_text") or ""
-				T.expect("llm_integration_revert_has_context", errText ~= "" or #job.attempts > 0,
-					"reverted with no attempts logged")
+				T.expect(
+					"llm_integration_revert_has_context",
+					errText ~= "" or #job.attempts > 0,
+					"reverted with no attempts logged"
+				)
 				print(string.format("[Phase13] LLM reverted after %d attempts", #job.attempts))
 			end
 		end

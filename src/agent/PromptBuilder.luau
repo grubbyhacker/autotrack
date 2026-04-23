@@ -24,7 +24,11 @@ local function encode(value): string
 	return HttpService:JSONEncode(value)
 end
 
-local function effectiveDesignIntent(request: Request, packet: FailurePacket?, designIntent: DesignIntent?): DesignIntent?
+local function effectiveDesignIntent(
+	request: Request,
+	packet: FailurePacket?,
+	designIntent: DesignIntent?
+): DesignIntent?
 	if designIntent ~= nil then
 		return designIntent
 	end
@@ -47,9 +51,12 @@ function PromptBuilder.systemPrompt(): string
 	}, "\n")
 end
 
-local SCHEMA_LINE = "SectorState schema: {\"sector_id\":number,\"mechanic\":\"RampJump|Chicane|CrestDip\",\"params\":{},\"pads\":{\"ingress\":\"<PadValue>\",\"egress\":\"<PadValue>\"},\"version\":number}"
-local PROPOSAL_RESPONSE_SCHEMA = [[{"state":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"memory_note":{"author":"proposal","scope":"proposal","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
-local REPAIR_RESPONSE_SCHEMA = [[{"newState":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"explanation":"short text","memory_note":{"author":"repair","scope":"repair","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
+local SCHEMA_LINE =
+	'SectorState schema: {"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number}'
+local PROPOSAL_RESPONSE_SCHEMA =
+	[[{"state":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"memory_note":{"author":"proposal","scope":"proposal","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
+local REPAIR_RESPONSE_SCHEMA =
+	[[{"newState":{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params":{},"pads":{"ingress":"<PadValue>","egress":"<PadValue>"},"version":number},"explanation":"short text","memory_note":{"author":"repair","scope":"repair","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}}]]
 
 local function relevantMemory(memory: RunMemory?, localScope: string)
 	return {
@@ -64,13 +71,7 @@ local function paramRangeLine(mechanic: string, levers: { string }): string
 	local parts = {}
 	for _, lever in ipairs(levers) do
 		local bound = bounds[lever]
-		table.insert(parts, string.format(
-			"%s %d-%d (default %d)",
-			lever,
-			bound.min,
-			bound.max,
-			defaults[lever]
-		))
+		table.insert(parts, string.format("%s %d-%d (default %d)", lever, bound.min, bound.max, defaults[lever]))
 	end
 	local suffix = "."
 	if mechanic == "CrestDip" then
@@ -251,7 +252,10 @@ end
 -- ── Real LLM message-array builders (Phase 13) ──────────────────────────────
 
 -- Build the messages array for an initial proposal to a real LLM.
-function PromptBuilder.proposeMessages(request: Request, designIntent: DesignIntent?): { { role: string, content: string } }
+function PromptBuilder.proposeMessages(
+	request: Request,
+	designIntent: DesignIntent?
+): { { role: string, content: string } }
 	local sharedIntent = effectiveDesignIntent(request, nil, designIntent)
 	local memoryContext = request.memory_context
 	local userContent
@@ -344,7 +348,12 @@ end
 -- Build the multi-turn messages array for a repair step.
 -- history: the AttemptRecords from previous attempts in this job (capped externally).
 -- packet: the current failure packet.
-function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord }, packet: FailurePacket, designIntent: DesignIntent?): { { role: string, content: string } }
+function PromptBuilder.repairMessages(
+	request: Request,
+	history: { AttemptRecord },
+	packet: FailurePacket,
+	designIntent: DesignIntent?
+): { { role: string, content: string } }
 	local mechanic = packet.sector_state.mechanic
 	local levers = mechanic and LevelMappings.NUMERIC_LEVERS[mechanic] or {}
 	local sharedIntent = effectiveDesignIntent(request, packet, designIntent)
@@ -377,15 +386,15 @@ function PromptBuilder.repairMessages(request: Request, history: { AttemptRecord
 		local failureType = result.failure and result.failure.type or "unknown"
 		local failureDetail = result.failure and result.failure.detail or ""
 		local hints = record.hints or {}
-			local failureContent = string.format(
-				"Attempt %d failed.\nfailure_type: %s\ndetail: %s\nhints: %s\nmetrics: %s",
+		local failureContent = string.format(
+			"Attempt %d failed.\nfailure_type: %s\ndetail: %s\nhints: %s\nmetrics: %s",
 			record.attempt_index,
 			failureType,
 			failureDetail ~= "" and failureDetail or "-",
 			#hints > 0 and table.concat(hints, ", ") or "-",
-				compactMetrics(result.metrics)
-			)
-			table.insert(messages, { role = "user", content = failureContent })
+			compactMetrics(result.metrics)
+		)
+		table.insert(messages, { role = "user", content = failureContent })
 	end
 
 	-- Final user turn: request the revised state.

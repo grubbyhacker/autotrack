@@ -12,18 +12,19 @@ type SectorState = Types.SectorState
 
 local CrestDipIntegrity = {}
 
-function CrestDipIntegrity.preflight(
-	state: SectorState
-): (boolean, { string })
+function CrestDipIntegrity.preflight(state: SectorState): (boolean, { string })
 	local hints: { string } = {}
 	local p = state.params
 	local h = p.height_or_depth or 0
 	local L = p.sector_length or 0
 
-	if math.abs(h) < RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipMinVerticalDisplacement",
-		Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
-	) then
+	if
+		math.abs(h)
+		< RuntimeTuning.numberAttr(
+			"AutoTrack_CrestDipMinVerticalDisplacement",
+			Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+		)
+	then
 		table.insert(hints, "vertical displacement below minimum")
 	end
 
@@ -31,10 +32,7 @@ function CrestDipIntegrity.preflight(
 	-- Tuned against CRESTDIP_MIN_CURVATURE in Constants.
 	if L > 0 then
 		local curvature = math.abs(h) / (L * L)
-		if curvature < RuntimeTuning.numberAttr(
-			"AutoTrack_CrestDipMinCurvature",
-			Constants.CRESTDIP_MIN_CURVATURE
-		) then
+		if curvature < RuntimeTuning.numberAttr("AutoTrack_CrestDipMinCurvature", Constants.CRESTDIP_MIN_CURVATURE) then
 			table.insert(hints, "crest curvature too gentle")
 		end
 	end
@@ -42,9 +40,7 @@ function CrestDipIntegrity.preflight(
 	return #hints == 0, hints
 end
 
-function CrestDipIntegrity.evaluateRuntime(
-	metrics: RunMetrics
-): (boolean, { string })
+function CrestDipIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local verticalDisplacement = metrics.target_vertical_displacement or metrics.vertical_displacement
 	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
@@ -58,24 +54,20 @@ function CrestDipIntegrity.evaluateRuntime(
 	local minVerticalDisplacement = RuntimeTuning.numberAttr(
 		"AutoTrack_CrestDipMinVerticalDisplacement",
 		Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
-	) + RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipComfortVerticalMargin",
-		Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN
+	) + RuntimeTuning.numberAttr("AutoTrack_CrestDipComfortVerticalMargin", Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN)
+	local minApexSpeed = RuntimeTuning.numberAttr("AutoTrack_CrestDipApexMinSpeed", Constants.CRESTDIP_APEX_MIN_SPEED)
+		+ RuntimeTuning.numberAttr(
+			"AutoTrack_CrestDipComfortApexSpeedMargin",
+			Constants.CRESTDIP_COMFORT_APEX_SPEED_MARGIN
+		)
+	local maxAirtimeDistance = math.max(
+		0,
+		RuntimeTuning.numberAttr("AutoTrack_CrestDipMaxAirtimeDistance", Constants.CRESTDIP_MAX_AIRTIME_DISTANCE)
+			- RuntimeTuning.numberAttr(
+				"AutoTrack_CrestDipComfortAirtimeMargin",
+				Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN
+			)
 	)
-	local minApexSpeed = RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipApexMinSpeed",
-		Constants.CRESTDIP_APEX_MIN_SPEED
-	) + RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipComfortApexSpeedMargin",
-		Constants.CRESTDIP_COMFORT_APEX_SPEED_MARGIN
-	)
-	local maxAirtimeDistance = math.max(0, RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipMaxAirtimeDistance",
-		Constants.CRESTDIP_MAX_AIRTIME_DISTANCE
-	) - RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipComfortAirtimeMargin",
-		Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN
-	))
 
 	if verticalDisplacement < minVerticalDisplacement then
 		table.insert(hints, "runtime vertical displacement too small")
@@ -94,26 +86,29 @@ function CrestDipIntegrity.evaluateRuntime(
 	if not reacquired then
 		table.insert(hints, "car did not reacquire semi-rail before sector exit")
 	end
-	if exitAngularSpeed > RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipComfortExitMaxAngularSpeed",
-		Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED
-	) then
+	if
+		exitAngularSpeed
+		> RuntimeTuning.numberAttr(
+			"AutoTrack_CrestDipComfortExitMaxAngularSpeed",
+			Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED
+		)
+	then
 		table.insert(hints, "crest exit angular speed too high")
 	end
-	if exitVerticalSpeed > RuntimeTuning.numberAttr(
-		"AutoTrack_CrestDipComfortExitMaxVerticalSpeed",
-		Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED
-	) then
+	if
+		exitVerticalSpeed
+		> RuntimeTuning.numberAttr(
+			"AutoTrack_CrestDipComfortExitMaxVerticalSpeed",
+			Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED
+		)
+	then
 		table.insert(hints, "crest exit vertical speed too high")
 	end
 
 	return #hints == 0, hints
 end
 
-function CrestDipIntegrity.evaluate(
-	state: SectorState,
-	metrics: RunMetrics
-): (boolean, { string })
+function CrestDipIntegrity.evaluate(state: SectorState, metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local preflightOk, preflightHints = CrestDipIntegrity.preflight(state)
 	local runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime(metrics)

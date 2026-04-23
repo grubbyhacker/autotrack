@@ -48,12 +48,7 @@ function EnduranceObjective.signature(decision: OrchestratorDecision): string
 	end
 
 	local sectorId = decision.sector_id or 0
-	return string.format(
-		"s%d|%s|%s",
-		sectorId,
-		tostring(decision.mechanic),
-		normalizeHint(decision.params_hint)
-	)
+	return string.format("s%d|%s|%s", sectorId, tostring(decision.mechanic), normalizeHint(decision.params_hint))
 end
 
 local function sectorAttemptCount(context: OrchestratorContext, sectorId: number): number
@@ -138,7 +133,8 @@ local function realizedYield(context: OrchestratorContext, mechanic: string): nu
 
 	local commitRate = commits / attempts
 	local avgCommittedScore = if commits == 0 then 0 else committedScoreTotal / commits
-	local committedScoreNorm = clamp01(avgCommittedScore / math.max(1, Constants.ENDURANCE_OBJECTIVE_COMMITTED_SCORE_FULL))
+	local committedScoreNorm =
+		clamp01(avgCommittedScore / math.max(1, Constants.ENDURANCE_OBJECTIVE_COMMITTED_SCORE_FULL))
 	return clamp01(commitRate * 0.65 + committedScoreNorm * 0.35)
 end
 
@@ -188,7 +184,10 @@ local function currentBudgetRisk(context: OrchestratorContext): number
 	return clamp01((context.budget.used - 0.78) * 2.2)
 end
 
-function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, decision: OrchestratorDecision): (CandidateScore, string)
+function EnduranceObjective.evaluateCandidate(
+	context: OrchestratorContext,
+	decision: OrchestratorDecision
+): (CandidateScore, string)
 	if decision == nil or decision.action == "begin_loop" then
 		local score: CandidateScore = {
 			base_score_gain = 0,
@@ -220,9 +219,7 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 	local sectorAttempts, sectorFailures = attemptsForSector(context, sectorId)
 	local repairLoad = attemptRepairLoad(context, sectorId)
 	local repairRate = if sectorAttempts == 0 then 0 else sectorFailures / sectorAttempts
-	local track_sustainability = clamp01(
-		1 - (repairRate * 1.0) - (sectorAttempts * 0.04)
-	)
+	local track_sustainability = clamp01(1 - (repairRate * 1.0) - (sectorAttempts * 0.04))
 
 	local novelty_bonus = clamp01(1 - repeatPressure * 0.22)
 	local repeat_penalty = clamp01(repeatPressure * 0.22)
@@ -234,10 +231,10 @@ function EnduranceObjective.evaluateCandidate(context: OrchestratorContext, deci
 
 	local reliability_index = clamp01(
 		(base_score_gain * 0.3)
-		+ (track_sustainability * 0.35)
-		+ (novelty_bonus * 0.1)
-		+ (realized_yield * 0.1)
-		+ (1 - budget_risk_penalty) * 0.15
+			+ (track_sustainability * 0.35)
+			+ (novelty_bonus * 0.1)
+			+ (realized_yield * 0.1)
+			+ (1 - budget_risk_penalty) * 0.15
 	)
 
 	local total = base_score_gain * Constants.ENDURANCE_OBJECTIVE_WEIGHT_BASE_GAIN

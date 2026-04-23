@@ -3,7 +3,7 @@
 -- prd_plan.md §6.2, Phase 1 baseline slice
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local PhysicsService    = game:GetService("PhysicsService")
+local PhysicsService = game:GetService("PhysicsService")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 -- Register the verifier car collision group.
@@ -21,7 +21,14 @@ local BODY_DARK = Color3.fromRGB(35, 35, 37)
 local ACCENT = Color3.fromRGB(230, 226, 214)
 local TIRE = Color3.fromRGB(18, 18, 19)
 
-local function weldVisual(root: BasePart, name: string, size: Vector3, localCFrame: CFrame, color: Color3, shape: Enum.PartType?): BasePart
+local function weldVisual(
+	root: BasePart,
+	name: string,
+	size: Vector3,
+	localCFrame: CFrame,
+	color: Color3,
+	shape: Enum.PartType?
+): BasePart
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Size = size
@@ -62,9 +69,29 @@ local function buildVisualShell(root: BasePart)
 	weldVisual(root, "Intake", Vector3.new(0.55, 0.55, 0.6), CFrame.new(0, 0.9, 1.3), ACCENT)
 
 	for _, side in ipairs({ -1, 1 }) do
-		weldVisual(root, if side < 0 then "SidePod_L" else "SidePod_R", Vector3.new(0.7, 0.45, 2.2), CFrame.new(side * 1.1, -0.05, 1.05), BODY_RED)
-		weldVisual(root, if side < 0 then "WheelFront_L" else "WheelFront_R", Vector3.new(1.05, 1.05, 0.7), CFrame.new(side * 1.75, -0.45, -2.55) * CFrame.Angles(0, 0, math.rad(90)), TIRE, Enum.PartType.Cylinder)
-		weldVisual(root, if side < 0 then "WheelRear_L" else "WheelRear_R", Vector3.new(1.2, 1.2, 0.8), CFrame.new(side * 1.75, -0.42, 2.25) * CFrame.Angles(0, 0, math.rad(90)), TIRE, Enum.PartType.Cylinder)
+		weldVisual(
+			root,
+			if side < 0 then "SidePod_L" else "SidePod_R",
+			Vector3.new(0.7, 0.45, 2.2),
+			CFrame.new(side * 1.1, -0.05, 1.05),
+			BODY_RED
+		)
+		weldVisual(
+			root,
+			if side < 0 then "WheelFront_L" else "WheelFront_R",
+			Vector3.new(1.05, 1.05, 0.7),
+			CFrame.new(side * 1.75, -0.45, -2.55) * CFrame.Angles(0, 0, math.rad(90)),
+			TIRE,
+			Enum.PartType.Cylinder
+		)
+		weldVisual(
+			root,
+			if side < 0 then "WheelRear_L" else "WheelRear_R",
+			Vector3.new(1.2, 1.2, 0.8),
+			CFrame.new(side * 1.75, -0.42, 2.25) * CFrame.Angles(0, 0, math.rad(90)),
+			TIRE,
+			Enum.PartType.Cylinder
+		)
 	end
 
 	floor.Color = BODY_RED

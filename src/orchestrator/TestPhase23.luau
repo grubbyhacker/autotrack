@@ -138,11 +138,7 @@ local function testProductionBaselineReset()
 	local started = waitUntil(function()
 		return TuneMode.isActive() and stateFolder:GetAttribute("tune_mode_active") == true
 	end, 5)
-	T.expect(
-		"phase23_tune_rampjump_starts",
-		startOk == true and startErr == nil and started,
-		tostring(startErr)
-	)
+	T.expect("phase23_tune_rampjump_starts", startOk == true and startErr == nil and started, tostring(startErr))
 
 	local expectedBaseline, baselineErr = MinimalProposer.productionBaseline(3, "RampJump", {})
 	local baselineSnapshot = decodeJson(stateFolder:GetAttribute("tune_baseline_snapshot") or "")
@@ -202,16 +198,28 @@ local function testCompareAndPromote()
 	local started = waitUntil(function()
 		return TuneMode.isActive() and stateFolder:GetAttribute("tune_mode_active") == true
 	end, 5)
-	T.expect(
-		"phase23_tune_chicane_starts",
-		startOk == true and startErr == nil and started,
-		tostring(startErr)
-	)
+	T.expect("phase23_tune_chicane_starts", startOk == true and startErr == nil and started, tostring(startErr))
 
-	T.expect("phase23_tune_set_amplitude_accepted", select(1, JobRunner.submit("/tune set amplitude 8")) == true, "set amplitude failed")
-	T.expect("phase23_tune_set_transition_accepted", select(1, JobRunner.submit("/tune set transition_length 8")) == true, "set transition failed")
-	T.expect("phase23_tune_set_corridor_accepted", select(1, JobRunner.submit("/tune set corridor_width 10")) == true, "set corridor failed")
-	T.expect("phase23_tune_set_speed_attr_accepted", select(1, JobRunner.submit("/tune attr car_target_speed 116")) == true, "set speed attr failed")
+	T.expect(
+		"phase23_tune_set_amplitude_accepted",
+		select(1, JobRunner.submit("/tune set amplitude 8")) == true,
+		"set amplitude failed"
+	)
+	T.expect(
+		"phase23_tune_set_transition_accepted",
+		select(1, JobRunner.submit("/tune set transition_length 8")) == true,
+		"set transition failed"
+	)
+	T.expect(
+		"phase23_tune_set_corridor_accepted",
+		select(1, JobRunner.submit("/tune set corridor_width 10")) == true,
+		"set corridor failed"
+	)
+	T.expect(
+		"phase23_tune_set_speed_attr_accepted",
+		select(1, JobRunner.submit("/tune attr car_target_speed 116")) == true,
+		"set speed attr failed"
+	)
 
 	local compareOk, compareErr = JobRunner.submit("/tune compare 2")
 	T.expect("phase23_tune_compare_accepted", compareOk == true and compareErr == nil, tostring(compareErr))
@@ -543,8 +551,7 @@ local function testPromptAndObjectiveShift()
 	local upsideScore = select(1, EnduranceObjective.evaluateCandidate(context, upsideDecision))
 	T.expect(
 		"phase23_endurance_objective_prefers_open_upside_candidate",
-		upsideScore.total > repeatedScore.total
-			and upsideScore.base_score_gain > repeatedScore.base_score_gain,
+		upsideScore.total > repeatedScore.total and upsideScore.base_score_gain > repeatedScore.base_score_gain,
 		HttpService:JSONEncode({
 			repeated = repeatedScore,
 			upside = upsideScore,

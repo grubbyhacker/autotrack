@@ -16,22 +16,17 @@ local VerifierController = require(script.Parent.Parent.Verifier.VerifierControl
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local Tracer = require(script.Parent.Tracer)
 
-type SectorState  = Types.SectorState
-type RunResult    = Types.RunResult
-type AgentAction  = Types.AgentAction
+type SectorState = Types.SectorState
+type RunResult = Types.RunResult
+type AgentAction = Types.AgentAction
 
 local AttemptRunner = {}
 
 local function cloneState(state: SectorState): SectorState
-	local params = {}
-	for key, value in pairs(state.params) do
-		params[key] = value
-	end
-
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = params,
+		params = table.clone(state.params),
 		pads = {
 			ingress = state.pads.ingress,
 			egress = state.pads.egress,
@@ -71,18 +66,20 @@ local function annotateLaunchOutlier(rawResult, runMode: string, targetSectorId:
 		return
 	end
 
-	Tracer.log(string.format(
-		"launch_outlier mode=%s target_sector=%d target_mechanic=%s hang=%.2f airtime=%.1f vertical=%.1f reasons=%s failure_type=%s failure_detail=%s",
-		runMode,
-		targetSectorId,
-		tostring(workingState and workingState.mechanic),
-		classification.hang_time or 0,
-		classification.airtime_distance or 0,
-		classification.vertical_displacement or 0,
-		LaunchOutlier.reasonSummary(classification),
-		tostring(rawResult.failure and rawResult.failure.type or ""),
-		tostring(rawResult.failure and rawResult.failure.detail or "")
-	))
+	Tracer.log(
+		string.format(
+			"launch_outlier mode=%s target_sector=%d target_mechanic=%s hang=%.2f airtime=%.1f vertical=%.1f reasons=%s failure_type=%s failure_detail=%s",
+			runMode,
+			targetSectorId,
+			tostring(workingState and workingState.mechanic),
+			classification.hang_time or 0,
+			classification.airtime_distance or 0,
+			classification.vertical_displacement or 0,
+			LaunchOutlier.reasonSummary(classification),
+			tostring(rawResult.failure and rawResult.failure.type or ""),
+			tostring(rawResult.failure and rawResult.failure.detail or "")
+		)
+	)
 end
 
 function AttemptRunner.run(args): (RunResult, { string }, SectorState)
@@ -105,7 +102,8 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		waypoints, waypointSectors, sectorKinds = TrackGenerator.getSectorPath(targetSector, workingState)
 		VerifierCar.reset(
 			CFrame.new(
-				targetSector.entry.Position + Vector3.new(0, (Constants.TRACK_THICKNESS * 0.5) + (Constants.CAR_HEIGHT * 0.5), 0)
+				targetSector.entry.Position
+					+ Vector3.new(0, (Constants.TRACK_THICKNESS * 0.5) + (Constants.CAR_HEIGHT * 0.5), 0)
 			) * (targetSector.entry - targetSector.entry.Position)
 		)
 	else

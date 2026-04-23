@@ -133,7 +133,13 @@ local function defaultDeps()
 		setOrchestratorTelemetry = function(payload)
 			UIState.setOrchestratorTelemetry(payload)
 		end,
-		publishTrackScore = function(total: number, sectorCount: number, budgetUsed: number, budgetHeadroom: number, overBudget: boolean)
+		publishTrackScore = function(
+			total: number,
+			sectorCount: number,
+			budgetUsed: number,
+			budgetHeadroom: number,
+			overBudget: boolean
+		)
 			UIState.publishTrackScore(total, sectorCount, budgetUsed, budgetHeadroom, overBudget)
 		end,
 	}
@@ -143,22 +149,14 @@ local function budgetUsedFromSlowdown(slowdownRatio: number): number
 	if Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO <= 0 then
 		return 0
 	end
-	return math.clamp(
-		math.max(0, (slowdownRatio or 1) - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO,
-		0,
-		1
-	)
+	return math.clamp(math.max(0, (slowdownRatio or 1) - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)
 end
 
 local function copyMap(source)
-	local result = {}
 	if type(source) ~= "table" then
-		return result
+		return {}
 	end
-	for key, value in pairs(source) do
-		result[key] = value
-	end
-	return result
+	return table.clone(source)
 end
 
 local function scoreTotal(scoresBySector): number
@@ -195,7 +193,13 @@ local function publishCommittedTrackSummary(deps, trackIntent, slowdownRatio: nu
 		return
 	end
 	local summary = trackSummaryForHUD(trackIntent, slowdownRatio, scoresBySector)
-	deps.publishTrackScore(summary.total, summary.sector_count, summary.budget_used, summary.budget_headroom, summary.over_budget)
+	deps.publishTrackScore(
+		summary.total,
+		summary.sector_count,
+		summary.budget_used,
+		summary.budget_headroom,
+		summary.over_budget
+	)
 end
 
 local function buildTrackIntent(scoresBySector, slowdownRatio: number, repeatPressure)
@@ -318,7 +322,8 @@ local function formatDecisionSummary(decision: OrchestratorDecision): string
 end
 
 local function commitLapSlowdownRatio(previous: number, job): number
-	if job
+	if
+		job
 		and job.final_status == "committed"
 		and job.final_result
 		and job.final_result.metrics
@@ -334,7 +339,14 @@ local function formatLedgerEntry(entry): string
 	local mechanic = tostring(entry.mechanic or "Flat")
 	local outcome = string.upper(tostring(entry.outcome or "unknown"))
 	if entry.outcome == "committed" then
-		return string.format("#%d S%d %s %s %.1f", entry.decision_index or 0, sectorId, mechanic, outcome, entry.score or 0)
+		return string.format(
+			"#%d S%d %s %s %.1f",
+			entry.decision_index or 0,
+			sectorId,
+			mechanic,
+			outcome,
+			entry.score or 0
+		)
 	end
 	local failure = tostring(entry.failure_signature or "no-failure-signature")
 	return string.format("#%d S%d %s %s %s", entry.decision_index or 0, sectorId, mechanic, outcome, failure)
@@ -378,7 +390,11 @@ local function hasAuthoredEditableMechanic(context: OrchestratorContext): boolea
 	return false
 end
 
-local function isPrematureBeginLoop(context: OrchestratorContext, attemptHistory, decision: OrchestratorDecision): boolean
+local function isPrematureBeginLoop(
+	context: OrchestratorContext,
+	attemptHistory,
+	decision: OrchestratorDecision
+): boolean
 	if decision == nil or decision.action ~= "begin_loop" then
 		return false
 	end
@@ -461,7 +477,12 @@ local function buildSharedLesson(decision: OrchestratorDecision, job, result, de
 		if localNote ~= nil then
 			noteText = string.format("Sector %d %s failed (%s): %s", sectorId, mechanic, failureDetail, localNote.note)
 		else
-			noteText = string.format("Sector %d %s failed (%s); prefer a safer variant next time.", sectorId, mechanic, failureDetail)
+			noteText = string.format(
+				"Sector %d %s failed (%s); prefer a safer variant next time.",
+				sectorId,
+				mechanic,
+				failureDetail
+			)
 		end
 	end
 
@@ -492,17 +513,17 @@ local function memoryTelemetry(memory: RunMemory)
 end
 
 local function withMemoryTelemetry(payload, memory: RunMemory)
-	local merged = {}
-	for key, value in pairs(payload) do
-		merged[key] = value
-	end
+	local merged = table.clone(payload)
 	for key, value in pairs(memoryTelemetry(memory)) do
 		merged[key] = value
 	end
 	return merged
 end
 
-local function fallbackOrchestrate(context: OrchestratorContext, orchestrateErr: string?): (OrchestratorDecision, string)
+local function fallbackOrchestrate(
+	context: OrchestratorContext,
+	orchestrateErr: string?
+): (OrchestratorDecision, string)
 	local fallbackDecision = MinimalOrchestrator.decide(context)
 	local reason = tostring(orchestrateErr or "unknown orchestrate error")
 	local fallbackReason = "LLM orchestration failed; using deterministic fallback"
@@ -520,7 +541,9 @@ end
 local function buildHistoryEntry(decision: OrchestratorDecision, job, result, decisionIndex: number)
 	local normalizedSignature = EnduranceObjective.signature(decision)
 	return {
-		sector_id = decision.sector_id or (job and job.request and job.request.parsed and job.request.parsed.sector_id) or 0,
+		sector_id = decision.sector_id
+			or (job and job.request and job.request.parsed and job.request.parsed.sector_id)
+			or 0,
 		mechanic = decision.mechanic or (job and job.working_state and job.working_state.mechanic) or nil,
 		params_hint = decision.params_hint or "",
 		normalized_signature = normalizedSignature,
@@ -591,7 +614,11 @@ function OrchestratorAgent.run(args): (boolean, string?)
 			)
 			deps.setPhase(
 				"EnduranceOrchestrate",
-				string.format("Endurance Mode — Orchestrating (%d/%d)", attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
+				string.format(
+					"Endurance Mode — Orchestrating (%d/%d)",
+					attemptBudgetUsed,
+					Constants.ENDURANCE_ATTEMPT_BUDGET
+				)
 			)
 			deps.setAttemptBudget(attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
 			if deps.setLLMWarning then
@@ -608,7 +635,8 @@ function OrchestratorAgent.run(args): (boolean, string?)
 					deps.setLLMWarning("Orchestrator response invalid; using deterministic fallback")
 				end
 			elseif isPrematureBeginLoop(context, attemptHistory, decision) then
-				local prematureReason = "LLM orchestration chose begin_loop before any build; using deterministic fallback"
+				local prematureReason =
+					"LLM orchestration chose begin_loop before any build; using deterministic fallback"
 				decision = MinimalOrchestrator.decide(context)
 				decisionNote = nil
 				deps.appendLog(prematureReason)
@@ -638,7 +666,9 @@ function OrchestratorAgent.run(args): (boolean, string?)
 						last_rationale = if rationale ~= "" then rationale else "track balanced; continuous loop armed",
 						memory_depth = #attemptHistory,
 						repeat_penalties = summarizeRepeatPressure(repeatPressure),
-						failure_signature = if #attemptHistory > 0 then (attemptHistory[1].failure_signature or "") else "",
+						failure_signature = if #attemptHistory > 0
+							then (attemptHistory[1].failure_signature or "")
+							else "",
 						reliability_index = 1,
 						ledger_lines = collectLedgerLines(attemptHistory),
 						track_intent = string.format(
@@ -677,18 +707,23 @@ function OrchestratorAgent.run(args): (boolean, string?)
 			attemptBudgetUsed += 1
 			deps.setAttemptBudget(attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET)
 			local requestText = buildRequestText(decision)
-			deps.appendLog(string.format("Endurance %d/%d: %s", attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET, requestText))
-			deps.trace(string.format(
-				"endurance_decision sector=%d mechanic=%s hint=%s used=%d",
-				decision.sector_id or 0,
-				tostring(decision.mechanic),
-				tostring(decision.params_hint or "-"),
-				attemptBudgetUsed
-			))
+			deps.appendLog(
+				string.format("Endurance %d/%d: %s", attemptBudgetUsed, Constants.ENDURANCE_ATTEMPT_BUDGET, requestText)
+			)
+			deps.trace(
+				string.format(
+					"endurance_decision sector=%d mechanic=%s hint=%s used=%d",
+					decision.sector_id or 0,
+					tostring(decision.mechanic),
+					tostring(decision.params_hint or "-"),
+					attemptBudgetUsed
+				)
+			)
 
 			local submitOk, submitReason
 			if args.submitDesignIntent ~= nil then
-				submitOk, submitReason = args.submitDesignIntent(decision, requestText, EnduranceMemory.clone(runMemory))
+				submitOk, submitReason =
+					args.submitDesignIntent(decision, requestText, EnduranceMemory.clone(runMemory))
 			else
 				submitOk, submitReason = args.submit(requestText)
 			end
@@ -710,7 +745,11 @@ function OrchestratorAgent.run(args): (boolean, string?)
 					sector_id = sectorId,
 					success = success,
 					score = success and (scoresBySector[sectorId] or 0) or 0,
-					failure_reason = if success or not result or not result.failure then nil else tostring(result.failure.detail or result.failure.type),
+					failure_reason = if success
+							or not result
+							or not result.failure
+						then nil
+						else tostring(result.failure.detail or result.failure.type),
 				}
 				local historyEntry = buildHistoryEntry(decision, job, result, decisionIndex)
 				appendAttemptHistory(attemptHistory, historyEntry)
@@ -725,7 +764,8 @@ function OrchestratorAgent.run(args): (boolean, string?)
 				publishCommittedTrackSummary(deps, trackIntent, slowdownRatio, scoresBySector)
 				if deps.setOrchestratorTelemetry then
 					deps.setOrchestratorTelemetry(withMemoryTelemetry({
-						objective_total = success and (historyEntry.score or 0) or (objectiveScore and objectiveScore.total or 0),
+						objective_total = success and (historyEntry.score or 0)
+							or (objectiveScore and objectiveScore.total or 0),
 						budget_target = trackIntent.target_budget_used,
 						budget_headroom = math.max(0, 1 - budgetUsedFromSlowdown(slowdownRatio)),
 						decision_index = decisionIndex,

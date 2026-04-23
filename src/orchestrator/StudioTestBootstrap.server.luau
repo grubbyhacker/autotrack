@@ -27,11 +27,17 @@ local function waitForBootReady(timeoutSeconds: number): (boolean, string?)
 		local submitEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SubmitRequest")
 		local track = workspace:FindFirstChild("Track")
 		local car = workspace:FindFirstChild("VerifierCar")
-		if RuntimeContext.isReady()
-			and stateFolder ~= nil and stateFolder:IsA("Folder")
-			and submitEvent ~= nil and submitEvent:IsA("RemoteEvent")
-			and track ~= nil and track:IsA("Folder")
-			and car ~= nil and car:IsA("BasePart") then
+		if
+			RuntimeContext.isReady()
+			and stateFolder ~= nil
+			and stateFolder:IsA("Folder")
+			and submitEvent ~= nil
+			and submitEvent:IsA("RemoteEvent")
+			and track ~= nil
+			and track:IsA("Folder")
+			and car ~= nil
+			and car:IsA("BasePart")
+		then
 			return true, nil
 		end
 		task.wait(0.25)

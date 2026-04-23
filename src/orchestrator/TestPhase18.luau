@@ -61,17 +61,20 @@ end
 
 local function runAttemptState(state: SectorState): Types.RunResult
 	local targetSector = getSectorMeta(state.sector_id)
-	return select(1, AttemptRunner.run({
-		workingState = state,
-		action = nil,
-		targetSectorId = state.sector_id,
-		entryFrame = targetSector.entry,
-		exitFrame = targetSector.exit,
-		sectors = RuntimeContext.getSectors(),
-		car = RuntimeContext.getCar(),
-		canonicalStart = RuntimeContext.getCanonicalStart(),
-		onSectorChange = nil,
-	}))
+	return select(
+		1,
+		AttemptRunner.run({
+			workingState = state,
+			action = nil,
+			targetSectorId = state.sector_id,
+			entryFrame = targetSector.entry,
+			exitFrame = targetSector.exit,
+			sectors = RuntimeContext.getSectors(),
+			car = RuntimeContext.getCar(),
+			canonicalStart = RuntimeContext.getCanonicalStart(),
+			onSectorChange = nil,
+		})
+	)
 end
 
 local function waitForBaseline(): boolean
@@ -86,18 +89,13 @@ local function waitForBaseline(): boolean
 end
 
 local function testEntrySnapProfiles()
-	T.expect(
-		"phase18_corner_to_corner_handoff_skips_snap",
-		VerifierController._shouldSnapOnSectorEntry(5, 6, {
-			[5] = "Corner",
-			[6] = "Corner",
-		}) == false
-			and VerifierController._shouldSnapOnSectorEntry(1, 2, {
-				[1] = "Corner",
-				[2] = "Straight",
-			}) == true,
-		"corner-to-corner handoff should bypass entry snap"
-	)
+	T.expect("phase18_corner_to_corner_handoff_skips_snap", VerifierController._shouldSnapOnSectorEntry(5, 6, {
+		[5] = "Corner",
+		[6] = "Corner",
+	}) == false and VerifierController._shouldSnapOnSectorEntry(1, 2, {
+		[1] = "Corner",
+		[2] = "Straight",
+	}) == true, "corner-to-corner handoff should bypass entry snap")
 
 	local cornerCFrame, cornerVelocity, cornerSpeed = VerifierController._buildSectorEntrySnap(
 		Vector3.new(10, 4, 20),
@@ -132,7 +130,10 @@ local function testEntrySnapProfiles()
 	T.expect(
 		"phase18_ramp_entry_snap_uses_mechanic_profile",
 		math.abs(rampCFrame.LookVector.Y) < 1e-4
-			and math.abs(rampSpeed - (Constants.CAR_TARGET_SPEED * Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR)) < 1e-4,
+			and math.abs(
+					rampSpeed - (Constants.CAR_TARGET_SPEED * Constants.SECTOR_ENTRY_SNAP_RAMPJUMP_SPEED_FACTOR)
+				)
+				< 1e-4,
 		HttpService:JSONEncode({
 			look_y = rampCFrame.LookVector.Y,
 			speed = rampSpeed,
@@ -166,17 +167,15 @@ end
 
 local function testComfortGates()
 	local ok, hints = RampJumpIntegrity.evaluateRuntime({
-		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT + Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN + 0.25,
+		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
+			+ Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN
+			+ 0.25,
 		target_reacquired = true,
 		target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN - 1,
 		target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED - 0.5,
 		target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 2,
 	})
-	T.expect(
-		"phase18_rampjump_comfortable_passes",
-		ok == true and #hints == 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_rampjump_comfortable_passes", ok == true and #hints == 0, table.concat(hints, "; "))
 
 	ok, hints = RampJumpIntegrity.evaluateRuntime({
 		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
@@ -185,23 +184,21 @@ local function testComfortGates()
 		target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED + 0.25,
 		target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED + 1,
 	})
-	T.expect(
-		"phase18_rampjump_borderline_rejected",
-		ok == false and #hints > 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_rampjump_borderline_rejected", ok == false and #hints > 0, table.concat(hints, "; "))
 
 	ok, hints = ChicaneIntegrity.evaluateRuntime({
-		target_left_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5) + Constants.CHICANE_COMFORT_LATERAL_MARGIN + 0.5,
-		target_right_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5) + Constants.CHICANE_COMFORT_LATERAL_MARGIN + 0.5,
+		target_left_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
+			+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
+			+ 0.5,
+		target_right_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
+			+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
+			+ 0.5,
 		target_lateral_band_changes = Constants.CHICANE_MIN_ALTERNATIONS,
-		target_peak_body_distance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE - Constants.CHICANE_COMFORT_BODY_MARGIN - 0.5,
+		target_peak_body_distance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE
+			- Constants.CHICANE_COMFORT_BODY_MARGIN
+			- 0.5,
 	})
-	T.expect(
-		"phase18_chicane_comfortable_passes",
-		ok == true and #hints == 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_chicane_comfortable_passes", ok == true and #hints == 0, table.concat(hints, "; "))
 
 	ok, hints = ChicaneIntegrity.evaluateRuntime({
 		target_left_offset = Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5,
@@ -209,25 +206,21 @@ local function testComfortGates()
 		target_lateral_band_changes = Constants.CHICANE_MIN_ALTERNATIONS,
 		target_peak_body_distance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE - 0.25,
 	})
-	T.expect(
-		"phase18_chicane_borderline_rejected",
-		ok == false and #hints > 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_chicane_borderline_rejected", ok == false and #hints > 0, table.concat(hints, "; "))
 
 	ok, hints = CrestDipIntegrity.evaluateRuntime({
-		target_vertical_displacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT + Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN + 0.5,
+		target_vertical_displacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+			+ Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN
+			+ 0.5,
 		target_reacquired = true,
-		target_reacquire_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE - Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN - 2,
+		target_reacquire_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE
+			- Constants.CRESTDIP_COMFORT_AIRTIME_MARGIN
+			- 2,
 		target_apex_min_speed = Constants.CRESTDIP_APEX_MIN_SPEED + Constants.CRESTDIP_COMFORT_APEX_SPEED_MARGIN + 2,
 		target_exit_angular_speed = Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED - 0.5,
 		target_exit_vertical_speed = Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 1,
 	})
-	T.expect(
-		"phase18_crestdip_comfortable_passes",
-		ok == true and #hints == 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_crestdip_comfortable_passes", ok == true and #hints == 0, table.concat(hints, "; "))
 
 	ok, hints = CrestDipIntegrity.evaluateRuntime({
 		target_vertical_displacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT + 0.1,
@@ -238,11 +231,7 @@ local function testComfortGates()
 		target_exit_angular_speed = Constants.CRESTDIP_COMFORT_EXIT_MAX_ANGULAR_SPEED + 0.25,
 		target_exit_vertical_speed = Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED + 0.5,
 	})
-	T.expect(
-		"phase18_crestdip_borderline_rejected",
-		ok == false and #hints > 0,
-		table.concat(hints, "; ")
-	)
+	T.expect("phase18_crestdip_borderline_rejected", ok == false and #hints > 0, table.concat(hints, "; "))
 
 	local rampState = makeState(3, "RampJump", {
 		ramp_angle = 4,
@@ -250,37 +239,35 @@ local function testComfortGates()
 		gap_length = 2,
 		landing_length = 34,
 	}, "Brake25", "Brake10")
-	local result, evaluatorHints = LapEvaluator.evaluate(
-		nil,
-		rampState,
-		{
-			entry_speed = 22,
-			exit_speed = 20,
-			airborne = true,
-			air_distance = 8,
-			lateral_error = 0.5,
-			vertical_displacement = 0,
-			reacquired = true,
-			airtime_distance = 8,
-			target_airborne = true,
-			target_air_distance = 8,
-			target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
-			target_reacquired = true,
-			target_airtime_distance = Constants.RAMPJUMP_REACQUIRE_MAX - 0.5,
-			target_entered = true,
-			target_exited = true,
-			target_progress = 1,
-			target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - 0.5,
-			target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED + 0.5,
-			target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED + 1,
-			lap_time = 24,
-			slowdown_ratio = 1,
-		},
-		3
-	)
+	local result, evaluatorHints = LapEvaluator.evaluate(nil, rampState, {
+		entry_speed = 22,
+		exit_speed = 20,
+		airborne = true,
+		air_distance = 8,
+		lateral_error = 0.5,
+		vertical_displacement = 0,
+		reacquired = true,
+		airtime_distance = 8,
+		target_airborne = true,
+		target_air_distance = 8,
+		target_vertical_displacement = Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT,
+		target_reacquired = true,
+		target_airtime_distance = Constants.RAMPJUMP_REACQUIRE_MAX - 0.5,
+		target_entered = true,
+		target_exited = true,
+		target_progress = 1,
+		target_reacquire_distance = Constants.RAMPJUMP_REACQUIRE_MAX - 0.5,
+		target_exit_angular_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED + 0.5,
+		target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED + 1,
+		lap_time = 24,
+		slowdown_ratio = 1,
+	}, 3)
 	T.expect(
 		"phase18_lapevaluator_rejects_borderline_completion",
-		result.success == false and result.failure ~= nil and result.failure.type == "mechanic_integrity_failure" and #evaluatorHints > 0,
+		result.success == false
+			and result.failure ~= nil
+			and result.failure.type == "mechanic_integrity_failure"
+			and #evaluatorHints > 0,
 		HttpService:JSONEncode({
 			success = result.success,
 			failure = result.failure,

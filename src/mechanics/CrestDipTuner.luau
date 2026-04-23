@@ -40,7 +40,12 @@ local function fitsEnvelope(height: number, sectorLength: number): boolean
 	return true
 end
 
-local function candidateScore(height: number, sectorLength: number, desiredHeight: number, desiredLength: number): number
+local function candidateScore(
+	height: number,
+	sectorLength: number,
+	desiredHeight: number,
+	desiredLength: number
+): number
 	local heightRange = math.max(1, HEIGHT_BOUNDS.max - HEIGHT_BOUNDS.min)
 	local lengthRange = math.max(1, LENGTH_BOUNDS.max - LENGTH_BOUNDS.min)
 	local heightDistance = math.abs(height - desiredHeight) / heightRange
@@ -69,7 +74,14 @@ local function normalizedBound(bounds, fallbackMin: number, fallbackMax: number)
 	return minValue, maxValue
 end
 
-local function tuneWithinBounds(desiredHeight: number, desiredLength: number, heightMin: number, heightMax: number, lengthMin: number, lengthMax: number): (number?, number?)
+local function tuneWithinBounds(
+	desiredHeight: number,
+	desiredLength: number,
+	heightMin: number,
+	heightMax: number,
+	lengthMin: number,
+	lengthMax: number
+): (number?, number?)
 	local bestHeight = nil
 	local bestLength = nil
 	local bestScore = -math.huge

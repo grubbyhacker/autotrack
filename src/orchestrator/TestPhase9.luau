@@ -7,8 +7,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
-local CrestDipPath = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath"))
-local CrestDipTuner = require(game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipTuner"))
+local CrestDipPath = require(
+	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath")
+)
+local CrestDipTuner = require(
+	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipTuner")
+)
 local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegrity)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local MinimalProposer = require(script.Parent.MinimalProposer)
@@ -141,7 +145,13 @@ function TestPhase9.runUnit()
 			and CrestDipTuner.runout(tunedLength) >= 20
 			and CrestDipTuner.peakSlope(tunedHeight, tunedLength) <= 0.70
 			and math.abs(tunedHeight) / (tunedLength * tunedLength) >= Constants.CRESTDIP_MIN_CURVATURE,
-		string.format("h=%d L=%d runout=%.2f slope=%.3f", tunedHeight, tunedLength, CrestDipTuner.runout(tunedLength), CrestDipTuner.peakSlope(tunedHeight, tunedLength))
+		string.format(
+			"h=%d L=%d runout=%.2f slope=%.3f",
+			tunedHeight,
+			tunedLength,
+			CrestDipTuner.runout(tunedLength),
+			CrestDipTuner.peakSlope(tunedHeight, tunedLength)
+		)
 	)
 
 	local softenedHeight, softenedLength = CrestDipTuner.tune(4, 35, {
@@ -180,24 +190,18 @@ function TestPhase9.runUnit()
 			break
 		end
 	end
-	T.expect(
-		"phase9_trackgenerator_routes_crestdip",
-		sawElevated,
-		"no elevated waypoint found for CrestDip override"
-	)
+	T.expect("phase9_trackgenerator_routes_crestdip", sawElevated, "no elevated waypoint found for CrestDip override")
 
-	local preflightOk, preflightHints = CrestDipIntegrity.preflight(
-		makeState({ height_or_depth = 6, radius = 20, sector_length = 40 })
-	)
+	local preflightOk, preflightHints =
+		CrestDipIntegrity.preflight(makeState({ height_or_depth = 6, radius = 20, sector_length = 40 }))
 	T.expect(
 		"phase9_preflight_curvature_hint",
 		preflightOk == false and hintsContain(preflightHints, "curvature"),
 		table.concat(preflightHints, " | ")
 	)
 
-	local runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime(
-		makeMetrics({ target_vertical_displacement = 2, target_reacquired = true })
-	)
+	local runtimeOk, runtimeHints =
+		CrestDipIntegrity.evaluateRuntime(makeMetrics({ target_vertical_displacement = 2, target_reacquired = true }))
 	T.expect(
 		"phase9_runtime_vertical_hint",
 		runtimeOk == false and hintsContain(runtimeHints, "runtime vertical displacement too small"),
@@ -276,7 +280,9 @@ function TestPhase9.runUnit()
 				(curvatureAction.lever == "height_or_depth" and curvatureAction.value > 6)
 				or (curvatureAction.lever == "sector_length" and curvatureAction.value < 40)
 			),
-		tostring(curvatureAction and curvatureAction.lever) .. "=" .. tostring(curvatureAction and curvatureAction.value)
+		tostring(curvatureAction and curvatureAction.lever)
+			.. "="
+			.. tostring(curvatureAction and curvatureAction.value)
 	)
 
 	local dedupPacket = makePacket(
@@ -289,9 +295,11 @@ function TestPhase9.runUnit()
 	T.expect(
 		"phase9_proposer_dedup",
 		dedupAction ~= nil
-			and not (dedupAction.type == "SetNumericLever"
+			and not (
+				dedupAction.type == "SetNumericLever"
 				and dedupAction.lever == "height_or_depth"
-				and dedupAction.value == 8),
+				and dedupAction.value == 8
+			),
 		tostring(dedupAction and dedupAction.lever) .. "=" .. tostring(dedupAction and dedupAction.value)
 	)
 
@@ -320,7 +328,10 @@ function TestPhase9.runUnit()
 			and crestPadAction.type == "SetPad"
 			and crestPadAction.pad == "ingress"
 			and string.find(crestPadAction.value, "Boost", 1, true) ~= nil,
-		tostring(crestPadAction and crestPadAction.type == "SetPad" and crestPadAction.pad or crestPadAction and crestPadAction.type)
+		tostring(
+			crestPadAction and crestPadAction.type == "SetPad" and crestPadAction.pad
+				or crestPadAction and crestPadAction.type
+		)
 	)
 
 	local crestCrashPacket = makePacket(
@@ -338,7 +349,10 @@ function TestPhase9.runUnit()
 			and crestCrashAction.type == "SetPad"
 			and crestCrashAction.pad == "ingress"
 			and string.find(crestCrashAction.value, "Brake", 1, true) ~= nil,
-		tostring(crestCrashAction and crestCrashAction.type == "SetPad" and crestCrashAction.pad or crestCrashAction and crestCrashAction.type)
+		tostring(
+			crestCrashAction and crestCrashAction.type == "SetPad" and crestCrashAction.pad
+				or crestCrashAction and crestCrashAction.type
+		)
 	)
 
 	local crestOffTrackPacket = makePacket(
@@ -356,7 +370,10 @@ function TestPhase9.runUnit()
 			and crestOffTrackAction.type == "SetPad"
 			and crestOffTrackAction.pad == "ingress"
 			and string.find(crestOffTrackAction.value, "Brake", 1, true) ~= nil,
-		tostring(crestOffTrackAction and crestOffTrackAction.type == "SetPad" and crestOffTrackAction.pad or crestOffTrackAction and crestOffTrackAction.type)
+		tostring(
+			crestOffTrackAction and crestOffTrackAction.type == "SetPad" and crestOffTrackAction.pad
+				or crestOffTrackAction and crestOffTrackAction.type
+		)
 	)
 
 	local crestExitPadPacket = makePacket(
@@ -370,7 +387,10 @@ function TestPhase9.runUnit()
 			and crestExitPadAction.type == "SetPad"
 			and crestExitPadAction.pad == "ingress"
 			and string.find(crestExitPadAction.value, "Brake", 1, true) ~= nil,
-		tostring(crestExitPadAction and crestExitPadAction.type == "SetPad" and crestExitPadAction.pad or crestExitPadAction and crestExitPadAction.type)
+		tostring(
+			crestExitPadAction and crestExitPadAction.type == "SetPad" and crestExitPadAction.pad
+				or crestExitPadAction and crestExitPadAction.type
+		)
 	)
 end
 
@@ -393,8 +413,12 @@ function TestPhase9.runIntegration()
 	if crestJob then
 		for _, attempt in ipairs(crestJob.attempts) do
 			for _, hint in ipairs(attempt.hints or {}) do
-				if string.find(hint, "curvature", 1, true) then sawCurvatureHint = true end
-				if string.find(hint, "airborne too long", 1, true) then sawAirtimeHint = true end
+				if string.find(hint, "curvature", 1, true) then
+					sawCurvatureHint = true
+				end
+				if string.find(hint, "airborne too long", 1, true) then
+					sawAirtimeHint = true
+				end
 			end
 		end
 	end

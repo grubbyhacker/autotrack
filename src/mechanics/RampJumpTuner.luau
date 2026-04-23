@@ -71,10 +71,8 @@ function RampJumpTuner.tune(params, options)
 	tuned.landing_length = math.max(tuned.landing_length, minLandingLength)
 	tuned.landing_length = math.min(tuned.landing_length, math.min(bounds.landing_length.max, maxLandingLength))
 
-	local landingFloorFromGap = math.min(
-		bounds.landing_length.max,
-		math.floor(tuned.gap_length * gapLandingFactor + gapLandingBase)
-	)
+	local landingFloorFromGap =
+		math.min(bounds.landing_length.max, math.floor(tuned.gap_length * gapLandingFactor + gapLandingBase))
 	tuned.landing_length = math.max(tuned.landing_length, landingFloorFromGap)
 
 	if tuned.ramp_angle >= 16 then

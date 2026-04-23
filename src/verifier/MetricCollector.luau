@@ -51,9 +51,9 @@ local _targetTouchdownDownSpeed = 0
 -- target-sector minimum speed. These feed ChallengeScore.compute.
 local _airStartClock = 0
 local _targetAirStartClock = 0
-local _hangTime = 0           -- longest continuous airborne duration (seconds), lap-global
-local _targetHangTime = 0     -- same, restricted to target sector
-local _peakLateralG = 0       -- estimated peak lateral acceleration (studs/s²)
+local _hangTime = 0 -- longest continuous airborne duration (seconds), lap-global
+local _targetHangTime = 0 -- same, restricted to target sector
+local _peakLateralG = 0 -- estimated peak lateral acceleration (studs/s²)
 local _lastLateralVelocity: Vector3? = nil
 local _lastForwardHeading: Vector3? = nil
 local _targetMinSpeed = math.huge
@@ -146,7 +146,9 @@ function MetricCollector.record(
 		local velocity = (position - _lastPosition) / dt
 		if _lastLateralVelocity ~= nil then
 			local accel = (velocity - _lastLateralVelocity).Magnitude / dt
-			if accel > _peakLateralG then _peakLateralG = accel end
+			if accel > _peakLateralG then
+				_peakLateralG = accel
+			end
 		end
 		_lastLateralVelocity = velocity
 	elseif isAirborne then
@@ -166,23 +168,26 @@ function MetricCollector.record(
 		end
 		_currentAirSegment = 0
 		local segment = now - _airStartClock
-		if segment > _hangTime then _hangTime = segment end
+		if segment > _hangTime then
+			_hangTime = segment
+		end
 	end
 
 	if _insideTargetSector then
-		if speed < _targetMinSpeed then _targetMinSpeed = speed end
+		if speed < _targetMinSpeed then
+			_targetMinSpeed = speed
+		end
 		if targetLocalZ ~= nil then
 			local progress = math.clamp(targetLocalZ / Constants.STRAIGHT_LENGTH, 0, 1)
-			if progress > _targetMaxProgress then _targetMaxProgress = progress end
+			if progress > _targetMaxProgress then
+				_targetMaxProgress = progress
+			end
 			if math.abs(progress - 0.5) <= Constants.CRESTDIP_APEX_PROGRESS_RADIUS and speed < _targetApexMinSpeed then
 				_targetApexMinSpeed = speed
 			end
 		end
 
-		_targetMaxVerticalDisplacement = math.max(
-			_targetMaxVerticalDisplacement,
-			math.abs(position.Y - _baselineY)
-		)
+		_targetMaxVerticalDisplacement = math.max(_targetMaxVerticalDisplacement, math.abs(position.Y - _baselineY))
 
 		if targetLocalX ~= nil then
 			if targetLocalX < 0 then
@@ -227,7 +232,9 @@ function MetricCollector.record(
 			end
 			_targetCurrentAirSegment = 0
 			local segment = now - _targetAirStartClock
-			if segment > _targetHangTime then _targetHangTime = segment end
+			if segment > _targetHangTime then
+				_targetHangTime = segment
+			end
 		end
 	end
 
@@ -298,11 +305,7 @@ function MetricCollector.getTargetMetrics()
 end
 
 -- Produce the final RunMetrics from accumulated data.
-function MetricCollector.finalise(
-	targetSector: number,
-	lapTime: number,
-	baselineLapTime: number
-): RunMetrics
+function MetricCollector.finalise(targetSector: number, lapTime: number, baselineLapTime: number): RunMetrics
 	if _airborne and _currentAirSegment > _maxAirSegment then
 		_maxAirSegment = _currentAirSegment
 	end
@@ -313,11 +316,15 @@ function MetricCollector.finalise(
 	local now = os.clock()
 	if _airborne then
 		local segment = now - _airStartClock
-		if segment > _hangTime then _hangTime = segment end
+		if segment > _hangTime then
+			_hangTime = segment
+		end
 	end
 	if _targetAirborne then
 		local segment = now - _targetAirStartClock
-		if segment > _targetHangTime then _targetHangTime = segment end
+		if segment > _targetHangTime then
+			_targetHangTime = segment
+		end
 	end
 
 	local reacquired = if _everAirborne then _everReacquired else true

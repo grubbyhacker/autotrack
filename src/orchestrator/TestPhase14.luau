@@ -25,8 +25,6 @@ local CameraDemo = require(script.Parent.CameraDemo)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
-local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
-local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 local JobRunner = require(script.Parent.JobRunner)
 local Tracer = require(script.Parent.Tracer)
 
@@ -151,16 +149,19 @@ local function summariseAttempts(job)
 				actionLabel = tostring(action.type)
 			end
 		end
-		table.insert(parts, string.format(
-			"%d:%s/%s/%s progress=%.2f hints=%s action=%s",
-			attempt.attempt_index,
-			tostring(result.success),
-			tostring(failure.type),
-			tostring(failure.detail),
-			(result.metrics and result.metrics.target_progress) or 0,
-			(attempt.hints and #attempt.hints > 0) and table.concat(attempt.hints, "&") or "-",
-			actionLabel
-		))
+		table.insert(
+			parts,
+			string.format(
+				"%d:%s/%s/%s progress=%.2f hints=%s action=%s",
+				attempt.attempt_index,
+				tostring(result.success),
+				tostring(failure.type),
+				tostring(failure.detail),
+				(result.metrics and result.metrics.target_progress) or 0,
+				(attempt.hints and #attempt.hints > 0) and table.concat(attempt.hints, "&") or "-",
+				actionLabel
+			)
+		)
 	end
 
 	return table.concat(parts, " || ")
@@ -174,23 +175,28 @@ local function submitWithRetries(rawText: string, sectorId: number, expectedMech
 		local ok, reason = JobRunner.submit(rawText)
 		local job = JobRunner.getLastJob()
 		local state = SectorRegistry.getCommitted(sectorId)
-		table.insert(logs, string.format(
-			"run%d ok=%s reason=%s final=%s mechanic=%s attempts=%s",
-			run,
-			tostring(ok),
-			tostring(reason),
-			tostring(job and job.final_status),
-			tostring(state and state.mechanic),
-			summariseAttempts(job)
-		))
+		table.insert(
+			logs,
+			string.format(
+				"run%d ok=%s reason=%s final=%s mechanic=%s attempts=%s",
+				run,
+				tostring(ok),
+				tostring(reason),
+				tostring(job and job.final_status),
+				tostring(state and state.mechanic),
+				summariseAttempts(job)
+			)
+		)
 
 		lastOk, lastReason, lastJob, lastState = ok, reason, job, state
-		if ok == true
+		if
+			ok == true
 			and reason == nil
 			and job ~= nil
 			and job.final_status == "committed"
 			and state ~= nil
-			and (expectedMechanic == nil or state.mechanic == expectedMechanic) then
+			and (expectedMechanic == nil or state.mechanic == expectedMechanic)
+		then
 			return true, ok, reason, job, state, table.concat(logs, " || ")
 		end
 	end
@@ -223,7 +229,13 @@ local function makeRequest(rawText: string)
 	return request
 end
 
-local function makeCrestCandidate(sectorId: number, height: number, sectorLength: number, ingress: string, egress: string?): SectorState
+local function makeCrestCandidate(
+	sectorId: number,
+	height: number,
+	sectorLength: number,
+	ingress: string,
+	egress: string?
+): SectorState
 	return makeState(sectorId, "CrestDip", {
 		height_or_depth = height,
 		radius = LevelMappings.DEFAULTS.CrestDip.radius,
@@ -302,7 +314,10 @@ local function fakePacket(request, state, attemptIndex)
 			},
 		},
 		diagnostics = { failure_sector = state.sector_id, hints = { "tumble" } },
-		legal_actions = { numeric_levers = { "ramp_angle", "ramp_length", "gap_length", "landing_length" }, pads = { "ingress", "egress" } },
+		legal_actions = {
+			numeric_levers = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
+			pads = { "ingress", "egress" },
+		},
 	}
 end
 
@@ -374,7 +389,8 @@ function TestPhase14.runUnit()
 	local action, newState, explanation, _, err = LLMAdapter.repair(fakePacket(request, currentState, 0), {})
 	T.expect("phase14_partial_repair_state_action_nil", action == nil, tostring(action and action.type))
 	T.expect("phase14_partial_repair_state_no_error", err == nil, tostring(err))
-	T.expect("phase14_partial_repair_state_merged",
+	T.expect(
+		"phase14_partial_repair_state_merged",
 		newState ~= nil
 			and newState.sector_id == 2
 			and newState.mechanic == "RampJump"
@@ -385,10 +401,13 @@ function TestPhase14.runUnit()
 			and newState.params.landing_length <= currentState.params.landing_length + 6
 			and newState.pads.ingress == "Brake10"
 			and newState.pads.egress == currentState.pads.egress,
-		HttpService:JSONEncode(newState or {}))
-	T.expect("phase14_partial_repair_state_explanation",
+		HttpService:JSONEncode(newState or {})
+	)
+	T.expect(
+		"phase14_partial_repair_state_explanation",
 		type(explanation) == "string" and explanation ~= "",
-		tostring(explanation))
+		tostring(explanation)
+	)
 
 	LLMAdapter.useMockProvider()
 
@@ -455,15 +474,18 @@ function TestPhase14.runUnit()
 		end,
 	})
 
-	local _, repairedCrestState, _, _, crestErr = LLMAdapter.repair(fakePacket(makeRequest("add a crest in sector 3"), crestState, 1), {})
+	local _, repairedCrestState, _, _, crestErr =
+		LLMAdapter.repair(fakePacket(makeRequest("add a crest in sector 3"), crestState, 1), {})
 	T.expect("phase14_partial_crestdip_repair_state_no_error", crestErr == nil, tostring(crestErr))
-	T.expect("phase14_partial_crestdip_repair_state_tuned",
+	T.expect(
+		"phase14_partial_crestdip_repair_state_tuned",
 		repairedCrestState ~= nil
 			and repairedCrestState.mechanic == "CrestDip"
 			and repairedCrestState.params.height_or_depth >= Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
 			and repairedCrestState.params.sector_length < 40
 			and repairedCrestState.params.radius == 20,
-		HttpService:JSONEncode(repairedCrestState or {}))
+		HttpService:JSONEncode(repairedCrestState or {})
+	)
 
 	LLMAdapter.useMockProvider()
 
@@ -512,9 +534,11 @@ function TestPhase14.runUnit()
 		attempt_budget = { used = 1, total = 12 },
 		last_result = nil,
 	})
-	T.expect("phase14_orchestrate_decodes_decision",
+	T.expect(
+		"phase14_orchestrate_decodes_decision",
 		orchestrateErr == nil and decision ~= nil and decision.sector_id == 8 and decision.mechanic == "Chicane",
-		tostring(orchestrateErr or HttpService:JSONEncode(decision or {})))
+		tostring(orchestrateErr or HttpService:JSONEncode(decision or {}))
+	)
 	LLMAdapter.useMockProvider()
 
 	local minimalDecision = MinimalOrchestrator.decide({
@@ -531,25 +555,25 @@ function TestPhase14.runUnit()
 		attempt_budget = { used = 3, total = 12 },
 		last_result = { sector_id = 4, success = true, score = 9 },
 	})
-	T.expect("phase14_minimal_orchestrator_targets_first_unfilled_sector",
+	T.expect(
+		"phase14_minimal_orchestrator_targets_first_unfilled_sector",
 		minimalDecision.action == nil and minimalDecision.sector_id == 7 and minimalDecision.mechanic == "RampJump",
-		HttpService:JSONEncode(minimalDecision))
-	T.expect("phase14_minimal_orchestrator_begins_loop_when_over_budget",
-		MinimalOrchestrator.decide({
-			editable_sectors = { 2, 3, 4, 7, 8, 9 },
-			sector_states = {
-				[2] = { mechanic = "RampJump", params = {}, score = 10 },
-				[3] = { mechanic = "CrestDip", params = {}, score = 8 },
-				[4] = { mechanic = "Chicane", params = {}, score = 9 },
-				[7] = { mechanic = "RampJump", params = {}, score = 9 },
-				[8] = { mechanic = "Chicane", params = {}, score = 9 },
-				[9] = { mechanic = "CrestDip", params = {}, score = 9 },
-			},
-			budget = { used = 1, over_budget = true },
-			attempt_budget = { used = 6, total = 12 },
-			last_result = nil,
-		}).action == "begin_loop",
-		"expected over-budget heuristic to stop filling sectors")
+		HttpService:JSONEncode(minimalDecision)
+	)
+	T.expect("phase14_minimal_orchestrator_begins_loop_when_over_budget", MinimalOrchestrator.decide({
+		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+		sector_states = {
+			[2] = { mechanic = "RampJump", params = {}, score = 10 },
+			[3] = { mechanic = "CrestDip", params = {}, score = 8 },
+			[4] = { mechanic = "Chicane", params = {}, score = 9 },
+			[7] = { mechanic = "RampJump", params = {}, score = 9 },
+			[8] = { mechanic = "Chicane", params = {}, score = 9 },
+			[9] = { mechanic = "CrestDip", params = {}, score = 9 },
+		},
+		budget = { used = 1, over_budget = true },
+		attempt_budget = { used = 6, total = 12 },
+		last_result = nil,
+	}).action == "begin_loop", "expected over-budget heuristic to stop filling sectors")
 
 	local downstreamRepair = MinimalProposer.repair({
 		request = makeRequest("add a crest in sector 2"),
@@ -603,12 +627,14 @@ function TestPhase14.runUnit()
 			pads = { "ingress", "egress" },
 		},
 	})
-	T.expect("phase14_crestdip_downstream_repair_prefers_carrying_speed",
+	T.expect(
+		"phase14_crestdip_downstream_repair_prefers_carrying_speed",
 		downstreamRepair ~= nil
 			and downstreamRepair.type == "SetPad"
 			and downstreamRepair.pad == "ingress"
 			and downstreamRepair.value == "Boost10",
-		HttpService:JSONEncode(downstreamRepair))
+		HttpService:JSONEncode(downstreamRepair)
+	)
 
 	local retryClearedLapCounts = {}
 	local retrySequence = {
@@ -619,7 +645,9 @@ function TestPhase14.runUnit()
 	local retryOk, retryErr = ContinuousLapRunner.run({
 		maxCleanLaps = 1,
 		deps = {
-			tryAcquire = function() return true end,
+			tryAcquire = function()
+				return true
+			end,
 			release = function() end,
 			wait = function() end,
 			runLap = function()
@@ -632,7 +660,9 @@ function TestPhase14.runUnit()
 			setLapCount = function(count: number)
 				table.insert(retryClearedLapCounts, count)
 			end,
-			isTerminal = function() return false end,
+			isTerminal = function()
+				return false
+			end,
 			hotfixRun = function()
 				error("retry-cleared sequence should not enter hotfix")
 			end,
@@ -640,9 +670,11 @@ function TestPhase14.runUnit()
 		},
 	})
 	T.expect("phase14_continuous_retry_success_returns_ok", retryOk == true and retryErr == nil, tostring(retryErr))
-	T.expect("phase14_continuous_retry_success_counts_clean_lap",
+	T.expect(
+		"phase14_continuous_retry_success_counts_clean_lap",
 		retryClearedLapCounts[#retryClearedLapCounts] == 1,
-		tostring(retryClearedLapCounts[#retryClearedLapCounts]))
+		tostring(retryClearedLapCounts[#retryClearedLapCounts])
+	)
 
 	local hotfixSectors = {}
 	local hotfixSequence = {
@@ -654,7 +686,9 @@ function TestPhase14.runUnit()
 	local hotfixOk, hotfixErr = ContinuousLapRunner.run({
 		maxCleanLaps = 1,
 		deps = {
-			tryAcquire = function() return true end,
+			tryAcquire = function()
+				return true
+			end,
 			release = function() end,
 			wait = function() end,
 			runLap = function()
@@ -665,7 +699,9 @@ function TestPhase14.runUnit()
 			appendLog = function() end,
 			publishAttemptResult = function() end,
 			setLapCount = function() end,
-			isTerminal = function() return false end,
+			isTerminal = function()
+				return false
+			end,
 			hotfixRun = function(sectorId: number)
 				table.insert(hotfixSectors, sectorId)
 				return true
@@ -674,12 +710,12 @@ function TestPhase14.runUnit()
 		},
 	})
 	T.expect("phase14_continuous_hotfix_returns_ok", hotfixOk == true and hotfixErr == nil, tostring(hotfixErr))
-	T.expect("phase14_continuous_hotfix_uses_retry_failure_sector",
-		hotfixSectors[1] == 7,
-		tostring(hotfixSectors[1]))
-	T.expect("phase14_continuous_hotfix_sector_helper_prefers_retry",
+	T.expect("phase14_continuous_hotfix_uses_retry_failure_sector", hotfixSectors[1] == 7, tostring(hotfixSectors[1]))
+	T.expect(
+		"phase14_continuous_hotfix_sector_helper_prefers_retry",
 		ContinuousLapRunner._resolveHotfixSector(fakeResult(false, 3, "a"), fakeResult(false, 9, "b")) == 9,
-		tostring(ContinuousLapRunner._resolveHotfixSector(fakeResult(false, 3, "a"), fakeResult(false, 9, "b"))))
+		tostring(ContinuousLapRunner._resolveHotfixSector(fakeResult(false, 3, "a"), fakeResult(false, 9, "b")))
+	)
 
 	resetEditableSectors()
 	local rampitupStartOk, rampitupStartErr = CameraDemo.start({
@@ -687,13 +723,19 @@ function TestPhase14.runUnit()
 		loop = true,
 		runVerifier = false,
 	})
-	T.expect("phase14_rampitup_demo_starts",
-		rampitupStartOk == true and rampitupStartErr == nil and CameraDemo.isActive() and CameraDemo.activePreset() == "rampitup",
-		tostring(rampitupStartErr))
+	T.expect(
+		"phase14_rampitup_demo_starts",
+		rampitupStartOk == true
+			and rampitupStartErr == nil
+			and CameraDemo.isActive()
+			and CameraDemo.activePreset() == "rampitup",
+		tostring(rampitupStartErr)
+	)
 
 	local demoSector3 = SectorRegistry.getCommitted(3)
 	local demoSector8 = SectorRegistry.getCommitted(8)
-	T.expect("phase14_rampitup_demo_applies_ramps",
+	T.expect(
+		"phase14_rampitup_demo_applies_ramps",
 		demoSector3 ~= nil
 			and demoSector8 ~= nil
 			and demoSector3.mechanic == "RampJump"
@@ -713,16 +755,20 @@ function TestPhase14.runUnit()
 		HttpService:JSONEncode({
 			sector3 = demoSector3,
 			sector8 = demoSector8,
-		}))
+		})
+	)
 
 	local rampitupStopOk, rampitupStopErr = CameraDemo.stop()
-	T.expect("phase14_rampitup_demo_stops",
+	T.expect(
+		"phase14_rampitup_demo_stops",
 		rampitupStopOk == true and rampitupStopErr == nil and not CameraDemo.isActive(),
-		tostring(rampitupStopErr))
+		tostring(rampitupStopErr)
+	)
 
 	local restoredSector3 = SectorRegistry.getCommitted(3)
 	local restoredSector8 = SectorRegistry.getCommitted(8)
-	T.expect("phase14_rampitup_demo_restores_track",
+	T.expect(
+		"phase14_rampitup_demo_restores_track",
 		restoredSector3 ~= nil
 			and restoredSector8 ~= nil
 			and restoredSector3.mechanic == nil
@@ -734,7 +780,8 @@ function TestPhase14.runUnit()
 		HttpService:JSONEncode({
 			sector3 = restoredSector3,
 			sector8 = restoredSector8,
-		}))
+		})
+	)
 
 	local orchestratorSubmits = {}
 	local orchestratorContexts = {}
@@ -792,7 +839,8 @@ function TestPhase14.runUnit()
 						sector_id = 2,
 						mechanic = "RampJump",
 						params_hint = "extreme tall",
-					}, nil
+					},
+						nil
 				end
 				return { action = "begin_loop" }, nil
 			end,
@@ -809,29 +857,40 @@ function TestPhase14.runUnit()
 			end,
 		},
 	})
-	T.expect("phase14_orchestrator_run_returns_ok",
+	T.expect(
+		"phase14_orchestrator_run_returns_ok",
 		orchestratorRunOk == true and orchestratorRunErr == nil,
-		tostring(orchestratorRunErr))
-	T.expect("phase14_orchestrator_submits_hint_request",
+		tostring(orchestratorRunErr)
+	)
+	T.expect(
+		"phase14_orchestrator_submits_hint_request",
 		orchestratorSubmits[1] == "add an extreme tall jump in sector 2",
-		tostring(orchestratorSubmits[1]))
-		T.expect("phase14_orchestrator_feeds_last_result_into_next_context",
-			#orchestratorContexts >= 2
-				and orchestratorContexts[2].last_result ~= nil
-				and orchestratorContexts[2].last_result.sector_id == 2
-				and orchestratorContexts[2].last_result.success == true
-				and orchestratorContexts[2].last_result.score == 14
-				and math.abs(
+		tostring(orchestratorSubmits[1])
+	)
+	T.expect(
+		"phase14_orchestrator_feeds_last_result_into_next_context",
+		#orchestratorContexts >= 2
+			and orchestratorContexts[2].last_result ~= nil
+			and orchestratorContexts[2].last_result.sector_id == 2
+			and orchestratorContexts[2].last_result.success == true
+			and orchestratorContexts[2].last_result.score == 14
+			and math.abs(
 					orchestratorContexts[2].budget.used
 						- math.clamp((1.12 - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)
-				) < 0.001,
-			HttpService:JSONEncode(orchestratorContexts[2] or {}))
-	T.expect("phase14_orchestrator_starts_continuous_loop",
+				)
+				< 0.001,
+		HttpService:JSONEncode(orchestratorContexts[2] or {})
+	)
+	T.expect(
+		"phase14_orchestrator_starts_continuous_loop",
 		loopStarted == true and loopInitialLapCount == 0,
-		string.format("started=%s lap_count=%s", tostring(loopStarted), tostring(loopInitialLapCount)))
-	T.expect("phase14_orchestrator_updates_attempt_budget",
+		string.format("started=%s lap_count=%s", tostring(loopStarted), tostring(loopInitialLapCount))
+	)
+	T.expect(
+		"phase14_orchestrator_updates_attempt_budget",
 		orchestratorBudgetUpdates[1] == "0/12" and orchestratorBudgetUpdates[2] == "1/12",
-		table.concat(orchestratorBudgetUpdates, ","))
+		table.concat(orchestratorBudgetUpdates, ",")
+	)
 
 	local cameraBlockedOk, cameraBlockedErr = OrchestratorAgent.run({
 		submit = function()
@@ -844,9 +903,11 @@ function TestPhase14.runUnit()
 			return true
 		end,
 	})
-	T.expect("phase14_orchestrator_rejects_camera_demo_session",
+	T.expect(
+		"phase14_orchestrator_rejects_camera_demo_session",
 		cameraBlockedOk == false and string.find(tostring(cameraBlockedErr), "camera demo", 1, true) ~= nil,
-		tostring(cameraBlockedErr))
+		tostring(cameraBlockedErr)
+	)
 end
 
 function TestPhase14.runIntegration()
@@ -862,19 +923,23 @@ function TestPhase14.runIntegration()
 	resetEditableSectors()
 	local jumpCommitted, jumpOk, jumpReason, jumpJob, jumpState, jumpRuns =
 		submitWithRetries("add a jump to sector 2", 2, "RampJump", 3)
-	T.expect("phase14_golden_rampjump_sector2_succeeds",
+	T.expect(
+		"phase14_golden_rampjump_sector2_succeeds",
 		jumpCommitted == true
 			and jumpOk == true
 			and jumpReason == nil
 			and jumpJob ~= nil
 			and jumpState ~= nil
 			and jumpState.mechanic == "RampJump",
-		string.format("ok=%s reason=%s final=%s mechanic=%s runs=%s",
+		string.format(
+			"ok=%s reason=%s final=%s mechanic=%s runs=%s",
 			tostring(jumpOk),
 			tostring(jumpReason),
 			tostring(jumpJob and jumpJob.final_status),
 			tostring(jumpState and jumpState.mechanic),
-			jumpRuns))
+			jumpRuns
+		)
+	)
 	resetEditableSectors()
 
 	local chicaneState = makeState(3, "Chicane", {
@@ -883,29 +948,36 @@ function TestPhase14.runIntegration()
 		corridor_width = GOLDEN_CHICANE_SECTOR3.corridor_width,
 	}, GOLDEN_CHICANE_SECTOR3.ingress, GOLDEN_CHICANE_SECTOR3.egress)
 	local chicaneLap = select(1, runAttemptState(chicaneState))
-	T.expect("phase14_golden_chicane_sector3_succeeds",
+	T.expect(
+		"phase14_golden_chicane_sector3_succeeds",
 		chicaneLap.success == true,
-		"chicane lap failed: " .. resultSummary(chicaneLap))
+		"chicane lap failed: " .. resultSummary(chicaneLap)
+	)
 	resetEditableSectors()
 
 	local crestCommitted, crestOk, crestReason, crestJob, crestState, crestRuns =
 		submitWithRetries("add a crest in sector 3", 3, "CrestDip", 5)
-	T.expect("phase14_golden_crestdip_sector3_succeeds",
+	T.expect(
+		"phase14_golden_crestdip_sector3_succeeds",
 		crestCommitted == true
 			and crestOk == true
 			and crestReason == nil
 			and crestJob ~= nil
 			and crestState ~= nil
 			and crestState.mechanic == "CrestDip",
-		string.format("ok=%s reason=%s final=%s mechanic=%s runs=%s",
+		string.format(
+			"ok=%s reason=%s final=%s mechanic=%s runs=%s",
 			tostring(crestOk),
 			tostring(crestReason),
 			tostring(crestJob and crestJob.final_status),
 			tostring(crestState and crestState.mechanic),
-			crestRuns))
+			crestRuns
+		)
+	)
 	local sector2Committed, sector2Ok, sector2Reason, sector2Job, sector2State, sector2Runs =
 		submitWithRetries("add a crest in sector 2", 2, "CrestDip", 5)
-	T.expect("phase14_crestdip_sector2_then_sector3_has_no_downstream_failure",
+	T.expect(
+		"phase14_crestdip_sector2_then_sector3_has_no_downstream_failure",
 		crestCommitted == true
 			and crestOk == true
 			and crestReason == nil
@@ -929,7 +1001,9 @@ function TestPhase14.runIntegration()
 			tostring(sector2Reason),
 			tostring(sector2Job and sector2Job.final_status),
 			tostring(sector2State and sector2State.mechanic),
-			sector2Runs))
+			sector2Runs
+		)
+	)
 	resetEditableSectors()
 end
 
@@ -993,7 +1067,8 @@ function TestPhase14.runCrestDipPair()
 	local sector2Committed, sector2Ok, sector2Reason, sector2Job, sector2State, sector2Runs =
 		submitWithRetries("add a crest in sector 2", 2, "CrestDip", 5)
 
-	T.expect("phase14_crestdip_pair_llm_path_commits_both",
+	T.expect(
+		"phase14_crestdip_pair_llm_path_commits_both",
 		sector3Committed == true
 			and sector3Ok == true
 			and sector3Reason == nil
@@ -1017,7 +1092,9 @@ function TestPhase14.runCrestDipPair()
 			tostring(sector2Reason),
 			tostring(sector2Job and sector2Job.final_status),
 			tostring(sector2State and sector2State.mechanic),
-			sector2Runs))
+			sector2Runs
+		)
+	)
 
 	resetEditableSectors()
 end
@@ -1057,11 +1134,13 @@ function TestPhase14.runSector2Debug()
 
 	local debugTraceCount = 0
 	for _, line in ipairs(Tracer.getLog()) do
-		if string.find(line, "proposal sector=2", 1, true) ~= nil
+		if
+			string.find(line, "proposal sector=2", 1, true) ~= nil
 			or string.find(line, "attempt_result", 1, true) ~= nil
 			or string.find(line, "repair attempt=", 1, true) ~= nil
 			or string.find(line, "sector_debug sector=2", 1, true) ~= nil
-			or string.find(line, "sector_debug_failure sector=2", 1, true) ~= nil then
+			or string.find(line, "sector_debug_failure sector=2", 1, true) ~= nil
+		then
 			debugLine(line)
 			debugTraceCount += 1
 		end

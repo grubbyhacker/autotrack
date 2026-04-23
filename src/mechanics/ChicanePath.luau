@@ -44,7 +44,11 @@ local function waveX(amplitude: number, waveLength: number, waveDistance: number
 	return amplitude * math.sin((waveDistance / waveLength) * math.pi * 2)
 end
 
-function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLength: number, waveSegmentsOverride: number?): { Vector3 }
+function ChicanePath.buildLocalCenterlinePoints(
+	amplitude: number,
+	transitionLength: number,
+	waveSegmentsOverride: number?
+): { Vector3 }
 	local totalLength = ChicanePath.totalLength(transitionLength)
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
 	local waveSegments = math.max(waveSegmentsOverride or ChicanePath.WAVE_SEGMENTS, 2)
@@ -61,11 +65,7 @@ function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLen
 	for index = 1, waveSegments do
 		local t = index / waveSegments
 		local wavePhase = t * math.pi * 2
-		table.insert(points, Vector3.new(
-			amplitude * math.sin(wavePhase),
-			0,
-			waveStartZ + waveLength * t
-		))
+		table.insert(points, Vector3.new(amplitude * math.sin(wavePhase), 0, waveStartZ + waveLength * t))
 	end
 
 	table.insert(points, Vector3.new(0, 0, featureEndZ))
@@ -76,7 +76,11 @@ function ChicanePath.buildLocalCenterlinePoints(amplitude: number, transitionLen
 	return points
 end
 
-function ChicanePath.buildLocalVisualCenterlinePoints(amplitude: number, transitionLength: number, sampleSpacingOverride: number?): { Vector3 }
+function ChicanePath.buildLocalVisualCenterlinePoints(
+	amplitude: number,
+	transitionLength: number,
+	sampleSpacingOverride: number?
+): { Vector3 }
 	local totalLength = ChicanePath.totalLength(transitionLength)
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
 	local spacing = math.max(0.5, sampleSpacingOverride or ChicanePath.VISUAL_SAMPLE_SPACING)
@@ -96,11 +100,7 @@ function ChicanePath.buildLocalVisualCenterlinePoints(amplitude: number, transit
 		for index = 1, waveSteps do
 			local t = index / waveSteps
 			local waveDistance = waveLength * t
-			table.insert(points, Vector3.new(
-				waveX(amplitude, waveLength, waveDistance),
-				0,
-				waveStartZ + waveDistance
-			))
+			table.insert(points, Vector3.new(waveX(amplitude, waveLength, waveDistance), 0, waveStartZ + waveDistance))
 		end
 	end
 

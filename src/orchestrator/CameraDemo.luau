@@ -1,5 +1,3 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
@@ -88,11 +86,7 @@ local DEMO_PRESETS = {
 }
 
 local function cloneParams(params)
-	local copy = {}
-	for key, value in pairs(params) do
-		copy[key] = value
-	end
-	return copy
+	return table.clone(params)
 end
 
 local function cloneState(state)
@@ -118,7 +112,7 @@ local function restorePriorStates()
 	if not _priorStates then
 		return
 	end
-	for sectorId, state in pairs(_priorStates) do
+	for _, state in pairs(_priorStates) do
 		local restored = cloneState(state)
 		restored.version = state.version + 1
 		applyCommittedState(restored)
@@ -143,7 +137,7 @@ end
 
 function CameraDemo.supportedPresets(): { string }
 	local names = {}
-	for name, _ in pairs(DEMO_PRESETS) do
+	for name in pairs(DEMO_PRESETS) do
 		table.insert(names, name)
 	end
 	table.sort(names)
@@ -169,7 +163,7 @@ function CameraDemo.start(options): (boolean, string?)
 	_activePreset = presetName
 
 	_priorStates = {}
-	for sectorId, _ in pairs(preset.sectors) do
+	for sectorId in pairs(preset.sectors) do
 		local committed = SectorRegistry.getCommitted(sectorId)
 		assert(committed ~= nil, "CameraDemo.start: missing committed state for sector " .. tostring(sectorId))
 		_priorStates[sectorId] = cloneState(committed)
@@ -212,7 +206,13 @@ function CameraDemo.start(options): (boolean, string?)
 				VerifierCar.reset(startCF)
 				UIState.setPhase("CameraDemoLap", "Running camera demo lap...")
 				local ok, result = pcall(function()
-					return VerifierController.runLap(car, demoWaypoints, demoWaypointSectors, demoSectorKinds, onSectorChange)
+					return VerifierController.runLap(
+						car,
+						demoWaypoints,
+						demoWaypointSectors,
+						demoSectorKinds,
+						onSectorChange
+					)
 				end)
 				JobLock.release()
 
@@ -233,12 +233,16 @@ function CameraDemo.start(options): (boolean, string?)
 					lapIndex += 1
 					UIState.publishAttemptResult(result)
 					UIState.setPhase("CameraDemo", "Camera demo loop running")
-					UIState.appendLog(string.format("%s lap %d complete: %.2fs", preset.label, lapIndex, result.metrics.lap_time))
+					UIState.appendLog(
+						string.format("%s lap %d complete: %.2fs", preset.label, lapIndex, result.metrics.lap_time)
+					)
 					Tracer.log(string.format("camera_demo_lap_complete %s %.2f", presetName, result.metrics.lap_time))
 					task.wait(0.5)
 				else
 					UIState.setPhase("CameraDemoFailure", "Camera demo lap failed")
-					UIState.appendLog("Camera demo failure: " .. tostring(result.failure and result.failure.type or "unknown"))
+					UIState.appendLog(
+						"Camera demo failure: " .. tostring(result.failure and result.failure.type or "unknown")
+					)
 					Tracer.log("camera_demo_lap_failed " .. presetName)
 					task.wait(0.5)
 				end
@@ -268,7 +272,9 @@ function CameraDemo.stop(): (boolean, string?)
 	local stoppedPreset = _activePreset
 	_activePreset = "camera"
 	UIState.publishReady()
-	UIState.appendLog(string.format("%s stopped", DEMO_PRESETS[stoppedPreset] and DEMO_PRESETS[stoppedPreset].label or "Camera demo"))
+	UIState.appendLog(
+		string.format("%s stopped", DEMO_PRESETS[stoppedPreset] and DEMO_PRESETS[stoppedPreset].label or "Camera demo")
+	)
 	Tracer.log("camera_demo_stop " .. stoppedPreset)
 	return true, nil
 end

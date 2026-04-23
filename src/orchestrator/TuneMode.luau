@@ -1,7 +1,6 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local LaunchOutlier = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LaunchOutlier"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
@@ -263,10 +262,7 @@ end
 local function applyCameraOverride()
 	local sector = activeSector()
 	local focus = sector.entry.Position:Lerp(sector.exit.Position, 0.35) + Vector3.yAxis * 4
-	local position = focus
-		+ Vector3.yAxis * 34
-		+ sector.entry.RightVector * 70
-		- sector.entry.LookVector * 34
+	local position = focus + Vector3.yAxis * 34 + sector.entry.RightVector * 70 - sector.entry.LookVector * 34
 	UIState.setCameraOverride(position, focus, 68)
 end
 
@@ -335,7 +331,9 @@ local function setActiveSessionState(state, phaseLabel: string)
 	UIState.setBusy(false)
 	UIState.setPhase("TuneMode", phaseLabel)
 	UIState.setRequestContext(string.format("/tune %s", string.lower(_mechanic)), _sectorId, _mechanic)
-	UIState.setExplanation("Use /tune show | run | compare | auto | set | pad | attr | reset | revert | commit | promote | stop")
+	UIState.setExplanation(
+		"Use /tune show | run | compare | auto | set | pad | attr | reset | revert | commit | promote | stop"
+	)
 	UIState.clearRepairAction()
 	applyCameraOverride()
 	applyState(_workingState)
@@ -344,12 +342,14 @@ end
 
 local function appendStatus(prefix: string)
 	UIState.appendLog(string.format("%s: %s", prefix, paramSummary(_workingState)))
-	UIState.appendLog(string.format(
-		"Tune staged: candidate=v%d auto=%s run=%s",
-		_candidateVersion,
-		tostring(_autoRun),
-		if _runInFlight then "busy" else "idle"
-	))
+	UIState.appendLog(
+		string.format(
+			"Tune staged: candidate=v%d auto=%s run=%s",
+			_candidateVersion,
+			tostring(_autoRun),
+			if _runInFlight then "busy" else "idle"
+		)
+	)
 	if boundsSummary() ~= "" then
 		UIState.appendLog("Tune bounds: " .. boundsSummary())
 	end
@@ -361,48 +361,54 @@ local function appendStatus(prefix: string)
 	end
 	if _lastBatch ~= nil then
 		local aggregate = _lastBatch.aggregate or {}
-		UIState.appendLog(string.format(
-			"Tune batch: run=%d candidate=v%d %d/%d score=%.1f",
-			_lastBatch.run_id or 0,
-			_lastBatch.candidate_version or 0,
-			aggregate.success_count or 0,
-			aggregate.pass_count or 0,
-			aggregate.score or 0
-		))
+		UIState.appendLog(
+			string.format(
+				"Tune batch: run=%d candidate=v%d %d/%d score=%.1f",
+				_lastBatch.run_id or 0,
+				_lastBatch.candidate_version or 0,
+				aggregate.success_count or 0,
+				aggregate.pass_count or 0,
+				aggregate.score or 0
+			)
+		)
 	end
 	if #_recentPasses > 0 then
 		local last = _recentPasses[1]
-		UIState.appendLog(string.format(
-			"Tune last pass: pass=%d success=%s score=%.1f",
-			last.pass_index or 0,
-			tostring(last.success == true),
-			last.score or 0
-		))
+		UIState.appendLog(
+			string.format(
+				"Tune last pass: pass=%d success=%s score=%.1f",
+				last.pass_index or 0,
+				tostring(last.success == true),
+				last.score or 0
+			)
+		)
 	end
 	if _bestPass ~= nil then
-		UIState.appendLog(string.format(
-			"Tune best pass: pass=%d score=%.1f",
-			_bestPass.pass_index or 0,
-			_bestPass.score or 0
-		))
+		UIState.appendLog(
+			string.format("Tune best pass: pass=%d score=%.1f", _bestPass.pass_index or 0, _bestPass.score or 0)
+		)
 	end
 	if _bestBatch ~= nil then
-		UIState.appendLog(string.format(
-			"Tune best batch: run=%d candidate=v%d score=%.1f",
-			_bestBatch.run_id or 0,
-			_bestBatch.candidate_version or 0,
-			(_bestBatch.aggregate and _bestBatch.aggregate.score) or 0
-		))
+		UIState.appendLog(
+			string.format(
+				"Tune best batch: run=%d candidate=v%d score=%.1f",
+				_bestBatch.run_id or 0,
+				_bestBatch.candidate_version or 0,
+				(_bestBatch.aggregate and _bestBatch.aggregate.score) or 0
+			)
+		)
 	end
 	if _lastCompare ~= nil and _lastCompare.summary ~= nil then
 		local summary = _lastCompare.summary
-		UIState.appendLog(string.format(
-			"Tune compare: heuristic=%s prod=%s dh=%.1f dp=%.1f",
-			tostring(summary.heuristic_winner or ""),
-			tostring(summary.challenge_winner or ""),
-			summary.heuristic_delta or 0,
-			summary.challenge_delta or 0
-		))
+		UIState.appendLog(
+			string.format(
+				"Tune compare: heuristic=%s prod=%s dh=%.1f dp=%.1f",
+				tostring(summary.heuristic_winner or ""),
+				tostring(summary.challenge_winner or ""),
+				summary.heuristic_delta or 0,
+				summary.challenge_delta or 0
+			)
+		)
 	end
 end
 
@@ -424,7 +430,14 @@ local function compactPassRecord(record)
 	}
 end
 
-local function buildPassRecord(passIndex: number, runId: number, candidateVersion: number, stateSnapshot, attrSnapshot, result)
+local function buildPassRecord(
+	passIndex: number,
+	runId: number,
+	candidateVersion: number,
+	stateSnapshot,
+	attrSnapshot,
+	result
+)
 	local metrics = result.metrics or {}
 	local launchOutlier = LaunchOutlier.classify(metrics)
 	local record = {
@@ -469,7 +482,15 @@ local function buildPassRecord(passIndex: number, runId: number, candidateVersio
 	return compactPassRecord(record)
 end
 
-local function buildBatchRecord(runId: number, source: string, candidateVersion: number, requestedPasses: number, stateSnapshot, attrSnapshot, records)
+local function buildBatchRecord(
+	runId: number,
+	source: string,
+	candidateVersion: number,
+	requestedPasses: number,
+	stateSnapshot,
+	attrSnapshot,
+	records
+)
 	return compactBatchRecord({
 		run_id = runId,
 		source = source,
@@ -502,7 +523,11 @@ local function updateBestPass(record)
 end
 
 local function updateBestBatch(batch)
-	if _bestBatch == nil or ((batch.aggregate and batch.aggregate.score) or 0) > (((_bestBatch.aggregate and _bestBatch.aggregate.score) or 0)) then
+	if
+		_bestBatch == nil
+		or ((batch.aggregate and batch.aggregate.score) or 0)
+			> ((_bestBatch.aggregate and _bestBatch.aggregate.score) or 0)
+	then
 		_bestBatch = compactBatchRecord(batch)
 	end
 end
@@ -581,14 +606,16 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 	_lastResultText = string.format("run %d queued x%d", runId, requestedPasses)
 	_lastFailureText = ""
 	syncTelemetry()
-	Tracer.log(string.format(
-		"tune_batch_start sector=%d run=%d candidate=%d source=%s attempts=%d",
-		_sectorId,
-		runId,
-		candidateVersion,
-		source,
-		requestedPasses
-	))
+	Tracer.log(
+		string.format(
+			"tune_batch_start sector=%d run=%d candidate=%d source=%s attempts=%d",
+			_sectorId,
+			runId,
+			candidateVersion,
+			source,
+			requestedPasses
+		)
+	)
 
 	task.spawn(function()
 		local records = {}
@@ -611,16 +638,25 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 			local passIndex = _passCount + 1
 			UIState.setPhase(
 				"TunePass",
-				string.format("Tune %s — Sector %d run %d pass %d/%d", source, _sectorId, runId, attemptIndex, requestedPasses)
+				string.format(
+					"Tune %s — Sector %d run %d pass %d/%d",
+					source,
+					_sectorId,
+					runId,
+					attemptIndex,
+					requestedPasses
+				)
 			)
-			Tracer.log(string.format(
-				"tune_pass_start sector=%d run=%d candidate=%d pass=%d mechanic=%s",
-				_sectorId,
-				runId,
-				candidateVersion,
-				passIndex,
-				tostring(stateSnapshot.mechanic)
-			))
+			Tracer.log(
+				string.format(
+					"tune_pass_start sector=%d run=%d candidate=%d pass=%d mechanic=%s",
+					_sectorId,
+					runId,
+					candidateVersion,
+					passIndex,
+					tostring(stateSnapshot.mechanic)
+				)
+			)
 
 			local ok, result = pcall(function()
 				return AttemptRunner.run({
@@ -647,14 +683,16 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 				batchError = tostring(result)
 				UIState.setError("tune pass error: " .. batchError)
 				UIState.appendLog("Tune pass error: " .. batchError)
-				Tracer.log(string.format(
-					"tune_pass_error sector=%d run=%d candidate=%d pass=%d err=%s",
-					_sectorId,
-					runId,
-					candidateVersion,
-					passIndex,
-					batchError
-				))
+				Tracer.log(
+					string.format(
+						"tune_pass_error sector=%d run=%d candidate=%d pass=%d err=%s",
+						_sectorId,
+						runId,
+						candidateVersion,
+						passIndex,
+						batchError
+					)
+				)
 				break
 			end
 
@@ -665,62 +703,74 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 			recordPass(record)
 			if record.metrics and record.metrics.launch_outlier == true then
 				local reasons = table.concat(record.metrics.launch_outlier_reasons or {}, ",")
-				UIState.appendLog(string.format(
-					"Tune launch outlier pass %d: hang=%.2fs airtime=%.1f vertical=%.1f [%s]",
-					passIndex,
-					record.metrics.hang_time or 0,
-					math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
-					record.metrics.vertical_displacement or 0,
-					reasons
-				))
-				Tracer.log(string.format(
-					"tune_launch_outlier sector=%d run=%d candidate=%d pass=%d hang=%.2f airtime=%.1f vertical=%.1f reasons=%s",
+				UIState.appendLog(
+					string.format(
+						"Tune launch outlier pass %d: hang=%.2fs airtime=%.1f vertical=%.1f [%s]",
+						passIndex,
+						record.metrics.hang_time or 0,
+						math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
+						record.metrics.vertical_displacement or 0,
+						reasons
+					)
+				)
+				Tracer.log(
+					string.format(
+						"tune_launch_outlier sector=%d run=%d candidate=%d pass=%d hang=%.2f airtime=%.1f vertical=%.1f reasons=%s",
+						_sectorId,
+						runId,
+						candidateVersion,
+						passIndex,
+						record.metrics.hang_time or 0,
+						math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
+						record.metrics.vertical_displacement or 0,
+						reasons
+					)
+				)
+			end
+			Tracer.log(
+				string.format(
+					"tune_pass_record sector=%d run=%d candidate=%d pass=%d %s",
 					_sectorId,
 					runId,
 					candidateVersion,
 					passIndex,
-					record.metrics.hang_time or 0,
-					math.max(record.metrics.airtime_distance or 0, record.metrics.target_airtime_distance or 0),
-					record.metrics.vertical_displacement or 0,
-					reasons
-				))
-			end
-			Tracer.log(string.format(
-				"tune_pass_record sector=%d run=%d candidate=%d pass=%d %s",
-				_sectorId,
-				runId,
-				candidateVersion,
-				passIndex,
-				HttpService:JSONEncode(record)
-			))
+					HttpService:JSONEncode(record)
+				)
+			)
 
 			if result.success then
 				UIState.hideFailure()
-				UIState.appendLog(string.format(
-					"Tune pass %d ok: %.2fs score=%.1f",
-					passIndex,
-					result.metrics and result.metrics.lap_time or -1,
-					record.score or 0
-				))
+				UIState.appendLog(
+					string.format(
+						"Tune pass %d ok: %.2fs score=%.1f",
+						passIndex,
+						result.metrics and result.metrics.lap_time or -1,
+						record.score or 0
+					)
+				)
 				Tracer.log(string.format("tune_pass_complete sector=%d run=%d pass=%d", _sectorId, runId, passIndex))
 			else
 				local failureText = string.format(
 					"%s%s",
 					tostring(result.failure and result.failure.type or "unknown"),
-					if result.failure and result.failure.detail and result.failure.detail ~= ""
+					if result.failure
+							and result.failure.detail
+							and result.failure.detail ~= ""
 						then " · " .. tostring(result.failure.detail)
 						else ""
 				)
 				UIState.showFailure(result)
 				UIState.appendLog(string.format("Tune pass %d fail: %s", passIndex, failureText))
-				Tracer.log(string.format(
-					"tune_pass_fail sector=%d run=%d pass=%d type=%s detail=%s",
-					_sectorId,
-					runId,
-					passIndex,
-					tostring(result.failure and result.failure.type or "unknown"),
-					tostring(result.failure and result.failure.detail or "")
-				))
+				Tracer.log(
+					string.format(
+						"tune_pass_fail sector=%d run=%d pass=%d type=%s detail=%s",
+						_sectorId,
+						runId,
+						passIndex,
+						tostring(result.failure and result.failure.type or "unknown"),
+						tostring(result.failure and result.failure.detail or "")
+					)
+				)
 			end
 
 			if token ~= _token or not _active then
@@ -734,7 +784,8 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 			_lastResultText = "error"
 			_lastFailureText = batchError
 		elseif #records > 0 then
-			local batch = buildBatchRecord(runId, source, candidateVersion, requestedPasses, stateSnapshot, attrSnapshot, records)
+			local batch =
+				buildBatchRecord(runId, source, candidateVersion, requestedPasses, stateSnapshot, attrSnapshot, records)
 			local aggregate = batch.aggregate or {}
 			recordBatch(batch)
 			_lastResultText = string.format(
@@ -746,18 +797,16 @@ local function runBatch(requestedPasses: number, source: string): (boolean, stri
 				aggregate.pass_count or #records
 			)
 			_lastFailureText = aggregate.last_failure or ""
-			UIState.appendLog(string.format(
-				"Tune batch %d done: %d/%d score=%.1f",
-				runId,
-				aggregate.success_count or 0,
-				aggregate.pass_count or #records,
-				aggregate.score or 0
-			))
-			Tracer.log(string.format(
-				"tune_batch_complete sector=%d %s",
-				_sectorId,
-				HttpService:JSONEncode(batch)
-			))
+			UIState.appendLog(
+				string.format(
+					"Tune batch %d done: %d/%d score=%.1f",
+					runId,
+					aggregate.success_count or 0,
+					aggregate.pass_count or #records,
+					aggregate.score or 0
+				)
+			)
+			Tracer.log(string.format("tune_batch_complete sector=%d %s", _sectorId, HttpService:JSONEncode(batch)))
 		else
 			_lastResultText = "idle"
 			_lastFailureText = ""
@@ -813,7 +862,9 @@ function TuneMode.start(mechanic: string, sectorId: number?): (boolean, string?)
 	clearRunHistory()
 	setActiveSessionState(nextState, string.format("Tune Mode — Sector %d · %s", _sectorId, mechanic))
 	UIState.appendLog(string.format("Tune mode on: sector %d %s", _sectorId, mechanic))
-	UIState.appendLog("Tune staged: use /tune run <n> or /tune compare <n> for controlled evaluation, or /tune auto on for continuous looping")
+	UIState.appendLog(
+		"Tune staged: use /tune run <n> or /tune compare <n> for controlled evaluation, or /tune auto on for continuous looping"
+	)
 	appendStatus("Tune state")
 	Tracer.log(string.format("tune_start sector=%d mechanic=%s", _sectorId, mechanic))
 
@@ -853,22 +904,24 @@ function TuneMode.show(): (boolean, string?)
 	if promotionSnapshot() ~= "" then
 		UIState.appendLog("Tune promote: " .. promotionSnapshot())
 	end
-	Tracer.log(string.format(
-		"tune_show sector=%d mechanic=%s auto=%s run=%s candidate=%d bounds=%s attrs=%s baseline=%s compare=%s last=%s best=%s batch=%s best_batch=%s",
-		_sectorId,
-		tostring(_mechanic),
-		tostring(_autoRun),
-		tostring(_runInFlight),
-		_candidateVersion,
-		boundsSummary(),
-		attrSummary(),
-		baselineSnapshotJson(),
-		lastCompareJson(),
-		lastPassJson(),
-		bestPassJson(),
-		lastBatchJson(),
-		bestBatchJson()
-	))
+	Tracer.log(
+		string.format(
+			"tune_show sector=%d mechanic=%s auto=%s run=%s candidate=%d bounds=%s attrs=%s baseline=%s compare=%s last=%s best=%s batch=%s best_batch=%s",
+			_sectorId,
+			tostring(_mechanic),
+			tostring(_autoRun),
+			tostring(_runInFlight),
+			_candidateVersion,
+			boundsSummary(),
+			attrSummary(),
+			baselineSnapshotJson(),
+			lastCompareJson(),
+			lastPassJson(),
+			bestPassJson(),
+			lastBatchJson(),
+			bestBatchJson()
+		)
+	)
 	syncTelemetry()
 	return true, nil
 end
@@ -995,13 +1048,15 @@ function TuneMode.compareBaseline(attemptCount: number): (boolean, string?)
 				tostring(summary.challenge_winner or "")
 			)
 			_lastFailureText = ""
-			UIState.appendLog(string.format(
-				"Tune compare done: dh=%.1f dp=%.1f winner=%s/%s",
-				summary.heuristic_delta or 0,
-				summary.challenge_delta or 0,
-				tostring(summary.heuristic_winner or ""),
-				tostring(summary.challenge_winner or "")
-			))
+			UIState.appendLog(
+				string.format(
+					"Tune compare done: dh=%.1f dp=%.1f winner=%s/%s",
+					summary.heuristic_delta or 0,
+					summary.challenge_delta or 0,
+					tostring(summary.heuristic_winner or ""),
+					tostring(summary.challenge_winner or "")
+				)
+			)
 			Tracer.log(string.format("tune_compare sector=%d %s", _sectorId, lastCompareJson()))
 		end
 
@@ -1040,10 +1095,12 @@ function TuneMode.promote(): (boolean, string?)
 			pads = cloneTable(_workingState.pads),
 		},
 		attrs = cloneTable(_attrOverrides),
-		baseline = if _baselineState ~= nil then {
-			params = cloneTable(_baselineState.params),
-			pads = cloneTable(_baselineState.pads),
-		} else nil,
+		baseline = if _baselineState ~= nil
+			then {
+				params = cloneTable(_baselineState.params),
+				pads = cloneTable(_baselineState.pads),
+			}
+			else nil,
 		last_batch = cloneTable(_lastBatch),
 		best_batch = cloneTable(_bestBatch),
 		compare = cloneTable(_lastCompare),

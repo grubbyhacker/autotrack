@@ -12,9 +12,7 @@ type SectorState = Types.SectorState
 
 local RampJumpIntegrity = {}
 
-function RampJumpIntegrity.preflight(
-	state: SectorState
-): (boolean, { string })
+function RampJumpIntegrity.preflight(state: SectorState): (boolean, { string })
 	local hints: { string } = {}
 
 	if (state.params.gap_length or 0) < Constants.RAMPJUMP_MIN_GAP then
@@ -24,9 +22,7 @@ function RampJumpIntegrity.preflight(
 	return #hints == 0, hints
 end
 
-function RampJumpIntegrity.evaluateRuntime(
-	metrics: RunMetrics
-): (boolean, { string })
+function RampJumpIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
 	local reacquireDistance = metrics.target_reacquire_distance
@@ -49,21 +45,19 @@ function RampJumpIntegrity.evaluateRuntime(
 	local minVerticalDisplacement = RuntimeTuning.numberAttr(
 		"AutoTrack_RampJumpMinVerticalDisplacement",
 		Constants.RAMPJUMP_MIN_VERTICAL_DISPLACEMENT
-	) + RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpComfortVerticalMargin",
-		Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN
+	) + RuntimeTuning.numberAttr("AutoTrack_RampJumpComfortVerticalMargin", Constants.RAMPJUMP_COMFORT_VERTICAL_MARGIN)
+	local maxReacquireDistance = math.max(
+		0,
+		RuntimeTuning.numberAttr("AutoTrack_RampJumpReacquireMax", Constants.RAMPJUMP_REACQUIRE_MAX)
+			- RuntimeTuning.numberAttr(
+				"AutoTrack_RampJumpComfortReacquireMargin",
+				Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN
+			)
 	)
-	local maxReacquireDistance = math.max(0, RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpReacquireMax",
-		Constants.RAMPJUMP_REACQUIRE_MAX
-	) - RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpComfortReacquireMargin",
-		Constants.RAMPJUMP_COMFORT_REACQUIRE_MARGIN
-	))
-	local maxReacquireLateral = math.max(0, RuntimeTuning.numberAttr(
-		"AutoTrack_RampJumpReacquireLateralMax",
-		Constants.RAMPJUMP_REACQUIRE_LATERAL_MAX
-	))
+	local maxReacquireLateral = math.max(
+		0,
+		RuntimeTuning.numberAttr("AutoTrack_RampJumpReacquireLateralMax", Constants.RAMPJUMP_REACQUIRE_LATERAL_MAX)
+	)
 	local landingMinUpDot = math.clamp(
 		RuntimeTuning.numberAttr("AutoTrack_RampJumpLandingMinUpDot", Constants.RAMPJUMP_LANDING_MIN_UP_DOT),
 		0,
@@ -90,13 +84,14 @@ function RampJumpIntegrity.evaluateRuntime(
 			"AutoTrack_RampJumpComfortExitMaxVerticalSpeed",
 			Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED
 		)
-	if uprightHardLanding
-		and exitAngularSpeed <= maxExitAngularSpeed
-		and exitVerticalSpeed <= maxExitVerticalSpeed then
-		maxReacquireDistance += math.max(0, RuntimeTuning.numberAttr(
-			"AutoTrack_RampJumpUprightReacquireBonus",
-			Constants.RAMPJUMP_UPRIGHT_REACQUIRE_BONUS
-		))
+	if uprightHardLanding and exitAngularSpeed <= maxExitAngularSpeed and exitVerticalSpeed <= maxExitVerticalSpeed then
+		maxReacquireDistance += math.max(
+			0,
+			RuntimeTuning.numberAttr(
+				"AutoTrack_RampJumpUprightReacquireBonus",
+				Constants.RAMPJUMP_UPRIGHT_REACQUIRE_BONUS
+			)
+		)
 	end
 
 	if type(verticalDisplacement) ~= "number" then
@@ -122,11 +117,15 @@ function RampJumpIntegrity.evaluateRuntime(
 			table.insert(hints, "reacquire margin too small after landing")
 		end
 	end
-	if type(touchdownUpDot) == "number"
+	if
+		type(touchdownUpDot) == "number"
 		and touchdownDownSpeed > 0
 		and touchdownUpDot < landingMinUpDot
-		and (exitAngularSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
-			or exitVerticalSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED) then
+		and (
+			exitAngularSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_ANGULAR_SPEED
+			or exitVerticalSpeed > Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED
+		)
+	then
 		table.insert(hints, "hard landing not upright enough")
 	end
 	if exitAngularSpeed > maxExitAngularSpeed then
@@ -142,10 +141,7 @@ function RampJumpIntegrity.evaluateRuntime(
 end
 
 -- Returns true if integrity is satisfied, plus a table of hints if not.
-function RampJumpIntegrity.evaluate(
-	state: SectorState,
-	metrics: RunMetrics
-): (boolean, { string })
+function RampJumpIntegrity.evaluate(state: SectorState, metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local preflightOk, preflightHints = RampJumpIntegrity.preflight(state)
 	local runtimeOk, runtimeHints = RampJumpIntegrity.evaluateRuntime(metrics)

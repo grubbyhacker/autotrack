@@ -173,7 +173,8 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 			design_intent = nil,
 			memory_context = nil,
 			timestamp = os.time(),
-		}, nil
+		},
+			nil
 	end
 
 	if #mechanicsFound == 0 then
@@ -207,7 +208,8 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		design_intent = nil,
 		memory_context = nil,
 		timestamp = os.time(),
-	}, nil
+	},
+		nil
 end
 
 return RequestParser

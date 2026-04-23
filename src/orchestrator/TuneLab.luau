@@ -28,8 +28,16 @@ TuneLab.ATTR_SPECS = {
 	sector_entry_snap_settle_time = rangedAttr("AutoTrack_SectorEntrySnapSettleTime", 0, 1.0),
 	target_sector_stability_max_angular_speed = rangedAttr("AutoTrack_TargetSectorStabilityMaxAngularSpeed", 0, 40),
 	target_sector_stability_max_vertical_speed = rangedAttr("AutoTrack_TargetSectorStabilityMaxVerticalSpeed", 0, 120),
-	rampjump_target_sector_stability_max_angular_speed = rangedAttr("AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed", 0, 20),
-	rampjump_target_sector_stability_max_vertical_speed = rangedAttr("AutoTrack_RampJumpTargetSectorStabilityMaxVerticalSpeed", 0, 80),
+	rampjump_target_sector_stability_max_angular_speed = rangedAttr(
+		"AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed",
+		0,
+		20
+	),
+	rampjump_target_sector_stability_max_vertical_speed = rangedAttr(
+		"AutoTrack_RampJumpTargetSectorStabilityMaxVerticalSpeed",
+		0,
+		80
+	),
 	rampjump_airborne_max_upward_speed = rangedAttr("AutoTrack_RampJumpAirborneMaxUpwardSpeed", 0, 80),
 	straight_pin_yaw_damping = rangedAttr("AutoTrack_StraightPinYawDamping", 0, 120),
 	straight_pin_roll_damping = rangedAttr("AutoTrack_StraightPinRollDamping", 0, 120),
@@ -47,8 +55,16 @@ TuneLab.ATTR_SPECS = {
 	rampjump_comfort_exit_max_angular_speed = rangedAttr("AutoTrack_RampJumpComfortExitMaxAngularSpeed", 0.25, 12),
 	rampjump_comfort_exit_max_vertical_speed = rangedAttr("AutoTrack_RampJumpComfortExitMaxVerticalSpeed", 1, 30),
 	rampjump_landing_min_up_dot = rangedAttr("AutoTrack_RampJumpLandingMinUpDot", 0.4, 1.0),
-	rampjump_hard_landing_exit_max_angular_speed = rangedAttr("AutoTrack_RampJumpHardLandingExitMaxAngularSpeed", 0.25, 18),
-	rampjump_hard_landing_exit_max_vertical_speed = rangedAttr("AutoTrack_RampJumpHardLandingExitMaxVerticalSpeed", 1, 40),
+	rampjump_hard_landing_exit_max_angular_speed = rangedAttr(
+		"AutoTrack_RampJumpHardLandingExitMaxAngularSpeed",
+		0.25,
+		18
+	),
+	rampjump_hard_landing_exit_max_vertical_speed = rangedAttr(
+		"AutoTrack_RampJumpHardLandingExitMaxVerticalSpeed",
+		1,
+		40
+	),
 	rampjump_profile_mode = rangedAttr("AutoTrack_RampJumpProfileMode", 0, 1),
 	chicane_min_lateral_displacement = rangedAttr("AutoTrack_ChicaneMinLateralDisplacement", 1, 12),
 	chicane_min_alternations = rangedAttr("AutoTrack_ChicaneMinAlternations", 1, 5),
@@ -237,8 +253,12 @@ function TuneLab.scorePass(result): number
 		end
 	end
 
-	local speedReward = (metrics.exit_speed or 0) + ((metrics.target_min_speed or 0) * 0.4) + ((metrics.target_apex_min_speed or 0) * 0.25)
-	local reacquireBonus = if metrics.target_reacquired == false then -160 else if metrics.target_reacquired == true then 120 else 0
+	local speedReward = (metrics.exit_speed or 0)
+		+ ((metrics.target_min_speed or 0) * 0.4)
+		+ ((metrics.target_apex_min_speed or 0) * 0.25)
+	local reacquireBonus = if metrics.target_reacquired == false
+		then -160
+		else if metrics.target_reacquired == true then 120 else 0
 	local reacquireDistancePenalty = (metrics.target_reacquire_distance or 0) * 8
 	local bodyPenalty = targetBodyDistance(metrics) * 26
 	local angularPenalty = math.abs(metrics.target_exit_angular_speed or 0) * 40
@@ -289,7 +309,9 @@ function TuneLab.aggregateCandidate(records)
 	local totalExit = 0
 	for _, record in ipairs(records) do
 		local score = record.score or 0
-		local challengeTotal = if type(record.challenge_score) == "table" then (record.challenge_score.total or 0) else 0
+		local challengeTotal = if type(record.challenge_score) == "table"
+			then (record.challenge_score.total or 0)
+			else 0
 		local metrics = record.metrics or {}
 		totalScore += score
 		totalChallenge += challengeTotal

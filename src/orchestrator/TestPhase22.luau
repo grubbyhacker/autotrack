@@ -34,9 +34,7 @@ end
 
 local function waitForSessionSettle(timeoutSeconds: number): boolean
 	local settled = waitUntil(function()
-		return not CameraDemo.isActive()
-			and not TuneMode.isActive()
-			and not JobLock.isHeld()
+		return not CameraDemo.isActive() and not TuneMode.isActive() and not JobLock.isHeld()
 	end, timeoutSeconds)
 	if settled then
 		task.wait(0.75)
@@ -122,9 +120,7 @@ local function runCommandSurface()
 	local repairOffOk, repairOffErr = JobRunner.submit("/demo repair")
 	T.expect(
 		"phase22_demo_repair_preview_toggles_off",
-		repairOffOk == true
-			and not HUDPreviewDemo.isActive()
-			and stateFolder:GetAttribute("phase") == baselinePhase,
+		repairOffOk == true and not HUDPreviewDemo.isActive() and stateFolder:GetAttribute("phase") == baselinePhase,
 		tostring(repairOffErr)
 	)
 
@@ -245,9 +241,7 @@ local function runCommandSurface()
 		local testOk, testErr = JobRunner.submit("/test phase11_unit")
 		T.expect(
 			"phase22_test_command_routes_to_dispatcher",
-			testOk == true
-				and getCapturedSuite() == "phase11_unit"
-				and stateFolder:GetAttribute("phase") == "RunTest",
+			testOk == true and getCapturedSuite() == "phase11_unit" and stateFolder:GetAttribute("phase") == "RunTest",
 			tostring(testErr)
 		)
 	end)

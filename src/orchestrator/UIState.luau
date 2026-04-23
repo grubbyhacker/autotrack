@@ -397,7 +397,9 @@ end
 -- Phase 11: publish a ChallengeScore. Called from JobRunner on successful
 -- commit so HUD observers can show the per-sector score.
 function UIState.publishScore(sectorId: number, score)
-	if score == nil then return end
+	if score == nil then
+		return
+	end
 	setAttributes({
 		last_score_sector = sectorId,
 		last_score_total = score.total,
@@ -411,7 +413,13 @@ function UIState.publishScore(sectorId: number, score)
 	})
 end
 
-function UIState.publishTrackScore(total: number, sectorCount: number, budgetUsed: number, budgetHeadroom: number, overBudget: boolean)
+function UIState.publishTrackScore(
+	total: number,
+	sectorCount: number,
+	budgetUsed: number,
+	budgetHeadroom: number,
+	overBudget: boolean
+)
 	setAttributes({
 		track_score_total = total or 0,
 		track_score_count = sectorCount or 0,

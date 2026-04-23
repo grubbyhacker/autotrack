@@ -32,9 +32,21 @@ end
 
 local function makeMemory()
 	local memory = EnduranceMemory.new()
-	EnduranceMemory.append(memory, "shared", makeStoredNote("orchestrator", "shared", "Prefer stable exits when budget headroom drops.", "shared-1"))
-	EnduranceMemory.append(memory, "proposal", makeStoredNote("proposal", "proposal", "Shorter landings have been unstable in sector 7.", "proposal-1"))
-	EnduranceMemory.append(memory, "repair", makeStoredNote("repair", "repair", "Boost before lengthening a stalled ramp.", "repair-1"))
+	EnduranceMemory.append(
+		memory,
+		"shared",
+		makeStoredNote("orchestrator", "shared", "Prefer stable exits when budget headroom drops.", "shared-1")
+	)
+	EnduranceMemory.append(
+		memory,
+		"proposal",
+		makeStoredNote("proposal", "proposal", "Shorter landings have been unstable in sector 7.", "proposal-1")
+	)
+	EnduranceMemory.append(
+		memory,
+		"repair",
+		makeStoredNote("repair", "repair", "Boost before lengthening a stalled ramp.", "repair-1")
+	)
 	return memory
 end
 
@@ -85,12 +97,7 @@ local function makeContext(memory)
 end
 
 local function makeRequest(memory)
-	return JobRunner._buildEnduranceRequest(
-		makeDesignIntent(),
-		"internal memory artifact",
-		"phase20-req",
-		memory
-	)
+	return JobRunner._buildEnduranceRequest(makeDesignIntent(), "internal memory artifact", "phase20-req", memory)
 end
 
 local function makeState()
@@ -168,7 +175,13 @@ function TestPhase20.run()
 	T.expect(
 		"phase20_orchestrator_prompt_includes_shared_and_local_memory",
 		string.find(orchestrationMessages[2].content, "Relevant memory:", 1, true) ~= nil
-			and string.find(orchestrationMessages[2].content, "Prefer stable exits when budget headroom drops.", 1, true) ~= nil,
+			and string.find(
+					orchestrationMessages[2].content,
+					"Prefer stable exits when budget headroom drops.",
+					1,
+					true
+				)
+				~= nil,
 		orchestrationMessages[2].content
 	)
 
@@ -176,7 +189,8 @@ function TestPhase20.run()
 	T.expect(
 		"phase20_propose_prompt_includes_shared_and_proposal_memory",
 		string.find(proposeMessages[2].content, "Relevant memory:", 1, true) ~= nil
-			and string.find(proposeMessages[2].content, "Shorter landings have been unstable in sector 7.", 1, true) ~= nil,
+			and string.find(proposeMessages[2].content, "Shorter landings have been unstable in sector 7.", 1, true)
+				~= nil,
 		proposeMessages[2].content
 	)
 
@@ -297,11 +311,7 @@ function TestPhase20.run()
 		end,
 	})
 	local _, _, badScopeErr = LLMAdapter.propose(request, request.design_intent)
-	T.expect(
-		"phase20_normalizes_invalid_memory_scope_for_role",
-		badScopeErr == nil,
-		tostring(badScopeErr)
-	)
+	T.expect("phase20_normalizes_invalid_memory_scope_for_role", badScopeErr == nil, tostring(badScopeErr))
 
 	LLMAdapter.setProvider("phase20-long-note", {
 		propose = function()
@@ -361,35 +371,37 @@ function TestPhase20.run()
 
 	local sourceMemory = makeMemory()
 	local clonedRequest = JobRunner._buildEnduranceRequest(makeDesignIntent(), "memory", "phase20-clone", sourceMemory)
-	EnduranceMemory.append(sourceMemory, "proposal", makeStoredNote("proposal", "proposal", "new source note", "proposal-2"))
+	EnduranceMemory.append(
+		sourceMemory,
+		"proposal",
+		makeStoredNote("proposal", "proposal", "new source note", "proposal-2")
+	)
 	T.expect(
 		"phase20_endurance_request_carries_memory_context",
 		clonedRequest.memory_context ~= nil
-			and (clonedRequest.memory_context.proposal[1] and clonedRequest.memory_context.proposal[1].note) == "Shorter landings have been unstable in sector 7.",
+			and (clonedRequest.memory_context.proposal[1] and clonedRequest.memory_context.proposal[1].note)
+				== "Shorter landings have been unstable in sector 7.",
 		HttpService:JSONEncode(clonedRequest.memory_context or {})
 	)
 
-	local packetFromEvaluator = LapEvaluator.buildFailurePacket(
-		request,
-		makeState(),
-		1,
-		nil,
-		makeResult(false),
-		7,
-		{ "boost first" },
-		nil
-	)
+	local packetFromEvaluator =
+		LapEvaluator.buildFailurePacket(request, makeState(), 1, nil, makeResult(false), 7, { "boost first" }, nil)
 	T.expect(
 		"phase20_failure_packet_carries_memory_context",
 		packetFromEvaluator.memory_context ~= nil
 			and packetFromEvaluator.memory_context.shared[1] ~= nil
-			and packetFromEvaluator.memory_context.shared[1].note == "Prefer stable exits when budget headroom drops.",
+			and packetFromEvaluator.memory_context.shared[1].note
+				== "Prefer stable exits when budget headroom drops.",
 		HttpService:JSONEncode(packetFromEvaluator.memory_context or {})
 	)
 
 	local notebook = EnduranceMemory.new()
 	for index = 1, 7 do
-		EnduranceMemory.append(notebook, "proposal", makeStoredNote("proposal", "proposal", "proposal note " .. index, "p" .. index))
+		EnduranceMemory.append(
+			notebook,
+			"proposal",
+			makeStoredNote("proposal", "proposal", "proposal note " .. index, "p" .. index)
+		)
 	end
 	T.expect(
 		"phase20_role_local_memory_appends_newest_first",
@@ -403,7 +415,8 @@ function TestPhase20.run()
 	)
 
 	local sharedNotebook = EnduranceMemory.new()
-	local sharedEntry = makeStoredNote("orchestrator", "shared", "Keep sector 7 recoverable under budget pressure.", "shared-a")
+	local sharedEntry =
+		makeStoredNote("orchestrator", "shared", "Keep sector 7 recoverable under budget pressure.", "shared-a")
 	local firstShared = EnduranceMemory.appendSharedIfFresh(sharedNotebook, sharedEntry)
 	local secondShared = EnduranceMemory.appendSharedIfFresh(sharedNotebook, sharedEntry)
 	T.expect(
@@ -419,7 +432,12 @@ function TestPhase20.run()
 			request = makeRequest(makeMemory()),
 			working_state = makeState(),
 			final_status = "committed",
-			proposal_memory_note = makeStoredNote("proposal", "proposal", "Landing length helped recovery.", "job-proposal"),
+			proposal_memory_note = makeStoredNote(
+				"proposal",
+				"proposal",
+				"Landing length helped recovery.",
+				"job-proposal"
+			),
 			attempts = {
 				{
 					attempt_index = 0,
@@ -427,7 +445,12 @@ function TestPhase20.run()
 					proposed_state = makeState(),
 					result = makeResult(true),
 					hints = {},
-					memory_note = makeStoredNote("repair", "repair", "Boost10 preserved momentum without overspeeding the exit.", "job-repair"),
+					memory_note = makeStoredNote(
+						"repair",
+						"repair",
+						"Boost10 preserved momentum without overspeeding the exit.",
+						"job-repair"
+					),
 				},
 			},
 		},
@@ -453,7 +476,14 @@ function TestPhase20.run()
 			orchestrate = function(context)
 				table.insert(orchestratorContexts, context)
 				if #orchestratorContexts == 1 then
-					return makeDesignIntent(), makeStoredNote("orchestrator", "orchestrator", "Sector 7 can still take a readable jump.", "orch-note"), nil
+					return makeDesignIntent(),
+						makeStoredNote(
+							"orchestrator",
+							"orchestrator",
+							"Sector 7 can still take a readable jump.",
+							"orch-note"
+						),
+						nil
 				end
 				return { action = "begin_loop", rationale = "track balanced enough" }, nil, nil
 			end,
@@ -527,7 +557,7 @@ function TestPhase20.run()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function(context)
+			orchestrate = function(_context)
 				if #fallbackLogs == 0 then
 					return nil, nil, "invalid orchestrate response: sector_id must be an editable sector"
 				end
@@ -689,8 +719,8 @@ function TestPhase20.run()
 			})
 		end,
 		orchestrate = function()
-			local decision = makeDesignIntent()
-			decision.memory_note = {
+			local traceDecision = makeDesignIntent()
+			traceDecision.memory_note = {
 				author = "orchestrator",
 				scope = "orchestrator",
 				note = "Trace orchestration note",
@@ -698,7 +728,7 @@ function TestPhase20.run()
 				source_type = "explicit_policy",
 				source_ref = "trace-orchestrate",
 			}
-			return HttpService:JSONEncode(decision)
+			return HttpService:JSONEncode(traceDecision)
 		end,
 	})
 	local _, _, traceOrchestrateErr = LLMAdapter.orchestrate(makeContext(memory))
@@ -717,10 +747,12 @@ function TestPhase20.run()
 		if event.direction == "prompt" and event.payload and event.payload.memory_context then
 			sawPromptMemory = true
 		end
-		if event.direction == "response"
+		if
+			event.direction == "response"
 			and event.payload
 			and event.payload.decoded_response
-			and event.payload.decoded_response.memory_note then
+			and event.payload.decoded_response.memory_note
+		then
 			sawResponseMemory = true
 		end
 	end
@@ -733,7 +765,8 @@ function TestPhase20.run()
 	UIState.init(-1)
 	local stateFolder = UIState.getStateFolder()
 	local proposalWarning = JobRunner._invalidAgentResponseWarning("invalid proposal: sector_id mismatch")
-	local repairWarning = JobRunner._invalidAgentResponseWarning("invalid repair: explanation must be short non-empty text")
+	local repairWarning =
+		JobRunner._invalidAgentResponseWarning("invalid repair: explanation must be short non-empty text")
 	T.expect(
 		"phase20_formats_invalid_agent_response_warnings",
 		proposalWarning == "Proposal response invalid: sector_id mismatch"
@@ -744,15 +777,12 @@ function TestPhase20.run()
 		})
 	)
 
-	UIState.rejectRequest(
-		"bad request",
-		"invalid proposal: sector_id mismatch",
-		proposalWarning
-	)
+	UIState.rejectRequest("bad request", "invalid proposal: sector_id mismatch", proposalWarning)
 	T.expect(
 		"phase20_reject_request_surfaces_agent_warning",
 		(stateFolder:GetAttribute("error_text") or "") == "invalid proposal: sector_id mismatch"
-			and (stateFolder:GetAttribute("llm_warning_text") or "") == "Proposal response invalid: sector_id mismatch",
+			and (stateFolder:GetAttribute("llm_warning_text") or "")
+				== "Proposal response invalid: sector_id mismatch",
 		HttpService:JSONEncode({
 			error = stateFolder:GetAttribute("error_text"),
 			warning = stateFolder:GetAttribute("llm_warning_text"),

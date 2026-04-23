@@ -53,23 +53,28 @@ function TestPhase4_5.runGeometry()
 	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
 
 	-- sectorKinds labels
-	local cornersLabeled = sectorKinds[1] == "Corner" and sectorKinds[5] == "Corner"
-		and sectorKinds[6] == "Corner" and sectorKinds[10] == "Corner"
-	T.expect("sectorKinds_corners_labeled", cornersLabeled,
-		"expected corner sectors 1,5,6,10 labeled Corner")
+	local cornersLabeled = sectorKinds[1] == "Corner"
+		and sectorKinds[5] == "Corner"
+		and sectorKinds[6] == "Corner"
+		and sectorKinds[10] == "Corner"
+	T.expect("sectorKinds_corners_labeled", cornersLabeled, "expected corner sectors 1,5,6,10 labeled Corner")
 
-	local straightsLabeled = sectorKinds[2] == "Straight" and sectorKinds[3] == "Straight"
-		and sectorKinds[4] == "Straight" and sectorKinds[7] == "Straight"
-		and sectorKinds[8] == "Straight" and sectorKinds[9] == "Straight"
-	T.expect("sectorKinds_straights_labeled", straightsLabeled,
-		"expected straight sectors 2-4,7-9 labeled Straight")
+	local straightsLabeled = sectorKinds[2] == "Straight"
+		and sectorKinds[3] == "Straight"
+		and sectorKinds[4] == "Straight"
+		and sectorKinds[7] == "Straight"
+		and sectorKinds[8] == "Straight"
+		and sectorKinds[9] == "Straight"
+	T.expect("sectorKinds_straights_labeled", straightsLabeled, "expected straight sectors 2-4,7-9 labeled Straight")
 
 	-- Build per-sector waypoint lists, excluding the lap-closing waypoint (always last).
 	-- The closing waypoint duplicates sector 1's entry and must not inflate the arc count.
 	local sectorWpts: { [number]: { CFrame } } = {}
 	for i = 1, #waypoints - 1 do
 		local sid = waypointSectors[i]
-		if not sectorWpts[sid] then sectorWpts[sid] = {} end
+		if not sectorWpts[sid] then
+			sectorWpts[sid] = {}
+		end
 		table.insert(sectorWpts[sid], waypoints[i])
 	end
 
@@ -141,27 +146,36 @@ function TestPhase4_5.runGeometry()
 			local second = wpts[2]
 			local last = wpts[count]
 			local penultimate = wpts[count - 1]
-			local firstDelta = Vector3.new(first.Position.X - sector.entry.Position.X, 0, first.Position.Z - sector.entry.Position.Z)
-			local lastDelta = Vector3.new(last.Position.X - sector.exit.Position.X, 0, last.Position.Z - sector.exit.Position.Z)
-			if firstDelta.Magnitude > 0.05
-				or lastDelta.Magnitude > 0.05 then
-				table.insert(endpointErrors, string.format(
-					"corner%d endpoints off: start=%.3f end=%.3f",
-					cid,
-					firstDelta.Magnitude,
-					lastDelta.Magnitude
-				))
+			local firstDelta =
+				Vector3.new(first.Position.X - sector.entry.Position.X, 0, first.Position.Z - sector.entry.Position.Z)
+			local lastDelta =
+				Vector3.new(last.Position.X - sector.exit.Position.X, 0, last.Position.Z - sector.exit.Position.Z)
+			if firstDelta.Magnitude > 0.05 or lastDelta.Magnitude > 0.05 then
+				table.insert(
+					endpointErrors,
+					string.format(
+						"corner%d endpoints off: start=%.3f end=%.3f",
+						cid,
+						firstDelta.Magnitude,
+						lastDelta.Magnitude
+					)
+				)
 			end
 			local entryDir = (second.Position - first.Position).Unit
 			local exitDir = (last.Position - penultimate.Position).Unit
-			if entryDir:Dot(sector.entry.LookVector) < ENTRY_ALIGNMENT_TOLERANCE
-				or exitDir:Dot(sector.exit.LookVector) < EXIT_ALIGNMENT_TOLERANCE then
-				table.insert(alignmentErrors, string.format(
-					"corner%d alignment bad: entry=%.3f exit=%.3f",
-					cid,
-					entryDir:Dot(sector.entry.LookVector),
-					exitDir:Dot(sector.exit.LookVector)
-				))
+			if
+				entryDir:Dot(sector.entry.LookVector) < ENTRY_ALIGNMENT_TOLERANCE
+				or exitDir:Dot(sector.exit.LookVector) < EXIT_ALIGNMENT_TOLERANCE
+			then
+				table.insert(
+					alignmentErrors,
+					string.format(
+						"corner%d alignment bad: entry=%.3f exit=%.3f",
+						cid,
+						entryDir:Dot(sector.entry.LookVector),
+						exitDir:Dot(sector.exit.LookVector)
+					)
+				)
 			end
 		end
 	end
@@ -203,7 +217,9 @@ end
 -- ── Lap test ──────────────────────────────────────────────────────────────────
 
 function TestPhase4_5.runLap()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local sectors = TrackGenerator.generate()
 	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
@@ -221,7 +237,9 @@ end
 -- ── Speed test ────────────────────────────────────────────────────────────────
 
 function TestPhase4_5.runSpeed()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local sectors = TrackGenerator.generate()
 	local waypoints, waypointSectors, sectorKinds = TrackGenerator.getLapPath(sectors)
@@ -263,10 +281,16 @@ function TestPhase4_5.runSpeed()
 	local sector5ExitSpeed = sectorExitSpeeds[5] or 0
 	local sector6EntrySpeed = sectorEntrySpeeds[6] or 0
 
-	T.expect("corner_exit_speed_recorded", cornerSpeed > 0,
-		string.format("no exit speed recorded for corner sector %d", CORNER_SECTOR_IDS[1]))
-	T.expect("straight_exit_speed_recorded", straightSpeed > 0,
-		string.format("no exit speed recorded for straight sector %d", A_STRAIGHT_ID))
+	T.expect(
+		"corner_exit_speed_recorded",
+		cornerSpeed > 0,
+		string.format("no exit speed recorded for corner sector %d", CORNER_SECTOR_IDS[1])
+	)
+	T.expect(
+		"straight_exit_speed_recorded",
+		straightSpeed > 0,
+		string.format("no exit speed recorded for straight sector %d", A_STRAIGHT_ID)
+	)
 	T.expect(
 		"corner_speed_lower_than_straight",
 		cornerSpeed < straightSpeed,
@@ -312,26 +336,30 @@ function TestPhase4_5.runSpeed()
 	local perCornerOk = true
 	local perCornerMessages = {}
 	for _, sectorId in ipairs(CORNER_SECTOR_IDS) do
-		local peak = result.metrics.sector_peak_centerline_distance and result.metrics.sector_peak_centerline_distance[sectorId] or math.huge
-		local bodyPeak = result.metrics.sector_peak_body_distance and result.metrics.sector_peak_body_distance[sectorId] or math.huge
+		local peak = result.metrics.sector_peak_centerline_distance
+				and result.metrics.sector_peak_centerline_distance[sectorId]
+			or math.huge
+		local bodyPeak = result.metrics.sector_peak_body_distance and result.metrics.sector_peak_body_distance[sectorId]
+			or math.huge
 		if peak > MAX_CORNER_CONTAINMENT or bodyPeak > MAX_CORNER_BODY_CONTAINMENT then
 			perCornerOk = false
-			table.insert(perCornerMessages, string.format(
-				"sector %d center %.2f front %.2f body %.2f signed %.2f progress %.2f",
-				sectorId,
-				peak,
-				(result.metrics.sector_peak_front_distance and result.metrics.sector_peak_front_distance[sectorId]) or 0,
-				bodyPeak,
-				(result.metrics.sector_peak_signed_lateral and result.metrics.sector_peak_signed_lateral[sectorId]) or 0,
-				(result.metrics.sector_peak_progress and result.metrics.sector_peak_progress[sectorId]) or 0
-			))
+			table.insert(
+				perCornerMessages,
+				string.format(
+					"sector %d center %.2f front %.2f body %.2f signed %.2f progress %.2f",
+					sectorId,
+					peak,
+					(result.metrics.sector_peak_front_distance and result.metrics.sector_peak_front_distance[sectorId])
+						or 0,
+					bodyPeak,
+					(result.metrics.sector_peak_signed_lateral and result.metrics.sector_peak_signed_lateral[sectorId])
+						or 0,
+					(result.metrics.sector_peak_progress and result.metrics.sector_peak_progress[sectorId]) or 0
+				)
+			)
 		end
 	end
-	T.expect(
-		"baseline_each_corner_stays_contained",
-		perCornerOk,
-		table.concat(perCornerMessages, " | ")
-	)
+	T.expect("baseline_each_corner_stays_contained", perCornerOk, table.concat(perCornerMessages, " | "))
 end
 
 -- ── Master entry point ────────────────────────────────────────────────────────

@@ -13,17 +13,18 @@ type SectorState = Types.SectorState
 
 local ChicaneIntegrity = {}
 
-function ChicaneIntegrity.preflight(
-	state: SectorState
-): (boolean, { string })
+function ChicaneIntegrity.preflight(state: SectorState): (boolean, { string })
 	local hints: { string } = {}
 	local p = state.params
 
 	-- Geometry-based checks (evaluable without runtime path telemetry)
-	if (p.amplitude or 0) < RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneMinLateralDisplacement",
-		Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
-	) then
+	if
+		(p.amplitude or 0)
+		< RuntimeTuning.numberAttr(
+			"AutoTrack_ChicaneMinLateralDisplacement",
+			Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
+		)
+	then
 		table.insert(hints, "amplitude below minimum lateral displacement")
 	end
 	if (p.amplitude or 0) > Constants.TRACK_WIDTH * 0.5 then
@@ -33,10 +34,10 @@ function ChicaneIntegrity.preflight(
 	local transitionLength = p.transition_length or 0
 	if transitionLength <= 0 then
 		table.insert(hints, "transition_length must be positive")
-	elseif (p.amplitude or 0) / transitionLength < RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneMinCurvature",
-		Constants.CHICANE_MIN_CURVATURE
-	) then
+	elseif
+		(p.amplitude or 0) / transitionLength
+		< RuntimeTuning.numberAttr("AutoTrack_ChicaneMinCurvature", Constants.CHICANE_MIN_CURVATURE)
+	then
 		table.insert(hints, "effective curvature below minimum")
 	end
 
@@ -48,37 +49,29 @@ function ChicaneIntegrity.preflight(
 	return #hints == 0, hints
 end
 
-function ChicaneIntegrity.evaluateRuntime(
-	metrics: RunMetrics
-): (boolean, { string })
+function ChicaneIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local leftOffset = metrics.target_left_offset or 0
 	local rightOffset = metrics.target_right_offset or 0
 	local bandChanges = metrics.target_lateral_band_changes or 0
 	local peakBodyDistance = metrics.target_peak_body_distance or 0
-	local minRuntimeExcursion = (RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneMinLateralDisplacement",
-		Constants.CHICANE_MIN_LATERAL_DISPLACEMENT
-	) * 0.5) + RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneComfortLateralMargin",
-		Constants.CHICANE_COMFORT_LATERAL_MARGIN
+	local minRuntimeExcursion = (
+		RuntimeTuning.numberAttr("AutoTrack_ChicaneMinLateralDisplacement", Constants.CHICANE_MIN_LATERAL_DISPLACEMENT)
+		* 0.5
 	)
+		+ RuntimeTuning.numberAttr("AutoTrack_ChicaneComfortLateralMargin", Constants.CHICANE_COMFORT_LATERAL_MARGIN)
 	local maxBodyDistance = RuntimeTuning.numberAttr(
 		"AutoTrack_FrontBodyContainmentDistance",
 		Constants.FRONT_BODY_CONTAINMENT_DISTANCE
-	) - RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneComfortBodyMargin",
-		Constants.CHICANE_COMFORT_BODY_MARGIN
-	)
+	) - RuntimeTuning.numberAttr("AutoTrack_ChicaneComfortBodyMargin", Constants.CHICANE_COMFORT_BODY_MARGIN)
 
 	if leftOffset < minRuntimeExcursion or rightOffset < minRuntimeExcursion then
 		table.insert(hints, "runtime lateral excursion too small")
 	end
 
-	if bandChanges < RuntimeTuning.numberAttr(
-		"AutoTrack_ChicaneMinAlternations",
-		Constants.CHICANE_MIN_ALTERNATIONS
-	) then
+	if
+		bandChanges < RuntimeTuning.numberAttr("AutoTrack_ChicaneMinAlternations", Constants.CHICANE_MIN_ALTERNATIONS)
+	then
 		table.insert(hints, "runtime lateral alternation too small")
 	end
 	if peakBodyDistance > maxBodyDistance then
@@ -88,10 +81,7 @@ function ChicaneIntegrity.evaluateRuntime(
 	return #hints == 0, hints
 end
 
-function ChicaneIntegrity.evaluate(
-	state: SectorState,
-	metrics: RunMetrics
-): (boolean, { string })
+function ChicaneIntegrity.evaluate(state: SectorState, metrics: RunMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local preflightOk, preflightHints = ChicaneIntegrity.preflight(state)
 	local runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime(metrics)

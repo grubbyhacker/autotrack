@@ -49,10 +49,11 @@ local function withIntent(decision)
 	decision.novelty_priority = decision.novelty_priority or "medium"
 	decision.replacement_intent = decision.replacement_intent or "open_slot_preferred"
 	decision.desired_feel = decision.desired_feel or "memorable but recoverable"
-	decision.constraints = decision.constraints or {
-		"preserve downstream stability",
-		"stay within endurance budget",
-	}
+	decision.constraints = decision.constraints
+		or {
+			"preserve downstream stability",
+			"stay within endurance budget",
+		}
 	return decision
 end
 
@@ -122,7 +123,8 @@ function TestPhase14_5.runUnit()
 	local alternateScore = select(1, EnduranceObjective.evaluateCandidate(objectiveContext, alternateDecision))
 	T.expect(
 		"phase14_5_objective_skips_repeated_failed_signature",
-		EnduranceObjective.shouldAvoidRepeat(objectiveContext, repeatedDecision) == true and alternateScore.total > repeatedScore.total,
+		EnduranceObjective.shouldAvoidRepeat(objectiveContext, repeatedDecision) == true
+			and alternateScore.total > repeatedScore.total,
 		HttpService:JSONEncode({
 			repeated = repeatedScore,
 			alternate = alternateScore,
@@ -252,8 +254,7 @@ function TestPhase14_5.runUnit()
 	)
 	T.expect(
 		"phase14_5_begin_loop_telemetry_uses_player_facing_copy",
-		#telemetryPayloads >= 1
-			and telemetryPayloads[#telemetryPayloads].last_decision == "TRACK READY",
+		#telemetryPayloads >= 1 and telemetryPayloads[#telemetryPayloads].last_decision == "TRACK READY",
 		HttpService:JSONEncode(telemetryPayloads[#telemetryPayloads] or {})
 	)
 end

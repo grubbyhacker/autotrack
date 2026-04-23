@@ -161,7 +161,9 @@ local function buildRun(meta): LLMTraceRun
 		owner = if type(owner) == "string" then owner else nil,
 		mode = if type(mode) == "string" then mode else nil,
 		job_id = if type(safeMeta) == "table" and type(safeMeta.job_id) == "string" then safeMeta.job_id else nil,
-		request_id = if type(safeMeta) == "table" and type(safeMeta.request_id) == "string" then safeMeta.request_id else nil,
+		request_id = if type(safeMeta) == "table" and type(safeMeta.request_id) == "string"
+			then safeMeta.request_id
+			else nil,
 		meta = if type(safeMeta) == "table" then safeMeta else nil,
 		summary = nil,
 		events = {},
@@ -177,7 +179,9 @@ end
 
 local function ensureActiveRun(eventLike): LLMTraceRun
 	if _activeRun == nil then
-		local inferredRole = if type(eventLike) == "table" and type(eventLike.role) == "string" then eventLike.role else "proposal"
+		local inferredRole = if type(eventLike) == "table" and type(eventLike.role) == "string"
+			then eventLike.role
+			else "proposal"
 		_activeRun = buildRun({
 			owner = "implicit",
 			mode = "implicit",

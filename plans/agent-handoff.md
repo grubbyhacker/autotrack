@@ -37,6 +37,8 @@
 | 27 | Complete — RampJump return: mode-aware tuning/repair policy, profile-mode pathing, upright hard-landing telemetry + integrity, and repaired-score retention gate |
 | 28 | Complete — scoped Luau hygiene baseline (`fmt`/`fmt-check`/`typecheck`/`lint`/`hygiene`), pinned tools/config, and docs contract |
 | 29 | Complete — hygiene ratchet to full `src/common` format/lint coverage with conservative `Types.luau` typecheck exclusion |
+| 30 | Complete — repo-wide Luau format/lint coverage, `typecheck-report`, and Phase 30 suite wiring with policy-aligned Phase 21 experiment assertions |
+| 31 | Planned — Roblox-aware Luau typecheck foundation (`plans/phase31.md`) |
 
 ## Current state
 
@@ -46,7 +48,8 @@
 - Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
 - Phase 26 Session HUD now reads commit-authoritative lap attrs (`committed_lap_time`/`committed_slowdown_ratio`) for `Last/%`, while per-sector committed scores move to Overview-only label annotations (`sector_<id>_committed_score`).
 - Phase 27 now shifts RampJump back toward high-risk/high-reward with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance backed by touchdown telemetry.
-- Phase 28/29 establish deterministic static hygiene via `make fmt`, `make fmt-check`, `make typecheck`, `make lint`, and `make hygiene`, with pinned `rokit` tools (`stylua`, `selene`, `luau-lsp`) and current scope at `src/common/*.luau` (`Types.luau` excluded from typecheck only).
+- Phase 30 expands `make fmt`, `make fmt-check`, and `make lint` repo-wide across tracked `.luau` source under `src/` and `studio/`, keeps `make typecheck` on a documented green subset, and adds `make typecheck-report` as the non-gating full-repo analyzer backlog report.
+- Phase 31 is now planned in `plans/phase31.md`. The main typecheck blockers are analyzer-environment issues, not hygiene noise: current `luau-lsp analyze` only knows the hand-declared globals in `tools/luau/globals.d.luau`, so Roblox engine globals/types (`Vector3`, `CFrame`, `Enum`, `DateTime`, `Camera`, `BasePart`, etc.) and Rojo/DataModel require resolution are still missing from the full-repo analyzer path.
 
 ## Hard-won invariants
 
@@ -78,6 +81,8 @@
 - `phase14_partial_repair_state_merged` should assert partial-state merge + bounded guardrail normalization (preserved unspecified levers and bounded landing adjustment), not pre-Phase-27 "flatten jump aggressively" expectations.
 - RampJump on-ramp/landing instability should be corrected in the verifier first (grounded surface stabilization) before widening failure tolerances globally; otherwise weaker models overfit around physics noise and churn repair attempts.
 - Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
+- `phase21_experiment_harness_distinguishes_better_candidate` should assert the comparison contract (winner labels and differing heuristic/challenge aggregates), not a hard-coded winner. Live experiment telemetry can legitimately change which candidate wins.
+- Full-repo `typecheck-report` failures currently cluster into three buckets: missing Roblox globals/types, unresolved `Types.*` exported aliases downstream of `src/common/Types.luau`, and only then genuine module-level code/type issues. Fix the analyzer environment and Rojo/sourcemap resolution first or the remaining report is mostly noise.
 
 ## Maintained verification snapshot
 
@@ -95,8 +100,10 @@
 - `make test TEST=phase27`
 - `make fmt-check`
 - `make typecheck`
+- `make typecheck-report`
 - `make lint`
 - `make hygiene`
+- `make phase30`
 - `make test TEST=llm_trace_export`
 - `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma-after-challenge-gate.json`
 - `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=120 OUT=traces/endurance-gemma-after-challenge-gate-120.json`

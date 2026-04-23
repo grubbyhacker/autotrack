@@ -25,7 +25,13 @@ local CHICANE_CAPTURE_SECTOR_ID = 3
 local CHICANE_CAPTURE_SETTLE_SECONDS = 2
 local CHICANE_CAPTURE_FIELD_OF_VIEW = 50
 
-local function makeState(sectorId: number, mechanic: Types.Mechanic?, params: Types.SectorParams, ingress: Types.PadValue, egress: Types.PadValue): SectorState
+local function makeState(
+	sectorId: number,
+	mechanic: Types.Mechanic?,
+	params: Types.SectorParams,
+	ingress: Types.PadValue,
+	egress: Types.PadValue
+): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -55,7 +61,9 @@ end
 
 local function getPart(folder: Folder, name: string): BasePart?
 	local child = folder:FindFirstChild(name, true)
-	if child and child:IsA("BasePart") then return child end
+	if child and child:IsA("BasePart") then
+		return child
+	end
 	return nil
 end
 
@@ -129,7 +137,9 @@ local function ensureBaselineOrAbort(): boolean
 end
 
 function TestPhase4.runPads()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local folder = getSectorFolder(TARGET_SECTOR_ID)
 
@@ -137,39 +147,51 @@ function TestPhase4.runPads()
 	applyState(makeState(TARGET_SECTOR_ID, nil, {}, "Boost10", "Brake10"))
 	local ingressPad = getPart(folder, "IngressPad")
 	local egressPad = getPart(folder, "EgressPad")
-	T.expect("pads_boost_and_brake_create_parts",
-		ingressPad ~= nil and egressPad ~= nil
+	T.expect(
+		"pads_boost_and_brake_create_parts",
+		ingressPad ~= nil
+			and egressPad ~= nil
 			and ingressPad:GetAttribute("PadType") == "Boost10"
 			and egressPad:GetAttribute("PadType") == "Brake10",
-		"expected Boost10/Brake10 pad parts")
+		"expected Boost10/Brake10 pad parts"
+	)
 
 	-- Pad-only lap succeeds
 	local padLap = runLapOnCurrentTrack()
-	T.expect("pads_apply_does_not_break_traversal",
+	T.expect(
+		"pads_apply_does_not_break_traversal",
 		padLap.success == true,
-		"pad-only lap failed: " .. tostring(padLap.failure and padLap.failure.type))
+		"pad-only lap failed: " .. tostring(padLap.failure and padLap.failure.type)
+	)
 
 	-- None removes parts
 	applyState(makeState(TARGET_SECTOR_ID, nil, {}, "None", "None"))
-	T.expect("pads_none_creates_no_parts",
+	T.expect(
+		"pads_none_creates_no_parts",
 		getPart(folder, "IngressPad") == nil and getPart(folder, "EgressPad") == nil,
-		"pad parts remained after None/None")
+		"pad parts remained after None/None"
+	)
 
 	-- Boost50 / Brake50 are valid and create parts
 	applyState(makeState(TARGET_SECTOR_ID, nil, {}, "Boost50", "Brake50"))
 	local ingress50 = getPart(folder, "IngressPad")
 	local egress50 = getPart(folder, "EgressPad")
-	T.expect("pads_boost50_brake50_create_parts",
-		ingress50 ~= nil and egress50 ~= nil
+	T.expect(
+		"pads_boost50_brake50_create_parts",
+		ingress50 ~= nil
+			and egress50 ~= nil
 			and ingress50:GetAttribute("PadType") == "Boost50"
 			and egress50:GetAttribute("PadType") == "Brake50",
-		"expected Boost50/Brake50 pad parts")
+		"expected Boost50/Brake50 pad parts"
+	)
 
 	resetToFlat()
 end
 
 function TestPhase4.runRampJump()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local rampState = makeState(TARGET_SECTOR_ID, "RampJump", {
 		ramp_angle = 4,
@@ -180,18 +202,17 @@ function TestPhase4.runRampJump()
 	applyState(rampState)
 
 	local rampLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = rampState })
-	T.expect("rampjump_lap_progresses",
+	T.expect(
+		"rampjump_lap_progresses",
 		rampLap.success == true
-			or (
-				rampLap.metrics.target_entered == true
-				and (rampLap.metrics.target_progress or 0) >= 0.35
-			),
+			or (rampLap.metrics.target_entered == true and (rampLap.metrics.target_progress or 0) >= 0.35),
 		string.format(
 			"rampjump lap failed: %s / %s progress=%.2f",
 			tostring(rampLap.failure and rampLap.failure.type),
 			tostring(rampLap.failure and rampLap.failure.detail),
 			rampLap.metrics.target_progress or 0
-		))
+		)
+	)
 
 	local extremeRampState = makeState(TARGET_SECTOR_ID, "RampJump", {
 		ramp_angle = 60,
@@ -202,15 +223,15 @@ function TestPhase4.runRampJump()
 	applyState(extremeRampState)
 
 	local extremeRampLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = extremeRampState })
-	T.expect("rampjump_extreme_lap_fails",
-		extremeRampLap.success == false,
-		"extreme rampjump unexpectedly succeeded")
+	T.expect("rampjump_extreme_lap_fails", extremeRampLap.success == false, "extreme rampjump unexpectedly succeeded")
 
 	resetToFlat()
 end
 
 function TestPhase4.runCrestDip()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local crestState = makeState(TARGET_SECTOR_ID, "CrestDip", {
 		height_or_depth = 4,
@@ -220,9 +241,11 @@ function TestPhase4.runCrestDip()
 	applyState(crestState)
 
 	local crestLap = runLapOnCurrentTrack({ [TARGET_SECTOR_ID] = crestState })
-	T.expect("crestdip_lap_succeeds",
+	T.expect(
+		"crestdip_lap_succeeds",
 		crestLap.success == true,
-		"crestdip lap failed: " .. tostring(crestLap.failure and crestLap.failure.type))
+		"crestdip lap failed: " .. tostring(crestLap.failure and crestLap.failure.type)
+	)
 
 	local crestSector = getSectorMeta(TARGET_SECTOR_ID)
 	local crestWaypoints = TrackGenerator.getSectorPath(crestSector, crestState)
@@ -241,20 +264,24 @@ function TestPhase4.runCrestDip()
 			and math.abs(crestExitLocal.Z - Constants.STRAIGHT_LENGTH) <= 0.5
 			and math.abs(crestWaypoints[#crestWaypoints].Position.Y - rideY) <= 0.25
 			and maxCrestWaypointY > rideY + 1,
-		crestExitLocal and string.format(
-			"last=(%.2f, %.2f, %.2f) maxY=%.2f",
-			crestExitLocal.X,
-			crestExitLocal.Y,
-			crestExitLocal.Z,
-			maxCrestWaypointY
-		) or "no crest waypoints built"
+		crestExitLocal
+				and string.format(
+					"last=(%.2f, %.2f, %.2f) maxY=%.2f",
+					crestExitLocal.X,
+					crestExitLocal.Y,
+					crestExitLocal.Z,
+					maxCrestWaypointY
+				)
+			or "no crest waypoints built"
 	)
 
 	resetToFlat()
 end
 
 function TestPhase4.runChicane()
-	if not ensureBaselineOrAbort() then return end
+	if not ensureBaselineOrAbort() then
+		return
+	end
 
 	local wavePoints = ChicanePath.buildLocalCenterlinePoints(6, 18, 64)
 	local coarsePoints = ChicanePath.buildLocalCenterlinePoints(6, 18)
@@ -271,28 +298,53 @@ function TestPhase4.runChicane()
 		end
 	end
 	for _, point in ipairs(wavePoints) do
-		if positivePeak ~= nil and negativePeak ~= nil
-			and point.Z > positivePeak.Z and point.Z < negativePeak.Z
-			and math.abs(point.X) <= 0.2 then
+		if
+			positivePeak ~= nil
+			and negativePeak ~= nil
+			and point.Z > positivePeak.Z
+			and point.Z < negativePeak.Z
+			and math.abs(point.X) <= 0.2
+		then
 			zeroBetweenPeaks = true
 			break
 		end
 	end
-	T.expect("chicane_wave_starts_and_ends_centered",
+	T.expect(
+		"chicane_wave_starts_and_ends_centered",
 		math.abs(wavePoints[1].X) <= 1e-4 and math.abs(wavePoints[#wavePoints].X) <= 1e-4,
-		"expected chicane wave to start/end on centerline")
-	T.expect("chicane_wave_reaches_both_extremes",
+		"expected chicane wave to start/end on centerline"
+	)
+	T.expect(
+		"chicane_wave_reaches_both_extremes",
 		positivePeak ~= nil and negativePeak ~= nil and positivePeak.X >= 5.9 and negativePeak.X <= -5.9,
-		string.format("expected peaks near +/-6, got +%.2f / %.2f", positivePeak and positivePeak.X or 0, negativePeak and negativePeak.X or 0))
-	T.expect("chicane_wave_peak_spacing_matches_transition_length",
+		string.format(
+			"expected peaks near +/-6, got +%.2f / %.2f",
+			positivePeak and positivePeak.X or 0,
+			negativePeak and negativePeak.X or 0
+		)
+	)
+	T.expect(
+		"chicane_wave_peak_spacing_matches_transition_length",
 		positivePeak ~= nil and negativePeak ~= nil and math.abs((negativePeak.Z - positivePeak.Z) - 18) <= 0.5,
-		string.format("expected peak spacing near 18, got %.2f", (negativePeak and positivePeak) and (negativePeak.Z - positivePeak.Z) or -1))
-	T.expect("chicane_wave_crosses_zero_between_extremes",
+		string.format(
+			"expected peak spacing near 18, got %.2f",
+			(negativePeak and positivePeak) and (negativePeak.Z - positivePeak.Z) or -1
+		)
+	)
+	T.expect(
+		"chicane_wave_crosses_zero_between_extremes",
 		zeroBetweenPeaks == true,
-		"expected smooth wave to cross centerline between the two peaks")
-	T.expect("chicane_visual_overlay_is_denser_than_collision_path",
+		"expected smooth wave to cross centerline between the two peaks"
+	)
+	T.expect(
+		"chicane_visual_overlay_is_denser_than_collision_path",
 		#visualPoints > #coarsePoints * 3,
-		string.format("expected visual path substantially denser than collision path, got %d vs %d", #visualPoints, #coarsePoints))
+		string.format(
+			"expected visual path substantially denser than collision path, got %d vs %d",
+			#visualPoints,
+			#coarsePoints
+		)
+	)
 
 	local chicaneSectorId = 3
 	local _, sectors = getSectorMeta(chicaneSectorId)
@@ -329,34 +381,46 @@ function TestPhase4.runChicane()
 			and math.abs(chicaneExitLocal.Z - Constants.STRAIGHT_LENGTH) <= 0.5
 			and math.abs(chicaneExitLocal.X) <= 0.5
 			and maxAbsLateral >= 3.5,
-		chicaneExitLocal and string.format(
-			"last=(%.2f, %.2f, %.2f) maxAbsLateral=%.2f",
-			chicaneExitLocal.X,
-			chicaneExitLocal.Y,
-			chicaneExitLocal.Z,
-			maxAbsLateral
-		) or "no chicane waypoints built"
+		chicaneExitLocal
+				and string.format(
+					"last=(%.2f, %.2f, %.2f) maxAbsLateral=%.2f",
+					chicaneExitLocal.X,
+					chicaneExitLocal.Y,
+					chicaneExitLocal.Z,
+					maxAbsLateral
+				)
+			or "no chicane waypoints built"
 	)
 
 	local visualFolder = getSectorFolder(chicaneSectorId):FindFirstChild("Visual")
 	assert(visualFolder and visualFolder:IsA("Folder"), "chicane visual folder missing")
-	T.expect("chicane_visual_has_no_segmented_edge_lines",
+	T.expect(
+		"chicane_visual_has_no_segmented_edge_lines",
 		visualFolder:FindFirstChild("EdgeLine_L_01") == nil and visualFolder:FindFirstChild("EdgeLine_R_01") == nil,
-		"expected chicane visual overlay to omit segmented path edge lines")
-	T.expect("chicane_visual_has_no_underlay_ribbon",
+		"expected chicane visual overlay to omit segmented path edge lines"
+	)
+	T.expect(
+		"chicane_visual_has_no_underlay_ribbon",
 		visualFolder:FindFirstChild("RoadSurfaceUnderlay_01") == nil,
-		"expected chicane visual overlay to omit path underlay ribbon")
-	T.expect("chicane_visual_uses_single_surface_ribbon",
+		"expected chicane visual overlay to omit path underlay ribbon"
+	)
+	T.expect(
+		"chicane_visual_uses_single_surface_ribbon",
 		visualFolder:FindFirstChild("RoadSurfaceSeam") == nil and visualFolder:FindFirstChild("RoadSurfaceTop") == nil,
-		"expected chicane visual to use one mitered surface ribbon instead of stacked seam folders")
-	T.expect("chicane_visual_has_round_join_caps",
+		"expected chicane visual to use one mitered surface ribbon instead of stacked seam folders"
+	)
+	T.expect(
+		"chicane_visual_has_round_join_caps",
 		countNamedChildren(visualFolder, "RoadSurfaceJoin_") > 0,
-		"expected chicane visual to add explicit join caps at turning vertices")
+		"expected chicane visual to add explicit join caps at turning vertices"
+	)
 
 	local chicaneLap = runLapOnCurrentTrack({ [chicaneSectorId] = chicaneState })
-	T.expect("chicane_lap_succeeds",
+	T.expect(
+		"chicane_lap_succeeds",
 		chicaneLap.success == true,
-		"chicane lap failed: " .. tostring(chicaneLap.failure and chicaneLap.failure.type))
+		"chicane lap failed: " .. tostring(chicaneLap.failure and chicaneLap.failure.type)
+	)
 
 	SectorApplier.apply({
 		sector_id = chicaneSectorId,
@@ -384,10 +448,7 @@ function TestPhase4.runChicaneCapture()
 	local look = sector.entry.LookVector
 	local right = sector.entry.RightVector
 	local focus = straightCenter + Vector3.yAxis * 3
-	local position = focus
-		+ right * 54
-		+ Vector3.yAxis * 36
-		- look * 16
+	local position = focus + right * 54 + Vector3.yAxis * 36 - look * 16
 
 	UIState.setCameraOverride(position, focus, CHICANE_CAPTURE_FIELD_OF_VIEW)
 	UIState.setPhase("Capture", "Chicane capture ready")

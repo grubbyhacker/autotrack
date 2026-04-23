@@ -275,17 +275,19 @@ local function applySuspensionDamping(
 		then runtimeNumberAttr("AutoTrack_RampJumpLandingMinDownSpeed", Constants.RAMPJUMP_LANDING_MIN_DOWN_SPEED)
 		else runtimeNumberAttr("AutoTrack_LandingMinDownSpeed", Constants.CAR_LANDING_MIN_DOWN_SPEED)
 	local landingVerticalMultiplier = if isRampJumpContext
-		then runtimeNumberAttr("AutoTrack_RampJumpLandingVerticalMultiplier", Constants.RAMPJUMP_LANDING_VERTICAL_MULTIPLIER)
+		then runtimeNumberAttr(
+			"AutoTrack_RampJumpLandingVerticalMultiplier",
+			Constants.RAMPJUMP_LANDING_VERTICAL_MULTIPLIER
+		)
 		else runtimeNumberAttr("AutoTrack_LandingVerticalMultiplier", Constants.CAR_LANDING_VERTICAL_MULTIPLIER)
 	local landingAngularMultiplier = if isRampJumpContext
-		then runtimeNumberAttr("AutoTrack_RampJumpLandingAngularMultiplier", Constants.RAMPJUMP_LANDING_ANGULAR_MULTIPLIER)
+		then runtimeNumberAttr(
+			"AutoTrack_RampJumpLandingAngularMultiplier",
+			Constants.RAMPJUMP_LANDING_ANGULAR_MULTIPLIER
+		)
 		else runtimeNumberAttr("AutoTrack_LandingAngularMultiplier", Constants.CAR_LANDING_ANGULAR_MULTIPLIER)
 	if wasAirborne and not isAirborne and linearVelocity.Y <= -landingMinDownSpeed then
-		linearVelocity = Vector3.new(
-			linearVelocity.X,
-			linearVelocity.Y * landingVerticalMultiplier,
-			linearVelocity.Z
-		)
+		linearVelocity = Vector3.new(linearVelocity.X, linearVelocity.Y * landingVerticalMultiplier, linearVelocity.Z)
 		angularVelocity = Vector3.new(
 			angularVelocity.X * landingAngularMultiplier,
 			angularVelocity.Y,
@@ -302,14 +304,11 @@ local function applySuspensionDamping(
 		Constants.CAR_SUSPENSION_ANGULAR_DAMPING
 	) * controlDt
 	local yawDamping = if isAirborne
-		then (
-			if isRampJumpContext
-				then runtimeNumberAttr("AutoTrack_RampJumpAirborneYawDamping", Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING)
-				else runtimeNumberAttr("AutoTrack_AirborneYawDamping", Constants.CAR_AIRBORNE_YAW_DAMPING)
-		)
-		elseif isCorner
-			then runtimeNumberAttr("AutoTrack_CornerYawDamping", Constants.CAR_CORNER_YAW_DAMPING)
-			else runtimeNumberAttr("AutoTrack_StraightYawDamping", Constants.CAR_STRAIGHT_YAW_DAMPING)
+		then (if isRampJumpContext
+			then runtimeNumberAttr("AutoTrack_RampJumpAirborneYawDamping", Constants.RAMPJUMP_AIRBORNE_YAW_DAMPING)
+			else runtimeNumberAttr("AutoTrack_AirborneYawDamping", Constants.CAR_AIRBORNE_YAW_DAMPING))
+		elseif isCorner then runtimeNumberAttr("AutoTrack_CornerYawDamping", Constants.CAR_CORNER_YAW_DAMPING)
+		else runtimeNumberAttr("AutoTrack_StraightYawDamping", Constants.CAR_STRAIGHT_YAW_DAMPING)
 	local yawDelta = yawDamping * controlDt
 	local verticalVelocity = linearVelocity.Y
 	if not isAirborne then
@@ -360,11 +359,9 @@ local function resolveRampJumpAirborneGuidance(
 		then math.min(verticalSpeed, maxUpwardSpeed)
 		else verticalSpeed
 
-	return lockedDirection, Vector3.new(
-		lockedDirection.X * commandedSpeed,
-		cappedVerticalSpeed,
-		lockedDirection.Z * commandedSpeed
-	), lockedDirection
+	return lockedDirection,
+		Vector3.new(lockedDirection.X * commandedSpeed, cappedVerticalSpeed, lockedDirection.Z * commandedSpeed),
+		lockedDirection
 end
 
 VerifierController._resolveRampJumpAirborneGuidance = resolveRampJumpAirborneGuidance
@@ -379,22 +376,14 @@ local function resolveStraightPinnedAngularVelocity(
 		return angularVelocity
 	end
 
-	local yawDelta = runtimeNumberAttr(
-		"AutoTrack_StraightPinYawDamping",
-		Constants.STRAIGHT_PIN_YAW_DAMPING
-	) * controlDt
-	local rollDelta = runtimeNumberAttr(
-		"AutoTrack_StraightPinRollDamping",
-		Constants.STRAIGHT_PIN_ROLL_DAMPING
-	) * controlDt
-	local maxYawRate = math.max(0, runtimeNumberAttr(
-		"AutoTrack_StraightPinMaxYawRate",
-		Constants.STRAIGHT_PIN_MAX_YAW_RATE
-	))
-	local maxRollRate = math.max(0, runtimeNumberAttr(
-		"AutoTrack_StraightPinMaxRollRate",
-		Constants.STRAIGHT_PIN_MAX_ROLL_RATE
-	))
+	local yawDelta = runtimeNumberAttr("AutoTrack_StraightPinYawDamping", Constants.STRAIGHT_PIN_YAW_DAMPING)
+		* controlDt
+	local rollDelta = runtimeNumberAttr("AutoTrack_StraightPinRollDamping", Constants.STRAIGHT_PIN_ROLL_DAMPING)
+		* controlDt
+	local maxYawRate =
+		math.max(0, runtimeNumberAttr("AutoTrack_StraightPinMaxYawRate", Constants.STRAIGHT_PIN_MAX_YAW_RATE))
+	local maxRollRate =
+		math.max(0, runtimeNumberAttr("AutoTrack_StraightPinMaxRollRate", Constants.STRAIGHT_PIN_MAX_ROLL_RATE))
 
 	local pinned = Vector3.new(
 		angularVelocity.X,
@@ -440,30 +429,34 @@ local function rampJumpFeatureProgressWindow(state): (number, number)
 	return startProgress, math.max(startProgress, endProgress)
 end
 
-local function isRampJumpGroundedSurfaceActive(
-	sectorState,
-	sectorProgress: number,
-	isAirborne: boolean
-): boolean
+local function isRampJumpGroundedSurfaceActive(sectorState, sectorProgress: number, isAirborne: boolean): boolean
 	if isAirborne or sectorState == nil or sectorState.mechanic ~= "RampJump" then
 		return false
 	end
-	if not runtimeBoolAttr(
-		"AutoTrack_RampJumpSurfaceStabilizationEnabled",
-		Constants.RAMPJUMP_SURFACE_STABILIZATION_ENABLED
-	) then
+	if
+		not runtimeBoolAttr(
+			"AutoTrack_RampJumpSurfaceStabilizationEnabled",
+			Constants.RAMPJUMP_SURFACE_STABILIZATION_ENABLED
+		)
+	then
 		return false
 	end
 
 	local startProgress, endProgress = rampJumpFeatureProgressWindow(sectorState)
-	local startSlack = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpSurfaceStabilizationStartSlack",
-		Constants.RAMPJUMP_SURFACE_STABILIZATION_START_SLACK
-	))
-	local endSlack = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpSurfaceStabilizationEndSlack",
-		Constants.RAMPJUMP_SURFACE_STABILIZATION_END_SLACK
-	))
+	local startSlack = math.max(
+		0,
+		runtimeNumberAttr(
+			"AutoTrack_RampJumpSurfaceStabilizationStartSlack",
+			Constants.RAMPJUMP_SURFACE_STABILIZATION_START_SLACK
+		)
+	)
+	local endSlack = math.max(
+		0,
+		runtimeNumberAttr(
+			"AutoTrack_RampJumpSurfaceStabilizationEndSlack",
+			Constants.RAMPJUMP_SURFACE_STABILIZATION_END_SLACK
+		)
+	)
 	return sectorProgress >= math.max(0, startProgress - startSlack)
 		and sectorProgress <= math.min(1, endProgress + endSlack)
 end
@@ -481,27 +474,23 @@ local function resolveRampJumpSurfaceAngularVelocity(
 		"AutoTrack_RampJumpGroundedPitchDamping",
 		Constants.RAMPJUMP_GROUNDED_PITCH_DAMPING
 	) * controlDt
-	local yawDelta = runtimeNumberAttr(
-		"AutoTrack_RampJumpGroundedYawDamping",
-		Constants.RAMPJUMP_GROUNDED_YAW_DAMPING
-	) * controlDt
+	local yawDelta = runtimeNumberAttr("AutoTrack_RampJumpGroundedYawDamping", Constants.RAMPJUMP_GROUNDED_YAW_DAMPING)
+		* controlDt
 	local rollDelta = runtimeNumberAttr(
 		"AutoTrack_RampJumpGroundedRollDamping",
 		Constants.RAMPJUMP_GROUNDED_ROLL_DAMPING
 	) * controlDt
 
-	local maxPitchRate = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpGroundedMaxPitchRate",
-		Constants.RAMPJUMP_GROUNDED_MAX_PITCH_RATE
-	))
-	local maxYawRate = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpGroundedMaxYawRate",
-		Constants.RAMPJUMP_GROUNDED_MAX_YAW_RATE
-	))
-	local maxRollRate = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpGroundedMaxRollRate",
-		Constants.RAMPJUMP_GROUNDED_MAX_ROLL_RATE
-	))
+	local maxPitchRate = math.max(
+		0,
+		runtimeNumberAttr("AutoTrack_RampJumpGroundedMaxPitchRate", Constants.RAMPJUMP_GROUNDED_MAX_PITCH_RATE)
+	)
+	local maxYawRate =
+		math.max(0, runtimeNumberAttr("AutoTrack_RampJumpGroundedMaxYawRate", Constants.RAMPJUMP_GROUNDED_MAX_YAW_RATE))
+	local maxRollRate = math.max(
+		0,
+		runtimeNumberAttr("AutoTrack_RampJumpGroundedMaxRollRate", Constants.RAMPJUMP_GROUNDED_MAX_ROLL_RATE)
+	)
 
 	return Vector3.new(
 		math.clamp(dampTowardsZero(angularVelocity.X, pitchDelta), -maxPitchRate, maxPitchRate),
@@ -524,10 +513,10 @@ local function dampRampJumpGroundedLateralVelocity(
 	local flatVelocity = Vector3.new(linearVelocity.X, 0, linearVelocity.Z)
 	local forwardSpeed = flatVelocity:Dot(forward)
 	local lateral = flatVelocity - forward * forwardSpeed
-	local lateralDamping = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpGroundedLateralDamping",
-		Constants.RAMPJUMP_GROUNDED_LATERAL_DAMPING
-	))
+	local lateralDamping = math.max(
+		0,
+		runtimeNumberAttr("AutoTrack_RampJumpGroundedLateralDamping", Constants.RAMPJUMP_GROUNDED_LATERAL_DAMPING)
+	)
 	local keep = math.clamp(1 - (lateralDamping * controlDt), 0, 1)
 	local dampedFlat = (forward * forwardSpeed) + (lateral * keep)
 	return Vector3.new(dampedFlat.X, linearVelocity.Y, dampedFlat.Z)
@@ -544,28 +533,31 @@ local function resolveRampJumpContainmentDistance(
 	if not rampJumpContext then
 		return bodyDistance
 	end
-	if not runtimeBoolAttr(
-		"AutoTrack_RampJumpContainmentForgivenessEnabled",
-		Constants.RAMPJUMP_CONTAINMENT_FORGIVENESS_ENABLED
-	) then
+	if
+		not runtimeBoolAttr(
+			"AutoTrack_RampJumpContainmentForgivenessEnabled",
+			Constants.RAMPJUMP_CONTAINMENT_FORGIVENESS_ENABLED
+		)
+	then
 		return bodyDistance
 	end
 	if not (rampJumpSurfaceActive or rampJumpRecoveryActive) then
 		return bodyDistance
 	end
 
-	local minUpDot = math.clamp(runtimeNumberAttr(
-		"AutoTrack_RampJumpContainmentMinUpDot",
-		Constants.RAMPJUMP_CONTAINMENT_MIN_UP_DOT
-	), -1, 1)
+	local minUpDot = math.clamp(
+		runtimeNumberAttr("AutoTrack_RampJumpContainmentMinUpDot", Constants.RAMPJUMP_CONTAINMENT_MIN_UP_DOT),
+		-1,
+		1
+	)
 	if upDot < minUpDot then
 		return bodyDistance
 	end
 
-	local centerlineMax = math.max(0, runtimeNumberAttr(
-		"AutoTrack_RampJumpContainmentCenterlineMax",
-		Constants.RAMPJUMP_CONTAINMENT_CENTERLINE_MAX
-	))
+	local centerlineMax = math.max(
+		0,
+		runtimeNumberAttr("AutoTrack_RampJumpContainmentCenterlineMax", Constants.RAMPJUMP_CONTAINMENT_CENTERLINE_MAX)
+	)
 	if centerlineDistance <= centerlineMax then
 		return centerlineDistance
 	end
@@ -599,7 +591,11 @@ local function mechanicLeadInProgress(targetState): number
 
 	if targetState.mechanic == "CrestDip" then
 		local params = targetState.params or {}
-		return math.clamp(math.max(0, (Constants.STRAIGHT_LENGTH - (params.sector_length or 0)) * 0.5) / Constants.STRAIGHT_LENGTH, 0, 1)
+		return math.clamp(
+			math.max(0, (Constants.STRAIGHT_LENGTH - (params.sector_length or 0)) * 0.5) / Constants.STRAIGHT_LENGTH,
+			0,
+			1
+		)
 	end
 
 	return 0
@@ -615,7 +611,11 @@ end
 local function mechanicEntryTarget(baseSpeed: number, progress: number, targetState, sectorId: number?): number
 	local leadInProgress = mechanicLeadInProgress(targetState)
 	local postCornerSector = isPostCornerEditableSector(sectorId)
-	if leadInProgress <= 0 or progress >= leadInProgress or (hasPositiveIngressPad(targetState) and not postCornerSector) then
+	if
+		leadInProgress <= 0
+		or progress >= leadInProgress
+		or (hasPositiveIngressPad(targetState) and not postCornerSector)
+	then
 		return baseSpeed
 	end
 
@@ -626,10 +626,7 @@ local function mechanicEntryTarget(baseSpeed: number, progress: number, targetSt
 			"AutoTrack_PostCornerMechanicEntrySpeedFactor",
 			Constants.POST_CORNER_MECHANIC_ENTRY_SPEED_FACTOR
 		)
-		blendPower = runtimeNumberAttr(
-			"AutoTrack_PostCornerEntryBlendPower",
-			Constants.POST_CORNER_ENTRY_BLEND_POWER
-		)
+		blendPower = runtimeNumberAttr("AutoTrack_PostCornerEntryBlendPower", Constants.POST_CORNER_ENTRY_BLEND_POWER)
 	end
 	if targetState.mechanic == "CrestDip" then
 		entryFactor = if postCornerSector
@@ -637,10 +634,7 @@ local function mechanicEntryTarget(baseSpeed: number, progress: number, targetSt
 				"AutoTrack_PostCornerCrestDipEntrySpeedFactor",
 				Constants.POST_CORNER_CRESTDIP_ENTRY_SPEED_FACTOR
 			)
-			else runtimeNumberAttr(
-				"AutoTrack_CrestDipEntrySpeedFactor",
-				Constants.CRESTDIP_ENTRY_SPEED_FACTOR
-			)
+			else runtimeNumberAttr("AutoTrack_CrestDipEntrySpeedFactor", Constants.CRESTDIP_ENTRY_SPEED_FACTOR)
 		blendPower = runtimeNumberAttr("AutoTrack_CrestDipEntryBlendPower", Constants.CRESTDIP_ENTRY_BLEND_POWER)
 	elseif targetState.mechanic == "RampJump" then
 		entryFactor = if postCornerSector
@@ -648,10 +642,7 @@ local function mechanicEntryTarget(baseSpeed: number, progress: number, targetSt
 				"AutoTrack_PostCornerRampJumpEntrySpeedFactor",
 				Constants.POST_CORNER_RAMPJUMP_ENTRY_SPEED_FACTOR
 			)
-			else runtimeNumberAttr(
-				"AutoTrack_RampJumpEntrySpeedFactor",
-				Constants.RAMPJUMP_ENTRY_SPEED_FACTOR
-			)
+			else runtimeNumberAttr("AutoTrack_RampJumpEntrySpeedFactor", Constants.RAMPJUMP_ENTRY_SPEED_FACTOR)
 		blendPower = runtimeNumberAttr("AutoTrack_RampJumpEntryBlendPower", Constants.RAMPJUMP_ENTRY_BLEND_POWER)
 	end
 
@@ -697,11 +688,17 @@ local function sectorEntrySnapSpeedFactor(sectorKind: string?, sectorState, isol
 	)
 end
 
-local function shouldSnapOnSectorEntry(previousSectorId: number?, sectorId: number, sectorKinds: { [number]: string }?): boolean
-	if previousSectorId ~= nil
+local function shouldSnapOnSectorEntry(
+	previousSectorId: number?,
+	sectorId: number,
+	sectorKinds: { [number]: string }?
+): boolean
+	if
+		previousSectorId ~= nil
 		and sectorKinds ~= nil
 		and sectorKinds[previousSectorId] == "Corner"
-		and sectorKinds[sectorId] == "Corner" then
+		and sectorKinds[sectorId] == "Corner"
+	then
 		return false
 	end
 	return true
@@ -737,7 +734,8 @@ local function buildSectorEntrySnap(
 	local snapOrigin = if exactEntryFrame ~= nil then exactEntryFrame.Position else entryPosition
 	local sourceDirection = if exactEntryFrame ~= nil then exactEntryFrame.LookVector else referenceWaypoint.LookVector
 	local direction = horizontalDirectionOrFallback(sourceDirection, referenceWaypoint.LookVector)
-	local speed = math.max(5, baseTargetSpeed() * sectorEntrySnapSpeedFactor(sectorKind, sectorState, isolatedSectorMode))
+	local speed =
+		math.max(5, baseTargetSpeed() * sectorEntrySnapSpeedFactor(sectorKind, sectorState, isolatedSectorMode))
 	local snapCFrame = CFrame.lookAt(snapOrigin, snapOrigin + direction)
 	return snapCFrame, direction * speed, speed, direction
 end
@@ -779,11 +777,7 @@ local function settleCarAtLapEnd(car: BasePart, finalDirection: Vector3)
 end
 
 local function cloneNumberMap(source)
-	local result = {}
-	for key, value in pairs(source) do
-		result[key] = value
-	end
-	return result
+	return table.clone(source)
 end
 
 local function finishFailure(
@@ -830,9 +824,11 @@ local function getActivePad(currentSectorId: number?): (string?, string?, string
 		local pad = padsFolder:FindFirstChild(padName)
 		if pad and pad:IsA("BasePart") then
 			local localPoint = pad.CFrame:PointToObjectSpace(car.Position)
-			if math.abs(localPoint.X) <= pad.Size.X * 0.5
+			if
+				math.abs(localPoint.X) <= pad.Size.X * 0.5
 				and math.abs(localPoint.Y) <= math.max(pad.Size.Y, Constants.CAR_HEIGHT) * 0.5
-				and math.abs(localPoint.Z) <= pad.Size.Z * 0.5 then
+				and math.abs(localPoint.Z) <= pad.Size.Z * 0.5
+			then
 				local padType = pad:GetAttribute("PadType")
 				return string.format("%d:%s", currentSectorId, padName), padType, padName
 			end
@@ -968,15 +964,17 @@ function VerifierController.runLap(
 		if sectorId == nil then
 			return
 		end
-		Tracer.log(string.format(
-			"sector_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
-			sectorId,
-			sectorPeakCenterlineDistance[sectorId] or 0,
-			sectorPeakFrontDistance[sectorId] or 0,
-			sectorPeakBodyDistance[sectorId] or 0,
-			sectorPeakSignedLateral[sectorId] or 0,
-			sectorPeakProgress[sectorId] or 0
-		))
+		Tracer.log(
+			string.format(
+				"sector_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
+				sectorId,
+				sectorPeakCenterlineDistance[sectorId] or 0,
+				sectorPeakFrontDistance[sectorId] or 0,
+				sectorPeakBodyDistance[sectorId] or 0,
+				sectorPeakSignedLateral[sectorId] or 0,
+				sectorPeakProgress[sectorId] or 0
+			)
+		)
 	end
 
 	local function publishDebugState(targetSpeed: number, sectorKind: string?)
@@ -1013,9 +1011,11 @@ function VerifierController.runLap(
 		publishDebugState(baseTargetSpeed(), if currentSectorId ~= nil then "Straight" else "")
 	end
 
-	if currentSectorId ~= nil
+	if
+		currentSectorId ~= nil
 		and handleSectorChange ~= nil
-		and runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED) then
+		and runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED)
+	then
 		if shouldSnapOnSectorEntry(nil, currentSectorId, sectorKinds) then
 			local snappedSpeed, snappedDirection = snapIntoSector(currentSectorId, 1)
 			persistentTargetSpeed = snappedSpeed
@@ -1023,10 +1023,8 @@ function VerifierController.runLap(
 			activePadToken = nil
 			padEffectSectorHopsRemaining = 0
 			postSnapDirection = snappedDirection
-			postSnapSettleDeadline = startTime + runtimeNumberAttr(
-				"AutoTrack_SectorEntrySnapSettleTime",
-				Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME
-			)
+			postSnapSettleDeadline = startTime
+				+ runtimeNumberAttr("AutoTrack_SectorEntrySnapSettleTime", Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME)
 			recentTrail = { car.Position }
 			lastTrailPoint = car.Position
 			publishDebugState(snappedSpeed, if sectorKinds ~= nil then sectorKinds[currentSectorId] else "Straight")
@@ -1151,20 +1149,21 @@ function VerifierController.runLap(
 					local runtimeResult = evaluateTargetSectorRuntime(elapsed, carPosition)
 					if runtimeResult then
 						cleanup(attachment, linearVelocity, alignOrientation)
-						runtimeResult.metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
+						runtimeResult.metrics.sector_peak_centerline_distance =
+							cloneNumberMap(sectorPeakCenterlineDistance)
 						runtimeResult.metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
 						runtimeResult.metrics.sector_peak_progress = cloneNumberMap(sectorPeakProgress)
 						runtimeResult.metrics.sector_peak_front_distance = cloneNumberMap(sectorPeakFrontDistance)
 						runtimeResult.metrics.sector_peak_body_distance = cloneNumberMap(sectorPeakBodyDistance)
 						return runtimeResult
 					end
-					if currentSectorId == targetSectorId
+					if
+						currentSectorId == targetSectorId
 						and targetState ~= nil
-						and targetState.mechanic == "RampJump" then
-						rampJumpRecoveryDeadline = now + runtimeNumberAttr(
-							"AutoTrack_RampJumpRecoveryTime",
-							Constants.RAMPJUMP_RECOVERY_TIME
-						)
+						and targetState.mechanic == "RampJump"
+					then
+						rampJumpRecoveryDeadline = now
+							+ runtimeNumberAttr("AutoTrack_RampJumpRecoveryTime", Constants.RAMPJUMP_RECOVERY_TIME)
 					end
 					if padEffectSectorHopsRemaining > 0 then
 						padEffectSectorHopsRemaining -= 1
@@ -1174,18 +1173,21 @@ function VerifierController.runLap(
 					end
 					local previousSectorId = currentSectorId
 					currentSectorId = newSectorId
-					if runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED)
-						and shouldSnapOnSectorEntry(previousSectorId, currentSectorId, sectorKinds) then
+					if
+						runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED)
+						and shouldSnapOnSectorEntry(previousSectorId, currentSectorId, sectorKinds)
+					then
 						local snappedSpeed, snappedDirection = snapIntoSector(currentSectorId, waypointIndex)
 						persistentTargetSpeed = snappedSpeed
 						commandedSpeed = snappedSpeed
 						activePadToken = nil
 						padEffectSectorHopsRemaining = 0
 						postSnapDirection = snappedDirection
-						postSnapSettleDeadline = now + runtimeNumberAttr(
-							"AutoTrack_SectorEntrySnapSettleTime",
-							Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME
-						)
+						postSnapSettleDeadline = now
+							+ runtimeNumberAttr(
+								"AutoTrack_SectorEntrySnapSettleTime",
+								Constants.SECTOR_ENTRY_SNAP_SETTLE_TIME
+							)
 					else
 						postSnapDirection = nil
 						postSnapSettleDeadline = 0
@@ -1219,14 +1221,12 @@ function VerifierController.runLap(
 		local moveDirection = horizontalDirectionOrFallback(pathDirection, waypoints[waypointIndex].LookVector)
 		local segmentDirection = horizontalDirectionOrFallback(segmentEnd - segmentStart, moveDirection)
 		local isCorner = sectorKinds and currentSectorId and sectorKinds[currentSectorId] == "Corner"
-		local previousSectorIsCorner, nextSectorIsCorner = adjacentCornerFlags(
-			currentSectorId,
-			waypointIndex,
-			waypointSectors,
-			sectorKinds
-		)
+		local previousSectorIsCorner, nextSectorIsCorner =
+			adjacentCornerFlags(currentSectorId, waypointIndex, waypointSectors, sectorKinds)
 		local waypointLookahead = if isCorner then Constants.CORNER_WAYPOINT_LOOKAHEAD else Constants.WAYPOINT_LOOKAHEAD
-		local orientationLookahead = if isCorner then Constants.CORNER_ORIENTATION_LOOKAHEAD else Constants.ORIENTATION_LOOKAHEAD
+		local orientationLookahead = if isCorner
+			then Constants.CORNER_ORIENTATION_LOOKAHEAD
+			else Constants.ORIENTATION_LOOKAHEAD
 		local orientationBlend = if isCorner then Constants.CORNER_ORIENTATION_BLEND else Constants.ORIENTATION_BLEND
 		local lookAheadIndex = math.min(waypointIndex + waypointLookahead, #waypoints)
 		local lookTarget = waypoints[lookAheadIndex].Position
@@ -1251,30 +1251,27 @@ function VerifierController.runLap(
 		local isTargetRampJump = currentSectorId == targetSectorId
 			and targetState ~= nil
 			and targetState.mechanic == "RampJump"
-		local rampJumpSurfaceStabilizationActive = isRampJumpGroundedSurfaceActive(
-			currentSectorState,
-			sectorProgress,
-			isAirborne
-		)
+		local rampJumpSurfaceStabilizationActive =
+			isRampJumpGroundedSurfaceActive(currentSectorState, sectorProgress, isAirborne)
 		local rampJumpRecoveryActive = currentSectorId ~= targetSectorId
 			and targetState ~= nil
 			and targetState.mechanic == "RampJump"
 			and now < rampJumpRecoveryDeadline
 		local rampJumpContext = inRampJumpSector or rampJumpRecoveryActive
-		local straightOrientationPinEnabled = runtimeBoolAttr(
-			"AutoTrack_StraightOrientationPinEnabled",
-			Constants.STRAIGHT_ORIENTATION_PIN_ENABLED
-		)
+		local straightOrientationPinEnabled =
+			runtimeBoolAttr("AutoTrack_StraightOrientationPinEnabled", Constants.STRAIGHT_ORIENTATION_PIN_ENABLED)
 		local preDampingVerticalSpeed = car.AssemblyLinearVelocity.Y
 		local landingUpDot = carCFrame.UpVector:Dot(Vector3.yAxis)
 		local landingMinDownSpeed = if rampJumpContext
 			then runtimeNumberAttr("AutoTrack_RampJumpLandingMinDownSpeed", Constants.RAMPJUMP_LANDING_MIN_DOWN_SPEED)
 			else runtimeNumberAttr("AutoTrack_LandingMinDownSpeed", Constants.CAR_LANDING_MIN_DOWN_SPEED)
 		applySuspensionDamping(car, controlDt, wasAirborne, isAirborne, isCorner == true, rampJumpContext == true)
-		if currentSectorId == targetSectorId
+		if
+			currentSectorId == targetSectorId
 			and wasAirborne
 			and not isAirborne
-			and preDampingVerticalSpeed <= -landingMinDownSpeed then
+			and preDampingVerticalSpeed <= -landingMinDownSpeed
+		then
 			MetricCollector.onTargetTouchdown(landingUpDot, -preDampingVerticalSpeed)
 		end
 		car.AssemblyAngularVelocity = resolveStraightPinnedAngularVelocity(
@@ -1296,37 +1293,57 @@ function VerifierController.runLap(
 		)
 		local speed = car.AssemblyLinearVelocity.Magnitude
 		local angularSpeed = car.AssemblyAngularVelocity.Magnitude
-		if (currentSectorId == targetSectorId or inAuthoredSector or rampJumpContext)
+		if
+			(currentSectorId == targetSectorId or inAuthoredSector or rampJumpContext)
 			and runtimeBoolAttr(
 				"AutoTrack_TargetSectorStabilityAssistEnabled",
 				Constants.TARGET_SECTOR_STABILITY_ASSIST_ENABLED
-			) then
-			local maxAngularSpeed = math.max(0, runtimeNumberAttr(
-				"AutoTrack_TargetSectorStabilityMaxAngularSpeed",
-				Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
-			))
-			local maxVerticalSpeed = math.max(0, runtimeNumberAttr(
-				"AutoTrack_TargetSectorStabilityMaxVerticalSpeed",
-				Constants.TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
-			))
+			)
+		then
+			local maxAngularSpeed = math.max(
+				0,
+				runtimeNumberAttr(
+					"AutoTrack_TargetSectorStabilityMaxAngularSpeed",
+					Constants.TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
+				)
+			)
+			local maxVerticalSpeed = math.max(
+				0,
+				runtimeNumberAttr(
+					"AutoTrack_TargetSectorStabilityMaxVerticalSpeed",
+					Constants.TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
+				)
+			)
 			if isTargetRampJump or inRampJumpSector then
-				maxAngularSpeed = math.max(0, runtimeNumberAttr(
-					"AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed",
-					Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
-				))
-				maxVerticalSpeed = math.max(0, runtimeNumberAttr(
-					"AutoTrack_RampJumpTargetSectorStabilityMaxVerticalSpeed",
-					Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
-				))
+				maxAngularSpeed = math.max(
+					0,
+					runtimeNumberAttr(
+						"AutoTrack_RampJumpTargetSectorStabilityMaxAngularSpeed",
+						Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_ANGULAR_SPEED
+					)
+				)
+				maxVerticalSpeed = math.max(
+					0,
+					runtimeNumberAttr(
+						"AutoTrack_RampJumpTargetSectorStabilityMaxVerticalSpeed",
+						Constants.RAMPJUMP_TARGET_SECTOR_STABILITY_MAX_VERTICAL_SPEED
+					)
+				)
 			elseif rampJumpRecoveryActive then
-				maxAngularSpeed = math.max(0, runtimeNumberAttr(
-					"AutoTrack_RampJumpRecoveryMaxAngularSpeed",
-					Constants.RAMPJUMP_RECOVERY_MAX_ANGULAR_SPEED
-				))
-				maxVerticalSpeed = math.max(0, runtimeNumberAttr(
-					"AutoTrack_RampJumpRecoveryMaxVerticalSpeed",
-					Constants.RAMPJUMP_RECOVERY_MAX_VERTICAL_SPEED
-				))
+				maxAngularSpeed = math.max(
+					0,
+					runtimeNumberAttr(
+						"AutoTrack_RampJumpRecoveryMaxAngularSpeed",
+						Constants.RAMPJUMP_RECOVERY_MAX_ANGULAR_SPEED
+					)
+				)
+				maxVerticalSpeed = math.max(
+					0,
+					runtimeNumberAttr(
+						"AutoTrack_RampJumpRecoveryMaxVerticalSpeed",
+						Constants.RAMPJUMP_RECOVERY_MAX_VERTICAL_SPEED
+					)
+				)
 			end
 
 			local angularVelocity = car.AssemblyAngularVelocity
@@ -1335,12 +1352,12 @@ function VerifierController.runLap(
 				car.AssemblyAngularVelocity = angularVelocity * (maxAngularSpeed / angularMagnitude)
 			end
 
-			local linearVelocity = car.AssemblyLinearVelocity
-			if maxVerticalSpeed > 0 and math.abs(linearVelocity.Y) > maxVerticalSpeed then
+			local currentLinearVelocity = car.AssemblyLinearVelocity
+			if maxVerticalSpeed > 0 and math.abs(currentLinearVelocity.Y) > maxVerticalSpeed then
 				car.AssemblyLinearVelocity = Vector3.new(
-					linearVelocity.X,
-					math.clamp(linearVelocity.Y, -maxVerticalSpeed, maxVerticalSpeed),
-					linearVelocity.Z
+					currentLinearVelocity.X,
+					math.clamp(currentLinearVelocity.Y, -maxVerticalSpeed, maxVerticalSpeed),
+					currentLinearVelocity.Z
 				)
 			end
 
@@ -1348,15 +1365,14 @@ function VerifierController.runLap(
 			angularSpeed = car.AssemblyAngularVelocity.Magnitude
 		end
 		local upDot = carCFrame.UpVector:Dot(Vector3.yAxis)
-		local forwardDot = horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection):Dot(orientationDirection)
+		local forwardDot =
+			horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection):Dot(orientationDirection)
 		local rampJumpHeadingFreezeEnabled = runtimeBoolAttr(
 			"AutoTrack_RampJumpAirborneHeadingFreezeEnabled",
 			Constants.RAMPJUMP_AIRBORNE_HEADING_FREEZE_ENABLED
 		)
-		local rampJumpMaxUpwardSpeed = runtimeNumberAttr(
-			"AutoTrack_RampJumpAirborneMaxUpwardSpeed",
-			Constants.RAMPJUMP_AIRBORNE_MAX_UPWARD_SPEED
-		)
+		local rampJumpMaxUpwardSpeed =
+			runtimeNumberAttr("AutoTrack_RampJumpAirborneMaxUpwardSpeed", Constants.RAMPJUMP_AIRBORNE_MAX_UPWARD_SPEED)
 		local forcedAirborneVectorVelocity
 		orientationDirection, forcedAirborneVectorVelocity, airborneFrozenDirection = resolveRampJumpAirborneGuidance(
 			isAirborne,
@@ -1382,7 +1398,9 @@ function VerifierController.runLap(
 		local centerlineDistance = math.abs(signedLateral)
 		local segmentRight = Vector3.new(segmentDirection.Z, 0, -segmentDirection.X)
 		local lateralCorrection = Vector3.new(segmentRight.X * signedLateral, 0, segmentRight.Z * signedLateral)
-		local frontPosition = carPosition + horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection) * (Constants.CAR_LENGTH * 0.5)
+		local frontPosition = carPosition
+			+ horizontalDirectionOrFallback(carCFrame.LookVector, orientationDirection)
+				* (Constants.CAR_LENGTH * 0.5)
 		local projectedFrontPoint = projectPointToSegment(frontPosition, segmentStart, segmentEnd)
 		local frontSignedLateral = signedLateralDistance(frontPosition, projectedFrontPoint, segmentDirection)
 		local frontDistance = math.abs(frontSignedLateral)
@@ -1395,7 +1413,14 @@ function VerifierController.runLap(
 			centerlineDistance,
 			bodyDistance
 		)
-		recordSectorPeak(currentSectorId, centerlineDistance, signedLateral, sectorProgress, frontDistance, bodyDistance)
+		recordSectorPeak(
+			currentSectorId,
+			centerlineDistance,
+			signedLateral,
+			sectorProgress,
+			frontDistance,
+			bodyDistance
+		)
 		local targetLocalX = nil
 		local targetLocalZ = nil
 		if currentSectorId == targetSectorId and targetEntryFrame ~= nil then
@@ -1430,10 +1455,13 @@ function VerifierController.runLap(
 
 		if currentSectorId == targetSectorId and targetState and targetState.mechanic == "CrestDip" then
 			local targetMetrics = MetricCollector.getTargetMetrics()
-			if targetMetrics.in_target_sector
+			if
+				targetMetrics.in_target_sector
 				and targetMetrics.airborne
-				and targetMetrics.airtime_distance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE then
-				local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
+				and targetMetrics.airtime_distance > Constants.CRESTDIP_MAX_AIRTIME_DISTANCE
+			then
+				local metrics =
+					MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 				local failureResult = finishFailure(
 					attachment,
 					linearVelocity,
@@ -1453,10 +1481,11 @@ function VerifierController.runLap(
 			end
 		end
 
-		if not isAirborne and containmentDistance > runtimeNumberAttr(
-			"AutoTrack_FrontBodyContainmentDistance",
-			Constants.FRONT_BODY_CONTAINMENT_DISTANCE
-		) then
+		if
+			not isAirborne
+			and containmentDistance
+				> runtimeNumberAttr("AutoTrack_FrontBodyContainmentDistance", Constants.FRONT_BODY_CONTAINMENT_DISTANCE)
+		then
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 			metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
 			metrics.sector_peak_signed_lateral = cloneNumberMap(sectorPeakSignedLateral)
@@ -1512,10 +1541,11 @@ function VerifierController.runLap(
 		elseif rampJumpRecoveryActive then
 			targetSpeed = math.min(
 				targetSpeed,
-				baseTargetSpeed() * runtimeNumberAttr(
-					"AutoTrack_RampJumpRecoverySpeedFactor",
-					Constants.RAMPJUMP_RECOVERY_SPEED_FACTOR
-				)
+				baseTargetSpeed()
+					* runtimeNumberAttr(
+						"AutoTrack_RampJumpRecoverySpeedFactor",
+						Constants.RAMPJUMP_RECOVERY_SPEED_FACTOR
+					)
 			)
 		end
 		targetSpeed = resolveCornerExitAlignedTargetSpeed(
@@ -1539,30 +1569,33 @@ function VerifierController.runLap(
 				previousSectorIsCorner,
 				nextSectorIsCorner
 			)
-			elseif targetSpeed < commandedSpeed
-				then Constants.CAR_BRAKE_RATE
-				else Constants.CAR_ACCEL_RATE
+			elseif targetSpeed < commandedSpeed then Constants.CAR_BRAKE_RATE
+			else Constants.CAR_ACCEL_RATE
 		commandedSpeed = moveTowards(commandedSpeed, targetSpeed, speedRate * controlDt)
 		publishDebugState(targetSpeed, if isCorner then "Corner" else "Straight")
-		if debugSectorEnabled
+		if
+			debugSectorEnabled
 			and currentSectorId ~= nil
 			and currentSectorId == debugSectorTarget
 			and sectorProgress <= debugProgressMax
-			and sectorProgress >= debugNextProgress then
-			Tracer.log(string.format(
-				"sector_debug sector=%d progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
-				currentSectorId,
-				sectorProgress,
-				speed,
-				commandedSpeed,
-				targetSpeed,
-				angularSpeed,
-				forwardDot,
-				upDot,
-				tostring(not isAirborne),
-				bodyDistance,
-				centerlineDistance
-			))
+			and sectorProgress >= debugNextProgress
+		then
+			Tracer.log(
+				string.format(
+					"sector_debug sector=%d progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
+					currentSectorId,
+					sectorProgress,
+					speed,
+					commandedSpeed,
+					targetSpeed,
+					angularSpeed,
+					forwardDot,
+					upDot,
+					tostring(not isAirborne),
+					bodyDistance,
+					centerlineDistance
+				)
+			)
 			debugNextProgress += debugProgressStep
 		end
 		local vectorVelocity = if forcedAirborneVectorVelocity ~= nil
@@ -1571,7 +1604,8 @@ function VerifierController.runLap(
 		if postSnapSettleActive then
 			vectorVelocity = orientationDirection * commandedSpeed
 		elseif not isAirborne and centerlineDistance > 1 then
-			local lateralNudge = -lateralCorrection.Unit * math.min(centerlineDistance, Constants.CAR_MAX_LATERAL_CORRECTION)
+			local lateralNudge = -lateralCorrection.Unit
+				* math.min(centerlineDistance, Constants.CAR_MAX_LATERAL_CORRECTION)
 			vectorVelocity += Vector3.new(lateralNudge.X, 0, lateralNudge.Z)
 		end
 
@@ -1601,10 +1635,8 @@ function VerifierController.runLap(
 				Constants.CAR_STRAIGHT_ORIENTATION_RESPONSIVENESS
 			)
 		elseif isCorner then
-			alignOrientation.MaxTorque = runtimeNumberAttr(
-				"AutoTrack_CornerOrientationMaxTorque",
-				Constants.CAR_CORNER_ORIENTATION_MAX_TORQUE
-			)
+			alignOrientation.MaxTorque =
+				runtimeNumberAttr("AutoTrack_CornerOrientationMaxTorque", Constants.CAR_CORNER_ORIENTATION_MAX_TORQUE)
 			alignOrientation.Responsiveness = runtimeNumberAttr(
 				"AutoTrack_CornerOrientationResponsiveness",
 				Constants.CAR_CORNER_ORIENTATION_RESPONSIVENESS
@@ -1633,25 +1665,25 @@ function VerifierController.runLap(
 			forwardDot
 		)
 		if failure then
-			if debugSectorEnabled
-				and currentSectorId ~= nil
-				and currentSectorId == debugSectorTarget then
-				Tracer.log(string.format(
-					"sector_debug_failure sector=%d type=%s detail=%s progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
-					currentSectorId,
-					tostring(failure.type),
-					tostring(failure.detail),
-					sectorProgress,
-					speed,
-					commandedSpeed,
-					targetSpeed,
-					angularSpeed,
-					forwardDot,
-					upDot,
-					tostring(not isAirborne),
-					bodyDistance,
-					centerlineDistance
-				))
+			if debugSectorEnabled and currentSectorId ~= nil and currentSectorId == debugSectorTarget then
+				Tracer.log(
+					string.format(
+						"sector_debug_failure sector=%d type=%s detail=%s progress=%.3f speed=%.2f cmd=%.2f tgt=%.2f ang=%.2f facing=%.3f up=%.3f grounded=%s body=%.2f center=%.2f",
+						currentSectorId,
+						tostring(failure.type),
+						tostring(failure.detail),
+						sectorProgress,
+						speed,
+						commandedSpeed,
+						targetSpeed,
+						angularSpeed,
+						forwardDot,
+						upDot,
+						tostring(not isAirborne),
+						bodyDistance,
+						centerlineDistance
+					)
+				)
 			end
 			local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 			metrics.sector_peak_centerline_distance = cloneNumberMap(sectorPeakCenterlineDistance)
@@ -1671,11 +1703,13 @@ function VerifierController.runLap(
 			)
 		end
 
-		if rampJumpRecoveryActive
+		if
+			rampJumpRecoveryActive
 			and not isAirborne
 			and upDot >= 0.92
 			and angularSpeed <= 1.5
-			and bodyDistance <= Constants.TRACK_WIDTH * 0.35 then
+			and bodyDistance <= Constants.TRACK_WIDTH * 0.35
+		then
 			rampJumpRecoveryDeadline = 0
 		end
 		if not isAirborne then

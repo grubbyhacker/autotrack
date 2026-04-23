@@ -20,6 +20,7 @@ NON_SUITE_TARGETS = {
     "fmt",
     "fmt-check",
     "typecheck",
+    "typecheck-report",
     "lint",
     "hygiene",
     "export-llm-trace",

@@ -43,20 +43,22 @@ function TestPhase2.run()
 	}
 	local cloned = SectorSerializer.clone(orig)
 	cloned.params.ramp_angle = 999
-	T.expect("serializer_clone_independent", orig.params.ramp_angle == 30,
-		"mutating clone.params affected original")
+	T.expect("serializer_clone_independent", orig.params.ramp_angle == 30, "mutating clone.params affected original")
 
 	-- serializer_clone_fields
-	T.expect("serializer_clone_fields",
+	T.expect(
+		"serializer_clone_fields",
 		cloned.sector_id == 2 and cloned.mechanic == nil and cloned.version == 1,
-		"cloned fields incorrect")
+		"cloned fields incorrect"
+	)
 
 	-- serializer_to_table_fields
 	local tbl = SectorSerializer.toTable(orig)
-	T.expect("serializer_to_table_fields",
-		tbl.sector_id == 2 and tbl.mechanic == nil and tbl.version == 1
-			and tbl.params ~= nil and tbl.pads ~= nil,
-		"toTable missing required fields")
+	T.expect(
+		"serializer_to_table_fields",
+		tbl.sector_id == 2 and tbl.mechanic == nil and tbl.version == 1 and tbl.params ~= nil and tbl.pads ~= nil,
+		"toTable missing required fields"
+	)
 
 	-- applier_clear_leaves_baseline
 	local entry2, exit2 = getSector2Frames()
@@ -67,16 +69,20 @@ function TestPhase2.run()
 	local visualFolder = folder2 and folder2:FindFirstChild("Visual")
 	local childCount = collisionFolder and collisionFolder:IsA("Folder") and #collisionFolder:GetChildren() or -1
 	local visualCount = visualFolder and visualFolder:IsA("Folder") and #visualFolder:GetChildren() or -1
-	T.expect("applier_clear_leaves_baseline",
+	T.expect(
+		"applier_clear_leaves_baseline",
 		folder2 ~= nil and childCount == 1 and visualCount >= 1,
-		string.format("Sector_02 collision=%d visual=%d after clear", childCount, visualCount))
+		string.format("Sector_02 collision=%d visual=%d after clear", childCount, visualCount)
+	)
 
 	-- applier_apply_flat_noop
 	SectorApplier.apply(makeFlatState(2), entry2, exit2)
 	local afterCount = collisionFolder and collisionFolder:IsA("Folder") and #collisionFolder:GetChildren() or -1
-	T.expect("applier_apply_flat_noop",
+	T.expect(
+		"applier_apply_flat_noop",
 		folder2 ~= nil and afterCount == 1,
-		string.format("Sector_02 collision has %d children after flat apply (expected 1)", afterCount))
+		string.format("Sector_02 collision has %d children after flat apply (expected 1)", afterCount)
+	)
 
 	-- rollback_restores_state
 	local committed = SectorRegistry.getCommitted(2)
@@ -85,12 +91,14 @@ function TestPhase2.run()
 		SectorApplier.apply(makeFlatState(2), entry2, exit2)
 		SectorRollback.revert(2, entry2, exit2)
 		local reverted = SectorRegistry.getCommitted(2)
-		T.expect("rollback_restores_state",
+		T.expect(
+			"rollback_restores_state",
 			reverted ~= nil
 				and reverted.sector_id == snapshot.sector_id
 				and reverted.mechanic == snapshot.mechanic
 				and reverted.version == snapshot.version,
-			"committed state changed after revert")
+			"committed state changed after revert"
+		)
 	else
 		T.fail("rollback_restores_state", "no committed state for sector 2")
 	end

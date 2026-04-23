@@ -119,12 +119,9 @@ local function publishLapSuccess(deps, result: RunResult, prefix: string?)
 	local slowdown = result.metrics and result.metrics.slowdown_ratio or -1
 	local logPrefix = prefix or "Endurance lap"
 	deps.appendLog(string.format("%s %d complete: %.2fs", logPrefix, _lapCount, lapTime))
-	deps.trace(string.format(
-		"endurance_lap_complete count=%d lap_time=%.2f slowdown=%.3f",
-		_lapCount,
-		lapTime,
-		slowdown
-	))
+	deps.trace(
+		string.format("endurance_lap_complete count=%d lap_time=%.2f slowdown=%.3f", _lapCount, lapTime, slowdown)
+	)
 end
 
 function ContinuousLapRunner._resolveHotfixSector(firstFailure: RunResult?, retryFailure: RunResult?): number?

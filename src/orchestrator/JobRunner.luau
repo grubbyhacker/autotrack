@@ -77,14 +77,10 @@ local function truncateText(value: string, maxLen: number): string
 end
 
 local function cloneState(state)
-	local params = {}
-	for key, value in pairs(state.params) do
-		params[key] = value
-	end
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = params,
+		params = table.clone(state.params),
 		pads = {
 			ingress = state.pads.ingress,
 			egress = state.pads.egress,
@@ -319,7 +315,12 @@ local function validateDesignIntent(intent): (boolean, string?)
 	return true, nil
 end
 
-local function buildEnduranceRequest(requestId: string, rawText: string, designIntent: DesignIntent, memoryContext: RunMemory?): Request
+local function buildEnduranceRequest(
+	requestId: string,
+	rawText: string,
+	designIntent: DesignIntent,
+	memoryContext: RunMemory?
+): Request
 	return {
 		request_id = requestId,
 		raw_text = trim(rawText),
@@ -461,11 +462,9 @@ local function evaluateRampJumpRepairScoreRetention(
 	if currentScore >= requiredScore then
 		return true, requiredScore, nil
 	end
-	return false, requiredScore, string.format(
-		"RampJump retained %.1f but requires %.1f to avoid neutral repair",
-		currentScore,
-		requiredScore
-	)
+	return false,
+		requiredScore,
+		string.format("RampJump retained %.1f but requires %.1f to avoid neutral repair", currentScore, requiredScore)
 end
 
 local function budgetHeadroom(result): number
@@ -526,7 +525,7 @@ local function shouldRunChallengeUp(
 		if designIntent.target_reliability == "conservative" then
 			return false, "conservative_target", nil
 		end
-		if (designIntent.mechanic == "RampJump" or (committedState and committedState.mechanic == "RampJump")) then
+		if designIntent.mechanic == "RampJump" or (committedState and committedState.mechanic == "RampJump") then
 			if (commitAttemptIndex or 0) > 0 then
 				return false, "rampjump_repaired_success", nil
 			end
@@ -565,15 +564,15 @@ local function shouldRunChallengeUp(
 end
 
 local function shouldRevertPreTargetFailure(result, targetSectorId: number): boolean
-	return result.failure ~= nil
-		and result.failure.sector_id ~= targetSectorId
-		and result.metrics.target_exited ~= true
+	return result.failure ~= nil and result.failure.sector_id ~= targetSectorId and result.metrics.target_exited ~= true
 end
 
 local function attemptLimitForResult(result, targetSectorId: number): number
-	if result.failure ~= nil
+	if
+		result.failure ~= nil
 		and result.failure.sector_id == targetSectorId
-		and (result.metrics.target_progress or 0) >= 0.5 then
+		and (result.metrics.target_progress or 0) >= 0.5
+	then
 		return Constants.MAX_REPAIR_ATTEMPTS + Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS
 	end
 	return Constants.MAX_REPAIR_ATTEMPTS
@@ -657,16 +656,18 @@ local function publishScoreSummary(targetSectorId: number, score)
 		return
 	end
 	UIState.publishScore(targetSectorId, score)
-	UIState.appendLog(string.format(
-		"Score %.1f (air %.1f lat %.1f near %.1f cost %.1f budget %.0f%%%s)",
-		score.total,
-		score.air,
-		score.lateral,
-		score.near_miss,
-		score.time_cost,
-		score.budget_used * 100,
-		if score.over_budget then " OVER" else ""
-	))
+	UIState.appendLog(
+		string.format(
+			"Score %.1f (air %.1f lat %.1f near %.1f cost %.1f budget %.0f%%%s)",
+			score.total,
+			score.air,
+			score.lateral,
+			score.near_miss,
+			score.time_cost,
+			score.budget_used * 100,
+			if score.over_budget then " OVER" else ""
+		)
+	)
 end
 
 local function downstreamDiagnostics(targetSectorId: number, failureSector: number?)
@@ -702,13 +703,8 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 		max_additional_repairs = Constants.ENDURANCE_CHALLENGE_UP_MAX_REPAIRS,
 	}
 
-	local challengeState, proposalNote, challengeErr = LLMAdapter.challengeUp(
-		request,
-		job.working_state,
-		baselineResult,
-		designIntent,
-		challengeContext
-	)
+	local challengeState, proposalNote, challengeErr =
+		LLMAdapter.challengeUp(request, job.working_state, baselineResult, designIntent, challengeContext)
 	if not challengeState then
 		return nil, nil, tostring(challengeErr)
 	end
@@ -767,16 +763,25 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 				else
 					UIState.setPhase("ChallengeUpRunVerification", "Challenge-up verification...")
 				end
-				Tracer.log(string.format(
-					"challenge_up_stage index=%d target_sector=%d stage=%s pass=%d/%d",
-					attemptIndex,
-					targetSectorId,
-					stage,
-					passIndex,
-					passTotal
-				))
+				Tracer.log(
+					string.format(
+						"challenge_up_stage index=%d target_sector=%d stage=%s pass=%d/%d",
+						attemptIndex,
+						targetSectorId,
+						stage,
+						passIndex,
+						passTotal
+					)
+				)
 			end,
-			onStageResult = function(_stage: VerificationStage, runScope: "lap" | "isolated_sector", _passIndex: number, _passTotal: number, stageResult, _stageHints)
+			onStageResult = function(
+				_stage: VerificationStage,
+				runScope: "lap" | "isolated_sector",
+				_passIndex: number,
+				_passTotal: number,
+				stageResult,
+				_stageHints
+			)
 				UIState.publishAttemptResult(stageResult, runScope)
 			end,
 		})
@@ -795,21 +800,23 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 			isolated_passes_required = verification.isolated_passes_required,
 			isolated_passes_completed = verification.isolated_passes_completed,
 		})
-		Tracer.log(string.format(
-			"challenge_up_attempt index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_progress=%.2f score=%s",
-			attemptIndex,
-			targetSectorId,
-			verification.verification_stage,
-			verification.run_scope,
-			tostring(verification.isolated_passes_completed or "-"),
-			tostring(verification.isolated_passes_required or "-"),
-			boolString(result.success),
-			tostring(result.failure and result.failure.type or "none"),
-			tostring(result.failure and result.failure.sector_id or "-"),
-			failureDetail(result),
-			result.metrics.target_progress or 0,
-			tostring(result.score and result.score.total or "-")
-		))
+		Tracer.log(
+			string.format(
+				"challenge_up_attempt index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_progress=%.2f score=%s",
+				attemptIndex,
+				targetSectorId,
+				verification.verification_stage,
+				verification.run_scope,
+				tostring(verification.isolated_passes_completed or "-"),
+				tostring(verification.isolated_passes_required or "-"),
+				boolString(result.success),
+				tostring(result.failure and result.failure.type or "none"),
+				tostring(result.failure and result.failure.sector_id or "-"),
+				failureDetail(result),
+				result.metrics.target_progress or 0,
+				tostring(result.score and result.score.total or "-")
+			)
+		)
 
 		if result.success then
 			if result.score == nil then
@@ -826,11 +833,13 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 
 		UIState.showFailure(result)
 		pauseOnFailure(result)
-		UIState.appendLog(string.format(
-			"Challenge-up failed: %s in sector %d",
-			tostring(result.failure and result.failure.type or "unknown"),
-			result.failure and result.failure.sector_id or targetSectorId
-		))
+		UIState.appendLog(
+			string.format(
+				"Challenge-up failed: %s in sector %d",
+				tostring(result.failure and result.failure.type or "unknown"),
+				result.failure and result.failure.sector_id or targetSectorId
+			)
+		)
 		if #hints > 0 then
 			UIState.appendLog("Challenge hints: " .. table.concat(hints, " | "))
 		end
@@ -871,22 +880,16 @@ local function runProposalChallengeUp(args): (any?, any?, string?)
 			nextAction = nil
 			UIState.setRepairAction("CHALLENGE-UP: full state revision")
 			UIState.setExplanation(explanation or "")
-			UIState.appendLog(string.format(
-				"Challenge repair %d (LLM): %s",
-				attemptIndex,
-				explanation or "revised state"
-			))
+			UIState.appendLog(
+				string.format("Challenge repair %d (LLM): %s", attemptIndex, explanation or "revised state")
+			)
 			UIState.appendLog("Challenge revised: " .. compactStateDetails(workingState))
 		elseif action then
 			lastAction = action
 			nextAction = action
 			UIState.setRepairAction(repairActionLabel(action))
 			UIState.setExplanation(explanation or "")
-			UIState.appendLog(string.format(
-				"Challenge repair %d: %s",
-				attemptIndex,
-				explanation or "repair"
-			))
+			UIState.appendLog(string.format("Challenge repair %d: %s", attemptIndex, explanation or "repair"))
 			UIState.appendLog("Challenge action: " .. repairActionLabel(action))
 		else
 			return nil, nil, "challenge-up repair returned no action"
@@ -1057,12 +1060,14 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		local priorCommitted = SectorRegistry.getCommitted(targetSectorId)
 		assert(priorCommitted ~= nil, "no committed sector state for " .. tostring(targetSectorId))
 
-		Tracer.log(string.format(
-			"job_start id=%s sector=%d mechanic=%s",
-			request.request_id,
-			targetSectorId,
-			requestSummary(request.parsed)
-		))
+		Tracer.log(
+			string.format(
+				"job_start id=%s sector=%d mechanic=%s",
+				request.request_id,
+				targetSectorId,
+				requestSummary(request.parsed)
+			)
+		)
 		UIState.beginJob(request)
 		UIState.setPhase("AcquireTrack", "Preparing job")
 		UIState.appendLog(string.format("Queued %s for sector %d", requestSummary(request.parsed), targetSectorId))
@@ -1093,11 +1098,7 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		if proposalMemoryNote ~= nil then
 			UIState.appendLog("Proposal note: " .. proposalMemoryNote.note)
 		end
-		Tracer.log(string.format(
-			"proposal sector=%d state=%s",
-			targetSectorId,
-			compactStateDetails(initialState)
-		))
+		Tracer.log(string.format("proposal sector=%d state=%s", targetSectorId, compactStateDetails(initialState)))
 
 		local job: CIJob = {
 			job_id = request.request_id,
@@ -1127,12 +1128,14 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			pauseForUI()
 			sm:transition("RunVerification")
 			UIState.setPhase("RunVerification", "Running simulation...")
-			Tracer.log(string.format(
-				"attempt index=%d sector=%d mechanic=%s",
-				attemptIndex,
-				targetSectorId,
-				stateSummary(job.working_state)
-			))
+			Tracer.log(
+				string.format(
+					"attempt index=%d sector=%d mechanic=%s",
+					attemptIndex,
+					targetSectorId,
+					stateSummary(job.working_state)
+				)
+			)
 
 			local proposedState = cloneState(job.working_state)
 			local verification = runVerificationProfile({
@@ -1162,22 +1165,34 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				end,
 				onStageStart = function(stage: VerificationStage, passIndex: number, passTotal: number)
 					if stage == "isolated" then
-						UIState.setPhase("RunVerificationIsolated", string.format("Running isolated check %d/%d...", passIndex, passTotal))
+						UIState.setPhase(
+							"RunVerificationIsolated",
+							string.format("Running isolated check %d/%d...", passIndex, passTotal)
+						)
 					elseif stage == "commit_lap" then
 						UIState.setPhase("RunVerificationCommitLap", "Running commit lap...")
 					else
 						UIState.setPhase("RunVerification", "Running simulation...")
 					end
-					Tracer.log(string.format(
-						"attempt_stage index=%d target_sector=%d stage=%s pass=%d/%d",
-						attemptIndex,
-						targetSectorId,
-						stage,
-						passIndex,
-						passTotal
-					))
+					Tracer.log(
+						string.format(
+							"attempt_stage index=%d target_sector=%d stage=%s pass=%d/%d",
+							attemptIndex,
+							targetSectorId,
+							stage,
+							passIndex,
+							passTotal
+						)
+					)
 				end,
-				onStageResult = function(_stage: VerificationStage, runScope: "lap" | "isolated_sector", _passIndex: number, _passTotal: number, stageResult, _stageHints)
+				onStageResult = function(
+					_stage: VerificationStage,
+					runScope: "lap" | "isolated_sector",
+					_passIndex: number,
+					_passTotal: number,
+					stageResult,
+					_stageHints
+				)
 					UIState.publishAttemptResult(stageResult, runScope)
 				end,
 			})
@@ -1197,32 +1212,30 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				isolated_passes_required = verification.isolated_passes_required,
 				isolated_passes_completed = verification.isolated_passes_completed,
 			})
-			Tracer.log(string.format(
-				"attempt_result index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f score=%s",
-				attemptIndex,
-				targetSectorId,
-				verification.verification_stage,
-				verification.run_scope,
-				tostring(verification.isolated_passes_completed or "-"),
-				tostring(verification.isolated_passes_required or "-"),
-				boolString(result.success),
-				tostring(result.failure and result.failure.type or "none"),
-				tostring(result.failure and result.failure.sector_id or "-"),
-				failureDetail(result),
-				boolString(result.metrics.target_entered == true),
-				boolString(result.metrics.target_exited == true),
-				result.metrics.target_progress or 0,
-				tostring(result.score and result.score.total or "-")
-			))
+			Tracer.log(
+				string.format(
+					"attempt_result index=%d target_sector=%d stage=%s run_scope=%s isolated=%s/%s success=%s failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f score=%s",
+					attemptIndex,
+					targetSectorId,
+					verification.verification_stage,
+					verification.run_scope,
+					tostring(verification.isolated_passes_completed or "-"),
+					tostring(verification.isolated_passes_required or "-"),
+					boolString(result.success),
+					tostring(result.failure and result.failure.type or "none"),
+					tostring(result.failure and result.failure.sector_id or "-"),
+					failureDetail(result),
+					boolString(result.metrics.target_entered == true),
+					boolString(result.metrics.target_exited == true),
+					result.metrics.target_progress or 0,
+					tostring(result.score and result.score.total or "-")
+				)
+			)
 
 			if result.success and result.score ~= nil and job.working_state.mechanic == "RampJump" then
 				local priorBestScore = rampJumpPeakSuccessfulScore
-				local gatePassed, requiredScore, gateHint = evaluateRampJumpRepairScoreRetention(
-					request,
-					attemptIndex,
-					priorBestScore,
-					result
-				)
+				local gatePassed, requiredScore, gateHint =
+					evaluateRampJumpRepairScoreRetention(request, attemptIndex, priorBestScore, result)
 				rampJumpPeakSuccessfulScore = if priorBestScore == nil
 					then (result.score.total or 0)
 					else math.max(priorBestScore, result.score.total or 0)
@@ -1234,18 +1247,19 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 						detail = "rampjump_score_retention",
 					}
 					table.insert(hints, gateHint or "rampjump score retention gate failed")
-					UIState.appendLog(gateHint or string.format(
-						"RampJump score retention failed (required %.1f)",
-						requiredScore
-					))
-					Tracer.log(string.format(
-						"rampjump_retention_gate_fail sector=%d attempt=%d score=%.2f required=%.2f prior_best=%s",
-						targetSectorId,
-						attemptIndex,
-						result.score.total or 0,
-						requiredScore,
-						tostring(priorBestScore or "-")
-					))
+					UIState.appendLog(
+						gateHint or string.format("RampJump score retention failed (required %.1f)", requiredScore)
+					)
+					Tracer.log(
+						string.format(
+							"rampjump_retention_gate_fail sector=%d attempt=%d score=%.2f required=%.2f prior_best=%s",
+							targetSectorId,
+							attemptIndex,
+							result.score.total or 0,
+							requiredScore,
+							tostring(priorBestScore or "-")
+						)
+					)
 				end
 			end
 
@@ -1258,19 +1272,16 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				job.final_status = "committed"
 				job.final_result = result
 				UIState.setPhase("Commit", "Committed")
-				UIState.appendLog(string.format("Committed %s v%d", stateSummary(job.working_state), job.working_state.version))
+				UIState.appendLog(
+					string.format("Committed %s v%d", stateSummary(job.working_state), job.working_state.version)
+				)
 				publishScoreSummary(targetSectorId, result.score)
 				pauseForUI()
 
 				-- Baseline commit stands first. Any challenge-up branch only supersedes it
 				-- if the follow-up proposal validates cleanly and beats the baseline score.
-				local wantsChallengeUp, challengeSkipReason, challengeStrategy = shouldRunChallengeUp(
-					request,
-					result,
-					nil,
-					attemptIndex,
-					job.working_state
-				)
+				local wantsChallengeUp, challengeSkipReason, challengeStrategy =
+					shouldRunChallengeUp(request, result, nil, attemptIndex, job.working_state)
 				if wantsChallengeUp then
 					UIState.setPhase("ChallengeUp", "Challenging up...")
 					if challengeStrategy == "proposal_do_over" then
@@ -1288,24 +1299,32 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 							job.working_state = cloneState(bestState)
 							job.final_result = bestResult
 							publishScoreSummary(targetSectorId, bestResult.score)
-							UIState.appendLog(string.format(
-								"Challenge-up superseded baseline → score %.1f (was %.1f)",
-								bestResult.score.total,
-								result.score and result.score.total or 0
-							))
-							Tracer.log(string.format(
-								"challenge_up_proposal sector=%d score=%.2f->%.2f",
-								targetSectorId,
-								result.score and result.score.total or 0,
-								bestResult.score.total
-							))
+							UIState.appendLog(
+								string.format(
+									"Challenge-up superseded baseline → score %.1f (was %.1f)",
+									bestResult.score.total,
+									result.score and result.score.total or 0
+								)
+							)
+							Tracer.log(
+								string.format(
+									"challenge_up_proposal sector=%d score=%.2f->%.2f",
+									targetSectorId,
+									result.score and result.score.total or 0,
+									bestResult.score.total
+								)
+							)
 						else
-							UIState.appendLog("Challenge-up kept baseline: " .. tostring(challengeErr or "no improvement"))
-							Tracer.log(string.format(
-								"challenge_up_proposal_skip sector=%d reason=%s",
-								targetSectorId,
-								tostring(challengeErr or "no improvement")
-							))
+							UIState.appendLog(
+								"Challenge-up kept baseline: " .. tostring(challengeErr or "no improvement")
+							)
+							Tracer.log(
+								string.format(
+									"challenge_up_proposal_skip sector=%d reason=%s",
+									targetSectorId,
+									tostring(challengeErr or "no improvement")
+								)
+							)
 						end
 					else
 						UIState.appendLog("Escalating for extreme qualifier")
@@ -1318,21 +1337,25 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 							car = RuntimeContext.getCar(),
 							canonicalStart = RuntimeContext.getCanonicalStart(),
 							onSectorChange = function(id, entering)
-								if entering then UIState.setCurrentSector(id) end
+								if entering then
+									UIState.setCurrentSector(id)
+								end
 							end,
-							onRound = function(round, attempt, improved, reason)
+							onRound = function(round, attempt, improved, roundReason)
 								if attempt then
-									UIState.appendLog(string.format(
-										"Escalate r%d %s %s→%s %s%s",
-										round,
-										attempt.lever,
-										tostring(attempt.from),
-										tostring(attempt.to),
-										if improved then "ACCEPT" else "REJECT",
-										reason and (" (" .. reason .. ")") or ""
-									))
-								elseif reason then
-									UIState.appendLog("Escalate stopped: " .. reason)
+									UIState.appendLog(
+										string.format(
+											"Escalate r%d %s %s→%s %s%s",
+											round,
+											attempt.lever,
+											tostring(attempt.from),
+											tostring(attempt.to),
+											if improved then "ACCEPT" else "REJECT",
+											roundReason and (" (" .. roundReason .. ")") or ""
+										)
+									)
+								elseif roundReason then
+									UIState.appendLog("Escalate stopped: " .. roundReason)
 								end
 							end,
 						})
@@ -1343,27 +1366,40 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 							job.working_state = cloneState(bestState)
 							job.final_result = bestResult
 							publishScoreSummary(targetSectorId, bestResult.score)
-							UIState.appendLog(string.format(
-								"Escalated in %d rounds → score %.1f (was %.1f)",
-								rounds, bestResult.score.total, result.score.total
-							))
-							Tracer.log(string.format(
-								"challenge_up sector=%d rounds=%d score=%.2f->%.2f",
-								targetSectorId, rounds, result.score.total, bestResult.score.total
-							))
+							UIState.appendLog(
+								string.format(
+									"Escalated in %d rounds → score %.1f (was %.1f)",
+									rounds,
+									bestResult.score.total,
+									result.score.total
+								)
+							)
+							Tracer.log(
+								string.format(
+									"challenge_up sector=%d rounds=%d score=%.2f->%.2f",
+									targetSectorId,
+									rounds,
+									result.score.total,
+									bestResult.score.total
+								)
+							)
 						else
-							UIState.appendLog(string.format("Escalate produced no net improvement in %d rounds", rounds))
+							UIState.appendLog(
+								string.format("Escalate produced no net improvement in %d rounds", rounds)
+							)
 						end
 					end
 					pauseForUI()
 				else
-					Tracer.log(string.format(
-						"challenge_up_skip sector=%d reason=%s strategy=%s qualifiers=%s",
-						targetSectorId,
-						tostring(challengeSkipReason or "unknown"),
-						tostring(challengeStrategy or "-"),
-						qualifiersSummary(request.qualifiers)
-					))
+					Tracer.log(
+						string.format(
+							"challenge_up_skip sector=%d reason=%s strategy=%s qualifiers=%s",
+							targetSectorId,
+							tostring(challengeSkipReason or "unknown"),
+							tostring(challengeStrategy or "-"),
+							qualifiersSummary(request.qualifiers)
+						)
+					)
 				end
 
 				UIState.publishCommittedLap(job.final_result)
@@ -1379,26 +1415,30 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			UIState.setPhase("AnalyzeFailure", "Analyzing failure...")
 			UIState.showFailure(result)
 			pauseOnFailure(result)
-			UIState.appendLog(string.format(
-				"Failure: %s in sector %d",
-				tostring(result.failure and result.failure.type or "unknown"),
-				result.failure and result.failure.sector_id or targetSectorId
-			))
+			UIState.appendLog(
+				string.format(
+					"Failure: %s in sector %d",
+					tostring(result.failure and result.failure.type or "unknown"),
+					result.failure and result.failure.sector_id or targetSectorId
+				)
+			)
 			UIState.appendLog("Metrics: " .. metricsSummary(result.metrics))
 			if #hints > 0 then
 				UIState.appendLog("Hints: " .. table.concat(hints, " | "))
 			end
-			Tracer.log(string.format(
-				"failure_analysis target_sector=%d failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f hints=%s",
-				targetSectorId,
-				tostring(result.failure and result.failure.type or "unknown"),
-				tostring(result.failure and result.failure.sector_id or "-"),
-				failureDetail(result),
-				boolString(result.metrics.target_entered == true),
-				boolString(result.metrics.target_exited == true),
-				result.metrics.target_progress or 0,
-				hintsSummary(hints)
-			))
+			Tracer.log(
+				string.format(
+					"failure_analysis target_sector=%d failure_type=%s failure_sector=%s failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f hints=%s",
+					targetSectorId,
+					tostring(result.failure and result.failure.type or "unknown"),
+					tostring(result.failure and result.failure.sector_id or "-"),
+					failureDetail(result),
+					boolString(result.metrics.target_entered == true),
+					boolString(result.metrics.target_exited == true),
+					result.metrics.target_progress or 0,
+					hintsSummary(hints)
+				)
+			)
 			pauseForUI()
 
 			if shouldRevertPreTargetFailure(result, targetSectorId) then
@@ -1412,30 +1452,24 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 
 				if upstreamFailCount == 1 then
 					-- First upstream failure: retry the same state once before deciding
-					UIState.appendLog(string.format(
-						"Upstream failure in committed sector %d — retrying lap",
-						failingSector
-					))
-					Tracer.log(string.format(
-						"upstream_retry sector=%d failure_sector=%d",
-						targetSectorId, failingSector
-					))
+					UIState.appendLog(
+						string.format("Upstream failure in committed sector %d — retrying lap", failingSector)
+					)
+					Tracer.log(
+						string.format("upstream_retry sector=%d failure_sector=%d", targetSectorId, failingSector)
+					)
 					sm:transition("ApplyRepair")
 					nextAction = nil
 					continue
 				end
 
 				-- Second consecutive failure at same committed sector: revert + queue + hotfix
-				UIState.appendLog(string.format(
-					"Upstream failure confirmed in sector %d — entering hotfix mode",
-					failingSector
-				))
+				UIState.appendLog(
+					string.format("Upstream failure confirmed in sector %d — entering hotfix mode", failingSector)
+				)
 				UIState.setHotfixActive(true, failingSector)
 				UIState.setPhase("HotfixMode", string.format("HOTFIX MODE — Sector %d", failingSector))
-				Tracer.log(string.format(
-					"hotfix_trigger sector=%d failure_sector=%d",
-					targetSectorId, failingSector
-				))
+				Tracer.log(string.format("hotfix_trigger sector=%d failure_sector=%d", targetSectorId, failingSector))
 				_pendingRequest = rawText
 				finishRevert(
 					job,
@@ -1449,13 +1483,13 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				local capturedFailResult = result
 				local capturedFailSector = failingSector
 				task.spawn(function()
-					HotfixAgent.run(
-						capturedFailSector,
-						capturedFailResult,
-						function() return _pendingRequest end,
-						function() _pendingRequest = nil end,
-						function(text) JobRunner.submit(text) end
-					)
+					HotfixAgent.run(capturedFailSector, capturedFailResult, function()
+						return _pendingRequest
+					end, function()
+						_pendingRequest = nil
+					end, function(text)
+						JobRunner.submit(text)
+					end)
 				end)
 				sm:transition("Revert")
 				sm:transition("Idle")
@@ -1468,7 +1502,11 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 			local attemptLimit = attemptLimitForResult(result, targetSectorId)
 			if attemptIndex >= attemptLimit then
 				sm:transition("Revert")
-				finishRevert(job, targetSector, string.format("revert sector=%d attempts=%d", targetSectorId, #job.attempts))
+				finishRevert(
+					job,
+					targetSector,
+					string.format("revert sector=%d attempts=%d", targetSectorId, #job.attempts)
+				)
 				sm:transition("Idle")
 				return true, nil
 			end
@@ -1485,16 +1523,19 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				downstreamDiagnostics(targetSectorId, failureSector)
 			)
 			if packet.diagnostics.downstream_sector_state ~= nil then
-				UIState.appendLog(string.format(
-					"Downstream sector %d: %s",
-					packet.diagnostics.downstream_sector_state.sector_id,
-					tostring(packet.diagnostics.downstream_sector_state.mechanic)
-				))
+				UIState.appendLog(
+					string.format(
+						"Downstream sector %d: %s",
+						packet.diagnostics.downstream_sector_state.sector_id,
+						tostring(packet.diagnostics.downstream_sector_state.mechanic)
+					)
+				)
 			end
 
 			sm:transition("ApplyRepair")
 			UIState.setPhase("ApplyRepair", "Applying repair...")
-			local action, newState, explanation, repairMemoryNote, repairErr = LLMAdapter.repair(packet, job.attempts, packet.design_intent)
+			local action, newState, explanation, repairMemoryNote, repairErr =
+				LLMAdapter.repair(packet, job.attempts, packet.design_intent)
 			if repairErr then
 				local errText = tostring(repairErr)
 				local warningText = invalidAgentResponseWarning(errText)
@@ -1527,10 +1568,16 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				end
 				UIState.appendLog("Revised: " .. compactStateDetails(job.working_state))
 				pauseForUI()
-				Tracer.log(string.format(
-					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s path=llm_full_state explanation=%s",
-					attemptIndex, targetSectorId, failureSector, failureDetail(result), explanation or "-"
-				))
+				Tracer.log(
+					string.format(
+						"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s path=llm_full_state explanation=%s",
+						attemptIndex,
+						targetSectorId,
+						failureSector,
+						failureDetail(result),
+						explanation or "-"
+					)
+				)
 			elseif action then
 				-- Heuristic returned a delta action
 				local actionOk, actionErr = ActionValidator.validateAction(action, job.working_state.mechanic)
@@ -1556,14 +1603,20 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 				end
 				UIState.appendLog("Action: " .. repairActionLabel(action))
 				pauseForUI()
-				Tracer.log(string.format(
-					"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f action=%s explanation=%s",
-					attemptIndex, targetSectorId, failureSector, failureDetail(result),
-					boolString(result.metrics.target_entered == true),
-					boolString(result.metrics.target_exited == true),
-					result.metrics.target_progress or 0,
-					actionSummary(action), explanation or "repair"
-				))
+				Tracer.log(
+					string.format(
+						"repair attempt=%d target_sector=%d failure_sector=%d failure_detail=%s target_entered=%s target_exited=%s target_progress=%.2f action=%s explanation=%s",
+						attemptIndex,
+						targetSectorId,
+						failureSector,
+						failureDetail(result),
+						boolString(result.metrics.target_entered == true),
+						boolString(result.metrics.target_exited == true),
+						result.metrics.target_progress or 0,
+						actionSummary(action),
+						explanation or "repair"
+					)
+				)
 			else
 				sm:transition("Revert")
 				finishRevert(job, targetSector, "revert reason=empty_repair")
@@ -1600,8 +1653,14 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 		UIState.setBusy(false)
 		UIState.setError("system failure: " .. err)
 		if request then
-			local targetSector = RuntimeContext.isReady() and RuntimeContext.getSectorById(request.parsed.sector_id) or nil
-			if targetSector and _lastJob and _lastJob.job_id == request.request_id and _lastJob.final_status == "reverted" then
+			local targetSector = RuntimeContext.isReady() and RuntimeContext.getSectorById(request.parsed.sector_id)
+				or nil
+			if
+				targetSector
+				and _lastJob
+				and _lastJob.job_id == request.request_id
+				and _lastJob.final_status == "reverted"
+			then
 				return false, "system failure: " .. err
 			end
 			if targetSector then
@@ -1614,7 +1673,11 @@ function JobRunner.submit(rawText: string, requestOverride: Request?): (boolean,
 	return resultOrErr, reason
 end
 
-function JobRunner.submitEnduranceDesignIntent(designIntent: DesignIntent, rawText: string, memoryContext: RunMemory?): (boolean, string?)
+function JobRunner.submitEnduranceDesignIntent(
+	designIntent: DesignIntent,
+	rawText: string,
+	memoryContext: RunMemory?
+): (boolean, string?)
 	local validIntent, intentErr = validateDesignIntent(designIntent)
 	if not validIntent then
 		UIState.rejectRequest(rawText, tostring(intentErr))
@@ -1629,10 +1692,7 @@ function JobRunner.startEndurance(): (boolean, string?)
 		return false, "endurance mode already running"
 	end
 	if CameraDemo.isActive() then
-		return false, string.format(
-			"demo '%s' is running; stop it before /demo endurance",
-			CameraDemo.activePreset()
-		)
+		return false, string.format("demo '%s' is running; stop it before /demo endurance", CameraDemo.activePreset())
 	end
 	if TuneMode.isActive() then
 		return false, "tune mode is running; use /tune stop to exit it"
@@ -1678,7 +1738,12 @@ function JobRunner._attemptLimitForResult(result, targetSectorId: number): numbe
 	return attemptLimitForResult(result, targetSectorId)
 end
 
-function JobRunner._buildEnduranceRequest(designIntent: DesignIntent, rawText: string, requestId: string?, memoryContext: RunMemory?): Request
+function JobRunner._buildEnduranceRequest(
+	designIntent: DesignIntent,
+	rawText: string,
+	requestId: string?,
+	memoryContext: RunMemory?
+): Request
 	return buildEnduranceRequest(requestId or nextId("req"), rawText, designIntent, memoryContext)
 end
 

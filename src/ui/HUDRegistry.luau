@@ -15,13 +15,10 @@ local DANGER = Color3.fromRGB(214, 91, 73)
 local SUCCESS = Color3.fromRGB(115, 199, 143)
 local TEXT = Color3.fromRGB(234, 231, 225)
 local MUTED = Color3.fromRGB(168, 163, 154)
-local LEFT_RAIL_WIDTH = 282
 local LEFT_RAIL_MARGIN = 20
-local LEFT_RAIL_GAP = 20
 local RIGHT_RAIL_WIDTH = 176
 local LLM_DOCK_WIDTH = 320
 local BOTTOM_DOCK_HEIGHT = 78
-local BOTTOM_DOCK_GAP = 16
 local TOP_STATUS_RIGHT_RESERVE = 300
 local TOP_STATUS_MIN_LEFT = 196
 local TOP_STATUS_CHROME_CLEARANCE = 196
@@ -131,7 +128,11 @@ local function createTextBox(parent: Instance, props)
 end
 
 local function tweenFlash(instance: Instance, propertyTable)
-	local tween = TweenService:Create(instance, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), propertyTable)
+	local tween = TweenService:Create(
+		instance,
+		TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		propertyTable
+	)
 	tween:Play()
 end
 
@@ -169,7 +170,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	-- TOP RIBBON — phase, request summary, repair detail
 	local topLeft = createFrame(overlayGui, {
 		Size = UDim2.new(1, -(statusLeft + TOP_STATUS_RIGHT_RESERVE), 0, 42),
-		Position = UDim2.new(0, statusLeft, 0, 8),
+		Position = UDim2.fromOffset(statusLeft, 8),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.08,
 		ZIndex = 32,
@@ -182,7 +183,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	topLeftStroke.Parent = topLeft
 
 	local phaseLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 14, 0, 0),
+		Position = UDim2.fromOffset(14, 0),
 		Size = UDim2.new(0, 210, 1, 0),
 		Text = "Ready for request",
 		TextColor3 = TEXT,
@@ -193,7 +194,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local requestLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 230, 0, 0),
+		Position = UDim2.fromOffset(230, 0),
 		Size = UDim2.new(1, -244, 1, 0),
 		Text = "",
 		TextColor3 = MUTED,
@@ -204,7 +205,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local reasoningLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 14, 0, 25),
+		Position = UDim2.fromOffset(14, 25),
 		Size = UDim2.new(1, -28, 0, 15),
 		Text = "",
 		TextColor3 = MUTED,
@@ -216,7 +217,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local reasoningActionLabel = createLabel(topLeft, {
-		Position = UDim2.new(0, 14, 0, 25),
+		Position = UDim2.fromOffset(14, 25),
 		Size = UDim2.new(1, -28, 0, 15),
 		Text = "",
 		TextColor3 = MUTED,
@@ -229,7 +230,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local repairCallout = createFrame(overlayGui, {
 		Size = UDim2.new(1, -(statusLeft + REPAIR_CALLOUT_RIGHT_MARGIN), 0, 44),
-		Position = UDim2.new(0, statusLeft, 0, 60),
+		Position = UDim2.fromOffset(statusLeft, 60),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.22,
 		ZIndex = 34,
@@ -239,7 +240,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(repairCallout, AMBER, 0.28)
 
 	local repairCalloutLabel = createLabel(repairCallout, {
-		Position = UDim2.new(0, 16, 0, 0),
+		Position = UDim2.fromOffset(16, 0),
 		Size = UDim2.new(1, -32, 1, 0),
 		Text = "",
 		TextColor3 = TEXT,
@@ -252,7 +253,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- TOP EDGE — repair mode banner
 	local repairBanner = createFrame(overlayGui, {
-		Size = UDim2.new(0, 260, 0, 42),
+		Size = UDim2.fromOffset(260, 42),
 		Position = UDim2.new(1, -12, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL,
@@ -264,7 +265,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(repairBanner, AMBER, 0.18)
 
 	local repairLabel = createLabel(repairBanner, {
-		Position = UDim2.new(0, 14, 0, 0),
+		Position = UDim2.fromOffset(14, 0),
 		Size = UDim2.new(1, -28, 1, 0),
 		Text = "REPAIR MODE  |  ATTEMPT 1/7",
 		TextColor3 = AMBER_SOFT,
@@ -276,8 +277,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local enduranceBadge = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 6),
-		Size = UDim2.new(0, 148, 0, 22),
+		Position = UDim2.fromOffset(20, 6),
+		Size = UDim2.fromOffset(148, 22),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.1,
 	})
@@ -298,8 +299,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local hotfixBadge = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 32),
-		Size = UDim2.new(0, 148, 0, 22),
+		Position = UDim2.fromOffset(20, 32),
+		Size = UDim2.fromOffset(148, 22),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.06,
 	})
@@ -321,7 +322,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- FAILURE BANNER — centered overlay
 	local failureBanner = createFrame(gui, {
-		Size = UDim2.new(0, 520, 0, 104),
+		Size = UDim2.fromOffset(520, 104),
 		Position = UDim2.new(0.5, 0, 0.5, -44),
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = PANEL,
@@ -334,7 +335,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local failureBannerLabel = createLabel(failureBanner, {
 		Size = UDim2.new(1, -32, 1, -20),
-		Position = UDim2.new(0, 16, 0, 10),
+		Position = UDim2.fromOffset(16, 10),
 		Text = "",
 		TextColor3 = DANGER,
 		TextSize = 32,
@@ -346,8 +347,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local hotfixBanner = createFrame(overlayGui, {
-		Size = UDim2.new(0, 1, 0, 1),
-		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.fromOffset(1, 1),
+		Position = UDim2.fromOffset(0, 0),
 		BackgroundColor3 = DANGER,
 		BackgroundTransparency = 1,
 		ZIndex = 1,
@@ -355,8 +356,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	hotfixBanner.Visible = false
 
 	local hotfixBannerLabel = createLabel(hotfixBanner, {
-		Size = UDim2.new(1, 0, 1, 0),
-		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(0, 0),
 		Text = "",
 		TextColor3 = DANGER,
 		TextSize = 1,
@@ -369,9 +370,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- LEFT RAIL — live telemetry + event log
 	local logContainer = createFrame(gui, {
-		Position = UDim2.new(0, 20, 0, 60),
+		Position = UDim2.fromOffset(20, 60),
 		AnchorPoint = Vector2.new(0, 0),
-		Size = UDim2.new(0, 148, 0, 112),
+		Size = UDim2.fromOffset(148, 112),
 		BackgroundColor3 = PANEL_SOFT,
 		BackgroundTransparency = 0.12,
 	})
@@ -379,9 +380,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(logContainer, 18)
 	addStroke(logContainer, STEEL_LIGHT, 0.25)
 
-	local logTitle = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 8),
-		Size = UDim2.new(0, 90, 0, 18),
+	createLabel(logContainer, {
+		Position = UDim2.fromOffset(14, 8),
+		Size = UDim2.fromOffset(90, 18),
 		Text = "Live",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
@@ -390,8 +391,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local speedLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 36),
-		Size = UDim2.new(0, 56, 0, 20),
+		Position = UDim2.fromOffset(14, 36),
+		Size = UDim2.fromOffset(56, 20),
 		Text = "Speed",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -402,7 +403,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local speedValueLabel = createLabel(logContainer, {
 		Position = UDim2.new(1, -14, 0, 36),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 62, 0, 20),
+		Size = UDim2.fromOffset(62, 20),
 		Text = "0.0",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -411,8 +412,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local headingLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 56),
-		Size = UDim2.new(0, 56, 0, 20),
+		Position = UDim2.fromOffset(14, 56),
+		Size = UDim2.fromOffset(56, 20),
 		Text = "Heading",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -423,7 +424,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local headingValueLabel = createLabel(logContainer, {
 		Position = UDim2.new(1, -14, 0, 56),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 62, 0, 20),
+		Size = UDim2.fromOffset(62, 20),
 		Text = "N   0°",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -432,8 +433,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local pitchLabel = createLabel(logContainer, {
-		Position = UDim2.new(0, 14, 0, 76),
-		Size = UDim2.new(0, 56, 0, 20),
+		Position = UDim2.fromOffset(14, 76),
+		Size = UDim2.fromOffset(56, 20),
 		Text = "Pitch",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -444,7 +445,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local pitchValueLabel = createLabel(logContainer, {
 		Position = UDim2.new(1, -14, 0, 76),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 62, 0, 20),
+		Size = UDim2.fromOffset(62, 20),
 		Text = "+0°",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -453,7 +454,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local logOverlay = createFrame(overlayGui, {
-		Position = UDim2.new(0, 20, 0, 64),
+		Position = UDim2.fromOffset(20, 64),
 		Size = UDim2.new(1, -40, 0, 220),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.04,
@@ -463,9 +464,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(logOverlay, 18)
 	addStroke(logOverlay, STEEL_LIGHT, 0.12)
 
-	local logOverlayTitle = createLabel(logOverlay, {
-		Position = UDim2.new(0, 16, 0, 10),
-		Size = UDim2.new(0, 120, 0, 18),
+	createLabel(logOverlay, {
+		Position = UDim2.fromOffset(16, 10),
+		Size = UDim2.fromOffset(120, 18),
 		Text = "Event Log",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
@@ -473,10 +474,10 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		ZIndex = 43,
 	})
 
-	local logOverlayHint = createLabel(logOverlay, {
+	createLabel(logOverlay, {
 		Position = UDim2.new(1, -54, 0, 10),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 220, 0, 18),
+		Size = UDim2.fromOffset(220, 18),
 		Text = "Select text to copy",
 		TextColor3 = MUTED,
 		TextSize = 11,
@@ -488,7 +489,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local logCloseButton = createButton(logOverlay, {
 		Position = UDim2.new(1, -16, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 30, 0, 22),
+		Size = UDim2.fromOffset(30, 22),
 		Text = "X",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 11,
@@ -502,13 +503,13 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	local logScroll = Instance.new("ScrollingFrame")
 	logScroll.Name = "LogScroll"
-	logScroll.Position = UDim2.new(0, 12, 0, 36)
+	logScroll.Position = UDim2.fromOffset(12, 36)
 	logScroll.Size = UDim2.new(1, -24, 1, -48)
 	logScroll.BackgroundColor3 = PANEL_SOFT
 	logScroll.BackgroundTransparency = 0.08
 	logScroll.BorderSizePixel = 0
 	logScroll.ScrollBarThickness = 8
-	logScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	logScroll.CanvasSize = UDim2.fromOffset(0, 0)
 	logScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	logScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 	logScroll.ZIndex = 43
@@ -516,7 +517,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addCorner(logScroll, 12)
 
 	local logTextBox = createTextBox(logScroll, {
-		Position = UDim2.new(0, 8, 0, 8),
+		Position = UDim2.fromOffset(8, 8),
 		Size = UDim2.new(1, -16, 0, 0),
 		Text = "",
 		TextColor3 = TEXT,
@@ -536,7 +537,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 
 	-- RIGHT RAIL — session telemetry + set baseline + overview
 	local rightRail = createFrame(gui, {
-		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 152),
+		Size = UDim2.fromOffset(RIGHT_RAIL_WIDTH, 152),
 		Position = UDim2.new(1, -20, 0, 60),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
@@ -546,8 +547,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(rightRail, STEEL_LIGHT, 0.25)
 
 	createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 10),
-		Size = UDim2.new(0, 90, 0, 18),
+		Position = UDim2.fromOffset(14, 10),
+		Size = UDim2.fromOffset(90, 18),
 		Text = "Session",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
@@ -555,8 +556,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local baselineLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 34),
-		Size = UDim2.new(0, 68, 0, 18),
+		Position = UDim2.fromOffset(14, 34),
+		Size = UDim2.fromOffset(68, 18),
 		Text = "Base --",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -564,7 +565,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local lastLapLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 54),
+		Position = UDim2.fromOffset(14, 54),
 		Size = UDim2.new(1, -28, 0, 18),
 		Text = "Last --",
 		TextColor3 = TEXT,
@@ -575,7 +576,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local slowdownLabel = createLabel(rightRail, {
 		Position = UDim2.new(1, -14, 0, 34),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 56, 0, 18),
+		Size = UDim2.fromOffset(56, 18),
 		Text = "% --",
 		TextColor3 = TEXT,
 		TextSize = 12,
@@ -584,7 +585,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local scoreLabel = createLabel(rightRail, {
-		Position = UDim2.new(0, 14, 0, 80),
+		Position = UDim2.fromOffset(14, 80),
 		Size = UDim2.new(1, -28, 0, 56),
 		Text = "Track  --\nBudget --",
 		TextColor3 = TEXT,
@@ -594,7 +595,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local memoryPanel = createFrame(gui, {
-		Size = UDim2.new(0, RIGHT_RAIL_WIDTH, 0, 104),
+		Size = UDim2.fromOffset(RIGHT_RAIL_WIDTH, 104),
 		Position = UDim2.new(1, -20, 0, 220),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = PANEL_SOFT,
@@ -605,8 +606,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(memoryPanel, STEEL_LIGHT, 0.25)
 
 	createLabel(memoryPanel, {
-		Position = UDim2.new(0, 14, 0, 10),
-		Size = UDim2.new(0, 120, 0, 18),
+		Position = UDim2.fromOffset(14, 10),
+		Size = UDim2.fromOffset(120, 18),
 		Text = "Memory",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
@@ -614,7 +615,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local memoryLabel = createLabel(memoryPanel, {
-		Position = UDim2.new(0, 14, 0, 32),
+		Position = UDim2.fromOffset(14, 32),
 		Size = UDim2.new(1, -28, 1, -44),
 		Text = "",
 		TextColor3 = TEXT,
@@ -627,7 +628,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local setBaselineButton = createButton(rightRail, {
 		Position = UDim2.new(1, -70, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 24, 0, 24),
+		Size = UDim2.fromOffset(24, 24),
 		Text = "S",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 12,
@@ -641,7 +642,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local logButton = createButton(rightRail, {
 		Position = UDim2.new(1, -42, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 24, 0, 24),
+		Size = UDim2.fromOffset(24, 24),
 		Text = "L",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 12,
@@ -655,7 +656,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local overviewButton = createButton(rightRail, {
 		Position = UDim2.new(1, -14, 0, 8),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 24, 0, 24),
+		Size = UDim2.fromOffset(24, 24),
 		Text = "O",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 12,
@@ -678,7 +679,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(bottomDock, STEEL_LIGHT, 0.25)
 
 	createLabel(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 10),
+		Position = UDim2.fromOffset(20, 10),
 		Size = UDim2.new(1, -40, 0, 16),
 		Text = "INPUT",
 		TextColor3 = AMBER_SOFT,
@@ -687,7 +688,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local inputBox = createTextBox(bottomDock, {
-		Position = UDim2.new(0, 20, 0, 30),
+		Position = UDim2.fromOffset(20, 30),
 		Size = UDim2.new(1, -128, 0, 34),
 		PlaceholderText = "Try: Add a chicane in sector 3",
 		TextSize = 16,
@@ -698,7 +699,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local submitButton = createButton(bottomDock, {
 		Position = UDim2.new(1, -20, 0, 30),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 72, 0, 34),
+		Size = UDim2.fromOffset(72, 34),
 		Text = "Submit",
 		TextColor3 = PANEL,
 		TextSize = 15,
@@ -710,7 +711,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	-- BOTTOM RIGHT — LLM selector
 	local llmWarning = createFrame(overlayGui, {
 		Size = UDim2.new(1, -(statusLeft + WARNING_RIGHT_MARGIN), 0, 58),
-		Position = UDim2.new(0, statusLeft, 0, 112),
+		Position = UDim2.fromOffset(statusLeft, 112),
 		AnchorPoint = Vector2.new(0, 0),
 		BackgroundColor3 = PANEL,
 		BackgroundTransparency = 0.06,
@@ -721,8 +722,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(llmWarning, AMBER, 0.18)
 
 	local llmWarningIcon = createFrame(llmWarning, {
-		Size = UDim2.new(0, 18, 0, 18),
-		Position = UDim2.new(0, 14, 0, 14),
+		Size = UDim2.fromOffset(18, 18),
+		Position = UDim2.fromOffset(14, 14),
 		AnchorPoint = Vector2.new(0, 0),
 		BackgroundColor3 = AMBER,
 		BackgroundTransparency = 0,
@@ -730,9 +731,9 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 	addCorner(llmWarningIcon, 9)
 
-	local llmWarningIconLabel = createLabel(llmWarningIcon, {
-		Size = UDim2.new(1, 0, 1, 0),
-		Position = UDim2.new(0, 0, 0, 0),
+	createLabel(llmWarningIcon, {
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(0, 0),
 		Text = "!",
 		TextColor3 = PANEL,
 		TextSize = 12,
@@ -742,7 +743,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local llmWarningLabel = createLabel(llmWarning, {
-		Position = UDim2.new(0, 42, 0, 8),
+		Position = UDim2.fromOffset(42, 8),
 		Size = UDim2.new(1, -56, 1, -16),
 		Text = "",
 		TextColor3 = AMBER_SOFT,
@@ -754,7 +755,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local llmDock = createFrame(gui, {
-		Size = UDim2.new(0, LLM_DOCK_WIDTH, 0, BOTTOM_DOCK_HEIGHT),
+		Size = UDim2.fromOffset(LLM_DOCK_WIDTH, BOTTOM_DOCK_HEIGHT),
 		Position = UDim2.new(1, -20, 1, -20),
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundColor3 = PANEL,
@@ -764,8 +765,8 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	addStroke(llmDock, STEEL_LIGHT, 0.25)
 
 	createLabel(llmDock, {
-		Position = UDim2.new(0, 20, 0, 10),
-		Size = UDim2.new(0, 60, 0, 16),
+		Position = UDim2.fromOffset(20, 10),
+		Size = UDim2.fromOffset(60, 16),
 		Text = "LLM",
 		TextColor3 = AMBER_SOFT,
 		TextSize = 13,
@@ -773,7 +774,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	})
 
 	local llmModelLabel = createLabel(llmDock, {
-		Position = UDim2.new(0, 20, 0, 30),
+		Position = UDim2.fromOffset(20, 30),
 		Size = UDim2.new(1, -104, 0, 34),
 		Text = "Model  Heuristic",
 		TextColor3 = TEXT,
@@ -785,7 +786,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local llmPrevButton = createButton(llmDock, {
 		Position = UDim2.new(1, -52, 0, 33),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 28, 0, 28),
+		Size = UDim2.fromOffset(28, 28),
 		Text = "◀",
 		TextSize = 14,
 		BackgroundColor3 = STEEL,
@@ -796,7 +797,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 	local llmNextButton = createButton(llmDock, {
 		Position = UDim2.new(1, -20, 0, 33),
 		AnchorPoint = Vector2.new(1, 0),
-		Size = UDim2.new(0, 28, 0, 28),
+		Size = UDim2.fromOffset(28, 28),
 		Text = "▶",
 		TextSize = 14,
 		BackgroundColor3 = STEEL,

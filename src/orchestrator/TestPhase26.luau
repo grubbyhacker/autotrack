@@ -161,17 +161,25 @@ local function testTrackBudgetSummaryRemainsCommitAuthoritative(folder)
 			and approxEq(summary.budget_used, 0.46)
 			and approxEq(summary.budget_headroom, 0.54)
 			and summary.over_budget == true,
-		(string.format(
-			"total=%s count=%s budget_used=%s headroom=%s over=%s",
-			tostring(summary.total),
-			tostring(summary.sector_count),
-			tostring(summary.budget_used),
-			tostring(summary.budget_headroom),
-			tostring(summary.over_budget)
-		))
+		(
+			string.format(
+				"total=%s count=%s budget_used=%s headroom=%s over=%s",
+				tostring(summary.total),
+				tostring(summary.sector_count),
+				tostring(summary.budget_used),
+				tostring(summary.budget_headroom),
+				tostring(summary.over_budget)
+			)
+		)
 	)
 
-	UIState.publishTrackScore(summary.total, summary.sector_count, summary.budget_used, summary.budget_headroom, summary.over_budget)
+	UIState.publishTrackScore(
+		summary.total,
+		summary.sector_count,
+		summary.budget_used,
+		summary.budget_headroom,
+		summary.over_budget
+	)
 	UIState.publishAttemptResult({
 		metrics = {
 			lap_time = 5.8,
@@ -186,14 +194,16 @@ local function testTrackBudgetSummaryRemainsCommitAuthoritative(folder)
 			and approxEq(folder:GetAttribute("track_budget_used") or 0, 0.46)
 			and approxEq(folder:GetAttribute("track_budget_headroom") or 0, 0.54)
 			and folder:GetAttribute("track_over_budget") == true,
-		(string.format(
-			"track_score_total=%s count=%s budget_used=%s headroom=%s over=%s",
-			tostring(folder:GetAttribute("track_score_total")),
-			tostring(folder:GetAttribute("track_score_count")),
-			tostring(folder:GetAttribute("track_budget_used")),
-			tostring(folder:GetAttribute("track_budget_headroom")),
-			tostring(folder:GetAttribute("track_over_budget"))
-		))
+		(
+			string.format(
+				"track_score_total=%s count=%s budget_used=%s headroom=%s over=%s",
+				tostring(folder:GetAttribute("track_score_total")),
+				tostring(folder:GetAttribute("track_score_count")),
+				tostring(folder:GetAttribute("track_budget_used")),
+				tostring(folder:GetAttribute("track_budget_headroom")),
+				tostring(folder:GetAttribute("track_over_budget"))
+			)
+		)
 	)
 end
 

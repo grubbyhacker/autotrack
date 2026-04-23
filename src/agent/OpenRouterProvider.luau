@@ -32,7 +32,9 @@ end
 -- Handles models that wrap JSON in prose or markdown code fences.
 local function extractJson(content: string): string?
 	local start = string.find(content, "{")
-	if not start then return nil end
+	if not start then
+		return nil
+	end
 	local depth = 0
 	local closing = nil
 	for i = start, #content do
@@ -109,10 +111,8 @@ local function normalizeState(state: SectorState, integerLevers: boolean): Secto
 		end
 		-- CrestDip: enforce h/L² >= MIN_CURVATURE by bumping height if needed
 		if state.mechanic == "CrestDip" then
-			local tunedHeight, tunedLength = CrestDipTuner.tune(
-				state.params.height_or_depth or 0,
-				state.params.sector_length or 0
-			)
+			local tunedHeight, tunedLength =
+				CrestDipTuner.tune(state.params.height_or_depth or 0, state.params.sector_length or 0)
 			state.params.height_or_depth = tunedHeight
 			state.params.sector_length = tunedLength
 			local h = state.params.height_or_depth or 0
@@ -126,34 +126,14 @@ local function normalizeState(state: SectorState, integerLevers: boolean): Secto
 	end
 	-- Normalise pad values: unknown strings become "None"
 	if state.pads then
-		if not PadValueUtils.isValid(state.pads.ingress) then state.pads.ingress = "None" end
-		if not PadValueUtils.isValid(state.pads.egress) then state.pads.egress = "None" end
+		if not PadValueUtils.isValid(state.pads.ingress) then
+			state.pads.ingress = "None"
+		end
+		if not PadValueUtils.isValid(state.pads.egress) then
+			state.pads.egress = "None"
+		end
 	end
 	return state
-end
-
--- Build a short repair context description for attempt N.
-local function repairContext(record: AttemptRecord): string
-	local result = record.result
-	local failureType = result.failure and result.failure.type or "unknown"
-	local failureDetail = result.failure and result.failure.detail or ""
-	local hints = record.hints or {}
-	return string.format(
-		"Attempt %d result: failure_type=%s detail=%s hints=%s metrics=%s",
-		record.attempt_index,
-		failureType,
-		failureDetail ~= "" and failureDetail or "-",
-		#hints > 0 and table.concat(hints, "|") or "-",
-		encode({
-			air_distance = result.metrics.air_distance,
-			lateral_error = result.metrics.lateral_error,
-			vertical_displacement = result.metrics.vertical_displacement,
-			slowdown_ratio = result.metrics.slowdown_ratio,
-			target_progress = result.metrics.target_progress,
-			target_left_offset = result.metrics.target_left_offset,
-			target_right_offset = result.metrics.target_right_offset,
-		})
-	)
 end
 
 function OpenRouterProvider(modelId: string)
@@ -176,19 +156,21 @@ function OpenRouterProvider(modelId: string)
 	function provider.repair(payload)
 		local history = payload.history or {}
 		local packet = payload.packet
-		local messages = payload.messages or PromptBuilder.repairMessages(packet.request, history, packet, payload.design_intent)
+		local messages = payload.messages
+			or PromptBuilder.repairMessages(packet.request, history, packet, payload.design_intent)
 		local json = callAPI(modelId, messages)
 		local decoded = HttpService:JSONDecode(json)
-		local state = if type(decoded) == "table" and type(decoded.newState) == "table" then decoded.newState else decoded
+		local state = if type(decoded) == "table" and type(decoded.newState) == "table"
+			then decoded.newState
+			else decoded
 		state = normalizeState(state, cfg.integerLevers)
 		-- Derive a short explanation from the state diff vs the previous attempt
-		local explanation = string.format(
-			"LLM revised state (attempt %d)",
-			packet.attempt_index + 1
-		)
+		local explanation = string.format("LLM revised state (attempt %d)", packet.attempt_index + 1)
 		return encode({
 			newState = state,
-			explanation = if type(decoded) == "table" and type(decoded.explanation) == "string" then decoded.explanation else explanation,
+			explanation = if type(decoded) == "table" and type(decoded.explanation) == "string"
+				then decoded.explanation
+				else explanation,
 			memory_note = if type(decoded) == "table" then decoded.memory_note else nil,
 		})
 	end

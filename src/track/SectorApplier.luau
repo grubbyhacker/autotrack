@@ -54,7 +54,8 @@ local function ensureBaselinePart(sector_id: number, entryFrame: CFrame, exitFra
 end
 
 local function destroyBaseline(sector_id: number)
-	local baseline = TrackVisuals.getCollisionFolder(sector_id):FindFirstChild(string.format("Sector_%02d_Straight", sector_id))
+	local baseline = TrackVisuals.getCollisionFolder(sector_id)
+		:FindFirstChild(string.format("Sector_%02d_Straight", sector_id))
 	if baseline then
 		baseline:Destroy()
 	end

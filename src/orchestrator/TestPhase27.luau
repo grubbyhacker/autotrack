@@ -93,7 +93,14 @@ local function makeRunMetrics(overrides)
 	return metrics
 end
 
-local function makeRepairPacket(request: Request, state, failureType: string, failureDetail: string, hints: { string }, metrics)
+local function makeRepairPacket(
+	request: Request,
+	state,
+	failureType: string,
+	failureDetail: string,
+	hints: { string },
+	metrics
+)
 	return {
 		request = request,
 		sector_state = state,
@@ -142,39 +149,31 @@ end
 function TestPhase27.run()
 	local oldProfileMode = workspace:GetAttribute("AutoTrack_RampJumpProfileMode")
 
-		local ok, err = pcall(function()
+	local ok, err = pcall(function()
 		local requestHigh = makeRequest("high")
-		local rejected, requiredRejected = JobRunner._evaluateRampJumpRepairScoreRetention(
-			requestHigh,
-			1,
-			12,
-			{ score = { total = 8.0 } }
-		)
+		local rejected, requiredRejected =
+			JobRunner._evaluateRampJumpRepairScoreRetention(requestHigh, 1, 12, { score = { total = 8.0 } })
 		T.expect(
 			"phase27_rampjump_repair_score_retention_rejects_neutralized_success",
 			rejected == false and requiredRejected >= 8.39,
 			HttpService:JSONEncode({ passed = rejected, required = requiredRejected })
 		)
 
-		local accepted, requiredAccepted = JobRunner._evaluateRampJumpRepairScoreRetention(
-			requestHigh,
-			2,
-			12,
-			{ score = { total = 8.6 } }
-		)
+		local accepted, requiredAccepted =
+			JobRunner._evaluateRampJumpRepairScoreRetention(requestHigh, 2, 12, { score = { total = 8.6 } })
 		T.expect(
 			"phase27_rampjump_repair_score_retention_accepts_high_enough_score",
 			accepted == true and requiredAccepted >= 8.39,
 			HttpService:JSONEncode({ passed = accepted, required = requiredAccepted })
 		)
 
-		local attemptZeroPass = JobRunner._evaluateRampJumpRepairScoreRetention(
-			requestHigh,
-			0,
-			12,
-			{ score = { total = 2.0 } }
+		local attemptZeroPass =
+			JobRunner._evaluateRampJumpRepairScoreRetention(requestHigh, 0, 12, { score = { total = 2.0 } })
+		T.expect(
+			"phase27_rampjump_retention_gate_skips_initial_attempt",
+			attemptZeroPass == true,
+			tostring(attemptZeroPass)
 		)
-		T.expect("phase27_rampjump_retention_gate_skips_initial_attempt", attemptZeroPass == true, tostring(attemptZeroPass))
 
 		local challengeProbeResult = {
 			score = {
@@ -195,26 +194,16 @@ function TestPhase27.run()
 			pads = { ingress = "Boost50", egress = "Brake25" },
 			version = 2,
 		}
-		local repairedChallengeAllowed, repairedChallengeReason = JobRunner._shouldRunChallengeUp(
-			requestHigh,
-			challengeProbeResult,
-			true,
-			1,
-			highEnergyRampState
-		)
+		local repairedChallengeAllowed, repairedChallengeReason =
+			JobRunner._shouldRunChallengeUp(requestHigh, challengeProbeResult, true, 1, highEnergyRampState)
 		T.expect(
 			"phase27_rampjump_challenge_up_skips_repaired_success",
 			repairedChallengeAllowed == false and repairedChallengeReason == "rampjump_repaired_success",
 			tostring(repairedChallengeReason)
 		)
 
-		local highEnergyChallengeAllowed, highEnergyChallengeReason = JobRunner._shouldRunChallengeUp(
-			requestHigh,
-			challengeProbeResult,
-			true,
-			0,
-			highEnergyRampState
-		)
+		local highEnergyChallengeAllowed, highEnergyChallengeReason =
+			JobRunner._shouldRunChallengeUp(requestHigh, challengeProbeResult, true, 0, highEnergyRampState)
 		T.expect(
 			"phase27_rampjump_challenge_up_skips_high_energy_baseline",
 			highEnergyChallengeAllowed == false and highEnergyChallengeReason == "rampjump_already_high_energy",
@@ -363,17 +352,10 @@ function TestPhase27.run()
 		}
 		local rampSurfaceActive = VerifierController._isRampJumpGroundedSurfaceActive(rampSurfaceState, 0.45, false)
 		local rampSurfaceInactive = VerifierController._isRampJumpGroundedSurfaceActive(rampSurfaceState, 0.05, false)
-		local dampedAngular = VerifierController._resolveRampJumpSurfaceAngularVelocity(
-			true,
-			1 / 60,
-			Vector3.new(6.0, 4.5, 4.5)
-		)
-		local dampedLinear = VerifierController._dampRampJumpGroundedLateralVelocity(
-			true,
-			1 / 60,
-			Vector3.new(20, 0, 40),
-			Vector3.zAxis
-		)
+		local dampedAngular =
+			VerifierController._resolveRampJumpSurfaceAngularVelocity(true, 1 / 60, Vector3.new(6.0, 4.5, 4.5))
+		local dampedLinear =
+			VerifierController._dampRampJumpGroundedLateralVelocity(true, 1 / 60, Vector3.new(20, 0, 40), Vector3.zAxis)
 		local forgivenContainment = VerifierController._resolveRampJumpContainmentDistance(
 			true,
 			true,
@@ -410,106 +392,154 @@ function TestPhase27.run()
 			})
 		)
 
-			local repairRequest = makeRequest("high")
-			repairRequest.memory_context = emptyMemory()
-			local currentState = {
+		local repairRequest = makeRequest("high")
+		repairRequest.memory_context = emptyMemory()
+		local currentState = {
+			sector_id = 3,
+			mechanic = "RampJump",
+			params = {
+				ramp_angle = 14,
+				ramp_length = 34,
+				gap_length = 10,
+				landing_length = 24,
+			},
+			pads = { ingress = "None", egress = "None" },
+			version = 1,
+		}
+		local packet = makeRepairPacket(
+			repairRequest,
+			currentState,
+			"local_execution_failure",
+			"no_progress",
+			{ "no_progress", "speed bled off climbing the ramp" },
+			makeRunMetrics({ target_apex_min_speed = 9 })
+		)
+		local history = {
+			{
+				attempt_index = 0,
+				action = nil,
+				proposed_state = {
+					sector_id = 3,
+					mechanic = "RampJump",
+					params = {
+						ramp_angle = 16,
+						ramp_length = 40,
+						gap_length = 12,
+						landing_length = 22,
+					},
+					pads = { ingress = "None", egress = "None" },
+					version = 0,
+				},
+				result = packet.run_result,
+				hints = {},
+				memory_note = nil,
+			},
+		}
+		local repairMessages = PromptBuilder.repairMessages(repairRequest, history, packet, repairRequest.design_intent)
+		local repairTail = repairMessages[#repairMessages].content
+		T.expect(
+			"phase27_repair_prompt_avoids_blanket_make_easier_language",
+			string.find(repairTail, "fix the specific failure while preserving scoreable challenge", 1, true) ~= nil
+				and string.find(repairTail, "make the obstacle easier", 1, true) == nil,
+			repairTail
+		)
+
+		LLMAdapter.setProvider("phase27-rampjump-guard", {
+			propose = function()
+				return HttpService:JSONEncode(currentState)
+			end,
+			repair = function()
+				return HttpService:JSONEncode({
+					newState = {
+						sector_id = 3,
+						mechanic = "RampJump",
+						params = {
+							ramp_angle = 3,
+							ramp_length = 52,
+							gap_length = 18,
+							landing_length = 72,
+						},
+						pads = {
+							ingress = "Brake50",
+							egress = "Brake50",
+						},
+						version = 2,
+					},
+					explanation = "flattening jump to make it safer",
+				})
+			end,
+			orchestrate = function()
+				return HttpService:JSONEncode({ action = "begin_loop", rationale = "test only" })
+			end,
+		})
+
+		local _, guardedState, _, _, guardErr = LLMAdapter.repair(packet, history, repairRequest.design_intent)
+		T.expect(
+			"phase27_rampjump_repair_guardrails_prevent_no_progress_flattening",
+			guardErr == nil
+				and guardedState ~= nil
+				and string.find(tostring(guardedState.pads.ingress), "Boost", 1, true) == 1
+				and guardedState.params.ramp_length <= currentState.params.ramp_length
+				and guardedState.params.gap_length <= currentState.params.gap_length
+				and guardedState.params.ramp_angle >= 13
+				and guardedState.pads.egress ~= "Brake50",
+			HttpService:JSONEncode({
+				err = guardErr,
+				guarded = guardedState,
+			})
+		)
+
+		local instabilityPacket = makeRepairPacket(
+			repairRequest,
+			{
 				sector_id = 3,
 				mechanic = "RampJump",
 				params = {
 					ramp_angle = 14,
-					ramp_length = 34,
-					gap_length = 10,
-					landing_length = 24,
+					ramp_length = 41,
+					gap_length = 11,
+					landing_length = 60,
 				},
-				pads = { ingress = "None", egress = "None" },
-				version = 1,
-			}
-			local packet = makeRepairPacket(
-				repairRequest,
-				currentState,
-				"local_execution_failure",
-				"no_progress",
-				{ "no_progress", "speed bled off climbing the ramp" },
-				makeRunMetrics({ target_apex_min_speed = 9 })
-			)
-			local history = {
-				{
-					attempt_index = 0,
-					action = nil,
-					proposed_state = {
-						sector_id = 3,
-						mechanic = "RampJump",
-						params = {
-							ramp_angle = 16,
-							ramp_length = 40,
-							gap_length = 12,
-							landing_length = 22,
-						},
-						pads = { ingress = "None", egress = "None" },
-						version = 0,
-					},
-					result = packet.run_result,
-					hints = {},
-					memory_note = nil,
-				},
-			}
-			local repairMessages = PromptBuilder.repairMessages(repairRequest, history, packet, repairRequest.design_intent)
-			local repairTail = repairMessages[#repairMessages].content
-			T.expect(
-				"phase27_repair_prompt_avoids_blanket_make_easier_language",
-				string.find(repairTail, "fix the specific failure while preserving scoreable challenge", 1, true) ~= nil
-					and string.find(repairTail, "make the obstacle easier", 1, true) == nil,
-				repairTail
-			)
-
-			LLMAdapter.setProvider("phase27-rampjump-guard", {
-				propose = function()
-					return HttpService:JSONEncode(currentState)
-				end,
-				repair = function()
-					return HttpService:JSONEncode({
-						newState = {
-							sector_id = 3,
-							mechanic = "RampJump",
-							params = {
-								ramp_angle = 3,
-								ramp_length = 52,
-								gap_length = 18,
-								landing_length = 72,
-							},
-							pads = {
-								ingress = "Brake50",
-								egress = "Brake50",
-							},
-							version = 2,
-						},
-						explanation = "flattening jump to make it safer",
-					})
-				end,
-				orchestrate = function()
-					return HttpService:JSONEncode({ action = "begin_loop", rationale = "test only" })
-				end,
+				pads = { ingress = "Boost50", egress = "Brake25" },
+				version = 7,
+			},
+			"local_execution_failure",
+			"tumble",
+			{ "tumble", "body_off_track" },
+			makeRunMetrics({
+				target_progress = 0.0,
+				target_reacquired = false,
 			})
-
-			local _, guardedState, _, _, guardErr = LLMAdapter.repair(packet, history, repairRequest.design_intent)
-			T.expect(
-				"phase27_rampjump_repair_guardrails_prevent_no_progress_flattening",
-				guardErr == nil
-					and guardedState ~= nil
-					and string.find(tostring(guardedState.pads.ingress), "Boost", 1, true) == 1
-					and guardedState.params.ramp_length <= currentState.params.ramp_length
-					and guardedState.params.gap_length <= currentState.params.gap_length
-					and guardedState.params.ramp_angle >= 13
-					and guardedState.pads.egress ~= "Brake50",
-				HttpService:JSONEncode({
-					err = guardErr,
-					guarded = guardedState,
-				})
-			)
-
-			local instabilityPacket = makeRepairPacket(
-				repairRequest,
-				{
+		)
+		local instabilityHistory = {
+			{
+				attempt_index = 5,
+				action = nil,
+				proposed_state = {
+					sector_id = 3,
+					mechanic = "RampJump",
+					params = {
+						ramp_angle = 14,
+						ramp_length = 41,
+						gap_length = 11,
+						landing_length = 60,
+					},
+					pads = { ingress = "Boost50", egress = "Brake25" },
+					version = 6,
+				},
+				result = {
+					success = false,
+					failure = { type = "local_execution_failure", sector_id = 3, detail = "body_off_track" },
+					metrics = makeRunMetrics({ target_progress = 0.0, target_reacquired = false }),
+					score = nil,
+				},
+				hints = { "body_off_track" },
+				memory_note = nil,
+			},
+			{
+				attempt_index = 6,
+				action = nil,
+				proposed_state = {
 					sector_id = 3,
 					mechanic = "RampJump",
 					params = {
@@ -521,123 +551,72 @@ function TestPhase27.run()
 					pads = { ingress = "Boost50", egress = "Brake25" },
 					version = 7,
 				},
-				"local_execution_failure",
-				"tumble",
-				{ "tumble", "body_off_track" },
-				makeRunMetrics({
-					target_progress = 0.0,
-					target_reacquired = false,
-				})
-			)
-			local instabilityHistory = {
-				{
-					attempt_index = 5,
-					action = nil,
-					proposed_state = {
-						sector_id = 3,
-						mechanic = "RampJump",
-						params = {
-							ramp_angle = 14,
-							ramp_length = 41,
-							gap_length = 11,
-							landing_length = 60,
-						},
-						pads = { ingress = "Boost50", egress = "Brake25" },
-						version = 6,
-					},
-					result = {
-						success = false,
-						failure = { type = "local_execution_failure", sector_id = 3, detail = "body_off_track" },
-						metrics = makeRunMetrics({ target_progress = 0.0, target_reacquired = false }),
-						score = nil,
-					},
-					hints = { "body_off_track" },
-					memory_note = nil,
+				result = {
+					success = false,
+					failure = { type = "local_execution_failure", sector_id = 3, detail = "tumble" },
+					metrics = makeRunMetrics({ target_progress = 0.0, target_reacquired = false }),
+					score = nil,
 				},
-				{
-					attempt_index = 6,
-					action = nil,
-					proposed_state = {
-						sector_id = 3,
-						mechanic = "RampJump",
-						params = {
-							ramp_angle = 14,
-							ramp_length = 41,
-							gap_length = 11,
-							landing_length = 60,
-						},
-						pads = { ingress = "Boost50", egress = "Brake25" },
-						version = 7,
-					},
-					result = {
-						success = false,
-						failure = { type = "local_execution_failure", sector_id = 3, detail = "tumble" },
-						metrics = makeRunMetrics({ target_progress = 0.0, target_reacquired = false }),
-						score = nil,
-					},
-					hints = { "tumble" },
-					memory_note = nil,
-				},
-			}
-			table.insert(instabilityHistory, {
-				attempt_index = 7,
-				action = nil,
-				proposed_state = instabilityPacket.sector_state,
-				result = instabilityPacket.run_result,
-				hints = instabilityPacket.diagnostics.hints,
+				hints = { "tumble" },
 				memory_note = nil,
-			})
+			},
+		}
+		table.insert(instabilityHistory, {
+			attempt_index = 7,
+			action = nil,
+			proposed_state = instabilityPacket.sector_state,
+			result = instabilityPacket.run_result,
+			hints = instabilityPacket.diagnostics.hints,
+			memory_note = nil,
+		})
 
-			LLMAdapter.setProvider("phase27-rampjump-loop-escape", {
-				propose = function()
-					return HttpService:JSONEncode(instabilityPacket.sector_state)
-				end,
-				repair = function()
-					return HttpService:JSONEncode({
-						newState = {
-							sector_id = 3,
-							mechanic = "RampJump",
-							params = {
-								ramp_angle = 14,
-								ramp_length = 41,
-								gap_length = 11,
-								landing_length = 60,
-							},
-							pads = {
-								ingress = "Boost50",
-								egress = "Brake25",
-							},
-							version = 8,
+		LLMAdapter.setProvider("phase27-rampjump-loop-escape", {
+			propose = function()
+				return HttpService:JSONEncode(instabilityPacket.sector_state)
+			end,
+			repair = function()
+				return HttpService:JSONEncode({
+					newState = {
+						sector_id = 3,
+						mechanic = "RampJump",
+						params = {
+							ramp_angle = 14,
+							ramp_length = 41,
+							gap_length = 11,
+							landing_length = 60,
 						},
-						explanation = "retrying same high-energy setup",
-					})
-				end,
-				orchestrate = function()
-					return HttpService:JSONEncode({ action = "begin_loop", rationale = "test only" })
-				end,
-			})
-			local _, escapedState, _, _, escapeErr = LLMAdapter.repair(
-				instabilityPacket,
-				instabilityHistory,
-				repairRequest.design_intent
-			)
-			T.expect(
-				"phase27_rampjump_repair_guardrails_escape_repeat_zero_progress_instability",
-				escapeErr == nil
-					and escapedState ~= nil
-					and escapedState.pads.ingress ~= "Boost50"
-					and escapedState.params.ramp_angle <= 13
-					and escapedState.params.ramp_length <= 39
-					and escapedState.params.gap_length <= 10
-					and escapedState.params.landing_length >= 62,
-				HttpService:JSONEncode({
-					err = escapeErr,
-					state = escapedState,
+						pads = {
+							ingress = "Boost50",
+							egress = "Brake25",
+						},
+						version = 8,
+					},
+					explanation = "retrying same high-energy setup",
 				})
-			)
+			end,
+			orchestrate = function()
+				return HttpService:JSONEncode({ action = "begin_loop", rationale = "test only" })
+			end,
+		})
+		local _, escapedState, _, _, escapeErr =
+			LLMAdapter.repair(instabilityPacket, instabilityHistory, repairRequest.design_intent)
+		T.expect(
+			"phase27_rampjump_repair_guardrails_escape_repeat_zero_progress_instability",
+			escapeErr == nil
+				and escapedState ~= nil
+				and escapedState.pads.ingress ~= "Boost50"
+				and escapedState.params.ramp_angle <= 13
+				and escapedState.params.ramp_length <= 39
+				and escapedState.params.gap_length <= 10
+				and escapedState.params.landing_length >= 62,
+			HttpService:JSONEncode({
+				err = escapeErr,
+				state = escapedState,
+			})
+		)
 
-			MetricCollector.reset(0, 3)
-			MetricCollector.onTargetTouchdown(0.82, 16)
+		MetricCollector.reset(0, 3)
+		MetricCollector.onTargetTouchdown(0.82, 16)
 		local touchdownMetrics = MetricCollector.finalise(3, 10, 10)
 		T.expect(
 			"phase27_touchdown_metrics_exposed_in_runmetrics",

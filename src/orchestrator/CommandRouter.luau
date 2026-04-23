@@ -12,8 +12,10 @@ local UIState = require(script.Parent.UIState)
 
 local CommandRouter = {}
 
-local SUPPORTED_DEMO_USAGE = "/demo endurance, /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix"
-local SUPPORTED_TUNE_USAGE = "usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune compare <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune promote | /tune stop"
+local SUPPORTED_DEMO_USAGE =
+	"/demo endurance, /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix"
+local SUPPORTED_TUNE_USAGE =
+	"usage: /tune <rampjump|crestdip|chicane> | /tune show | /tune run <n> | /tune compare <n> | /tune auto <on|off> | /tune set <lever> <value> | /tune pad <ingress|egress> <PadValue> | /tune attr <name> <value> | /tune reset | /tune revert | /tune commit | /tune promote | /tune stop"
 local REMOVED_LLM_REASON = "LLM slash commands removed; use the HUD model selector or startup config"
 local UNKNOWN_COMMAND_REASON = "unknown command; supported: /demo, /test, /tune"
 
@@ -84,7 +86,8 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 	local tuneCommand, tuneRest = parseTuneCommand(rawArg)
 	local canonicalMechanic = canonicalTuneMechanic(normalizedArg)
 
-	if canonicalMechanic ~= nil
+	if
+		canonicalMechanic ~= nil
 		and tuneCommand ~= "set"
 		and tuneCommand ~= "pad"
 		and tuneCommand ~= "attr"
@@ -252,7 +255,8 @@ local function handleDemo(rawText: string, normalizedArg: string, deps): (boolea
 		return true, nil
 	end
 
-	if normalizedArg == "crest"
+	if
+		normalizedArg == "crest"
 		or normalizedArg == "maximize"
 		or normalizedArg == "extreme"
 		or normalizedArg == "hotfix"
@@ -295,13 +299,15 @@ local function handleTest(rawText: string, rawArg: string): (boolean, string?)
 
 	UIState.setPhase("RunTest", "Test failed")
 	UIState.setError("test failed: " .. suite)
-	UIState.appendLog(string.format(
-		"Suite %s %s (%d fail, %d error)",
-		suite,
-		tostring(snapshot.status),
-		snapshot.fail_count,
-		snapshot.error_count
-	))
+	UIState.appendLog(
+		string.format(
+			"Suite %s %s (%d fail, %d error)",
+			suite,
+			tostring(snapshot.status),
+			snapshot.fail_count,
+			snapshot.error_count
+		)
+	)
 	return false, "test failed: " .. suite
 end
 

@@ -34,8 +34,7 @@ local function shouldHonorBootLLMOverrides(): boolean
 	if not ok or type(args) ~= "table" then
 		return false
 	end
-	return type(args.llm_enabled) == "boolean"
-		or (type(args.llm_model) == "string" and args.llm_model ~= "")
+	return type(args.llm_enabled) == "boolean" or (type(args.llm_model) == "string" and args.llm_model ~= "")
 end
 
 -- Default to heuristic on normal startup. Only explicit harness / automation
@@ -119,19 +118,23 @@ UIState.setRuntimeIdentity(
 	)
 )
 UIState.appendLog("Build " .. Constants.BUILD_STAMP)
-UIState.appendLog(string.format(
-	"Controller sf=%.2f in=%.2f out=%.2f",
-	Constants.CORNER_SPEED_FACTOR,
-	Constants.CORNER_ENTRY_SHOULDER_FRACTION,
-	Constants.CORNER_EXIT_SHOULDER_FRACTION
-))
+UIState.appendLog(
+	string.format(
+		"Controller sf=%.2f in=%.2f out=%.2f",
+		Constants.CORNER_SPEED_FACTOR,
+		Constants.CORNER_ENTRY_SHOULDER_FRACTION,
+		Constants.CORNER_EXIT_SHOULDER_FRACTION
+	)
+)
 Tracer.log("build " .. Constants.BUILD_STAMP)
-Tracer.log(string.format(
-	"controller_profile corner_sf=%.2f corner_in=%.2f corner_out=%.2f",
-	Constants.CORNER_SPEED_FACTOR,
-	Constants.CORNER_ENTRY_SHOULDER_FRACTION,
-	Constants.CORNER_EXIT_SHOULDER_FRACTION
-))
+Tracer.log(
+	string.format(
+		"controller_profile corner_sf=%.2f corner_in=%.2f corner_out=%.2f",
+		Constants.CORNER_SPEED_FACTOR,
+		Constants.CORNER_ENTRY_SHOULDER_FRACTION,
+		Constants.CORNER_EXIT_SHOULDER_FRACTION
+	)
+)
 
 task.spawn(function()
 	while true do
@@ -160,23 +163,27 @@ end)
 local function onSectorChange(id: number, entering: boolean)
 	if entering then
 		UIState.setCurrentSector(id)
-		Tracer.log(string.format(
-			"sector_enter %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
-			id,
-			car.AssemblyLinearVelocity.Magnitude,
-			car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
-			car:GetAttribute("AutoTrack_TargetSpeed") or 0,
-			tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
-		))
+		Tracer.log(
+			string.format(
+				"sector_enter %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
+				id,
+				car.AssemblyLinearVelocity.Magnitude,
+				car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
+				car:GetAttribute("AutoTrack_TargetSpeed") or 0,
+				tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
+			)
+		)
 	else
-		Tracer.log(string.format(
-			"sector_exit %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
-			id,
-			car.AssemblyLinearVelocity.Magnitude,
-			car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
-			car:GetAttribute("AutoTrack_TargetSpeed") or 0,
-			tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
-		))
+		Tracer.log(
+			string.format(
+				"sector_exit %d speed=%.1f cmd=%.1f tgt=%.1f kind=%s",
+				id,
+				car.AssemblyLinearVelocity.Magnitude,
+				car:GetAttribute("AutoTrack_CommandedSpeed") or 0,
+				car:GetAttribute("AutoTrack_TargetSpeed") or 0,
+				tostring(car:GetAttribute("AutoTrack_CurrentSectorKind") or "")
+			)
+		)
 	end
 end
 
@@ -186,15 +193,17 @@ local function logContainmentSummary(metrics)
 		return
 	end
 	for sectorId, peak in pairs(peaks) do
-		Tracer.log(string.format(
-			"lap_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
-			sectorId,
-			peak or 0,
-			(metrics.sector_peak_front_distance and metrics.sector_peak_front_distance[sectorId]) or 0,
-			(metrics.sector_peak_body_distance and metrics.sector_peak_body_distance[sectorId]) or 0,
-			(metrics.sector_peak_signed_lateral and metrics.sector_peak_signed_lateral[sectorId]) or 0,
-			(metrics.sector_peak_progress and metrics.sector_peak_progress[sectorId]) or 0
-		))
+		Tracer.log(
+			string.format(
+				"lap_containment %d center=%.2f front=%.2f body=%.2f signed=%.2f progress=%.2f",
+				sectorId,
+				peak or 0,
+				(metrics.sector_peak_front_distance and metrics.sector_peak_front_distance[sectorId]) or 0,
+				(metrics.sector_peak_body_distance and metrics.sector_peak_body_distance[sectorId]) or 0,
+				(metrics.sector_peak_signed_lateral and metrics.sector_peak_signed_lateral[sectorId]) or 0,
+				(metrics.sector_peak_progress and metrics.sector_peak_progress[sectorId]) or 0
+			)
+		)
 	end
 end
 
@@ -210,7 +219,8 @@ local function appendContainmentSummaryToUI(metrics)
 			sectorId = sectorId,
 			body = peak or 0,
 			front = (metrics.sector_peak_front_distance and metrics.sector_peak_front_distance[sectorId]) or 0,
-			center = (metrics.sector_peak_centerline_distance and metrics.sector_peak_centerline_distance[sectorId]) or 0,
+			center = (metrics.sector_peak_centerline_distance and metrics.sector_peak_centerline_distance[sectorId])
+				or 0,
 			progress = (metrics.sector_peak_progress and metrics.sector_peak_progress[sectorId]) or 0,
 		})
 	end
@@ -220,14 +230,16 @@ local function appendContainmentSummaryToUI(metrics)
 
 	for index = 1, math.min(2, #ordered) do
 		local item = ordered[index]
-		UIState.appendLog(string.format(
-			"Containment S%d body=%.1f front=%.1f center=%.1f @ %.0f%%",
-			item.sectorId,
-			item.body,
-			item.front,
-			item.center,
-			item.progress * 100
-		))
+		UIState.appendLog(
+			string.format(
+				"Containment S%d body=%.1f front=%.1f center=%.1f @ %.0f%%",
+				item.sectorId,
+				item.body,
+				item.front,
+				item.center,
+				item.progress * 100
+			)
+		)
 	end
 end
 
@@ -335,9 +347,17 @@ setBaselineEvent.OnServerEvent:Connect(function(_player)
 		task.spawn(function()
 			local currentCar = RuntimeContext.getCar()
 			local ok, result = pcall(function()
-				return VerifierController.runLap(currentCar, waypoints, waypointSectors, sectorKinds, function(id, entering)
-					if entering then UIState.setCurrentSector(id) end
-				end)
+				return VerifierController.runLap(
+					currentCar,
+					waypoints,
+					waypointSectors,
+					sectorKinds,
+					function(id, entering)
+						if entering then
+							UIState.setCurrentSector(id)
+						end
+					end
+				)
 			end)
 			JobLock.release()
 			UIState.setBusy(false)
@@ -362,7 +382,9 @@ setLLMConfigEvent.Name = "AutoTrack_SetLLMConfig"
 setLLMConfigEvent.Parent = ReplicatedStorage
 
 setLLMConfigEvent.OnServerEvent:Connect(function(_player, config)
-	if type(config) ~= "table" then return end
+	if type(config) ~= "table" then
+		return
+	end
 	if type(config.enabled) == "boolean" then
 		LLMConfig.setEnabled(config.enabled)
 	end

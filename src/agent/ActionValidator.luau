@@ -16,7 +16,7 @@ local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 
 type AgentAction = Types.AgentAction
 type SectorState = Types.SectorState
-type Mechanic    = Types.Mechanic
+type Mechanic = Types.Mechanic
 
 local ActionValidator = {}
 
@@ -30,7 +30,10 @@ function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?
 		end
 		local found = false
 		for _, lever in legal do
-			if lever == action.lever then found = true; break end
+			if lever == action.lever then
+				found = true
+				break
+			end
 		end
 		if not found then
 			return false, "lever '" .. action.lever .. "' not legal for " .. mechanic

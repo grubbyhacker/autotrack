@@ -57,24 +57,15 @@ local function makeSegment(
 	local worldEnd = worldPoint(entryFrame, endPoint)
 	local center = worldStart:Lerp(worldEnd, 0.5)
 	local cf = CFrame.lookAt(center, center + (worldEnd - worldStart).Unit)
-	return makePart(
-		name,
-		Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length),
-		cf,
-		color,
-		parent
-	)
+	return makePart(name, Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length), cf, color, parent)
 end
 
-function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
+function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame)
 	local p = state.params
 	assert(p.height_or_depth, "CrestDipBuilder: missing height_or_depth")
-	assert(p.radius,          "CrestDipBuilder: missing radius")
-	assert(p.sector_length,   "CrestDipBuilder: missing sector_length")
-	assert(
-		p.sector_length <= Constants.STRAIGHT_LENGTH,
-		"CrestDipBuilder: sector_length exceeds STRAIGHT_LENGTH"
-	)
+	assert(p.radius, "CrestDipBuilder: missing radius")
+	assert(p.sector_length, "CrestDipBuilder: missing sector_length")
+	assert(p.sector_length <= Constants.STRAIGHT_LENGTH, "CrestDipBuilder: sector_length exceeds STRAIGHT_LENGTH")
 
 	local height = p.height_or_depth
 	local folder = getSectorFolder(state.sector_id)
@@ -91,14 +82,7 @@ function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame
 		elseif isFlat and index == #points - 1 then
 			segmentName = "ExitFlat"
 		end
-		makeSegment(
-			segmentName,
-			startPoint,
-			endPoint,
-			entryFrame,
-			color,
-			folder
-		)
+		makeSegment(segmentName, startPoint, endPoint, entryFrame, color, folder)
 	end
 end
 

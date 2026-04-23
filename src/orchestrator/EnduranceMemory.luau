@@ -72,10 +72,12 @@ function EnduranceMemory.shouldSkipDuplicate(memory: RunMemory, scopeName: strin
 		return false
 	end
 	for _, existing in ipairs(bucket) do
-		if existing.author == entry.author
+		if
+			existing.author == entry.author
 			and existing.scope == entry.scope
 			and existing.source_type == entry.source_type
-			and existing.note == entry.note then
+			and existing.note == entry.note
+		then
 			return true
 		end
 	end

@@ -75,10 +75,7 @@ local function getCameraOverrideCFrame(): (CFrame?, number?)
 		fieldOfView = nil
 	end
 
-	return CFrame.lookAt(
-		Vector3.new(posX, posY, posZ),
-		Vector3.new(focusX, focusY, focusZ)
-	), fieldOfView
+	return CFrame.lookAt(Vector3.new(posX, posY, posZ), Vector3.new(focusX, focusY, focusZ)), fieldOfView
 end
 
 local function normalizeSectorId(sectorId: number): number
@@ -237,7 +234,7 @@ local function getCameraBasis(currentCar: BasePart)
 		horizontalForward = horizontalForward.Unit
 	end
 
-	local lateralAxis = Vector3.yAxis:Cross(horizontalForward)
+	local lateralAxis = Vector3.new(0, 1, 0):Cross(horizontalForward)
 	if lateralAxis.Magnitude <= 0.001 then
 		lateralAxis = Vector3.new(0, 0, 1)
 	else
@@ -276,7 +273,8 @@ local function getSidePose(currentCar: BasePart, sectorId: number, sideInfluence
 
 	local chasePosition = currentCar.Position
 		+ Vector3.yAxis * Constants.CAMERA_CHASE_HEIGHT
-		- horizontalForward * (Constants.CAMERA_CHASE_DISTANCE + Constants.CAMERA_PREROLL_BACK_DISTANCE * sideInfluence)
+		- horizontalForward
+			* (Constants.CAMERA_CHASE_DISTANCE + Constants.CAMERA_PREROLL_BACK_DISTANCE * sideInfluence)
 	local sideTargetPosition = anchorBase
 		+ outward * Constants.CAMERA_SIDE_OFFSET
 		+ Vector3.yAxis * Constants.CAMERA_SIDE_HEIGHT
@@ -372,7 +370,8 @@ RunService.RenderStepped:Connect(function(dt)
 	local alphaSharpness = if desiredSideInfluence > cameraBlendAlpha + 0.001
 		then Constants.CAMERA_ALPHA_ENTER_SHARPNESS
 		else Constants.CAMERA_ALPHA_EXIT_SHARPNESS
-	cameraBlendAlpha = cameraBlendAlpha + (desiredSideInfluence - cameraBlendAlpha) * alphaFromSharpness(alphaSharpness, dt)
+	cameraBlendAlpha = cameraBlendAlpha
+		+ (desiredSideInfluence - cameraBlendAlpha) * alphaFromSharpness(alphaSharpness, dt)
 
 	if desiredSideInfluence <= 0 and activeSideSectorId then
 		sidePosition, sideFocus = getSidePose(currentCar, activeSideSectorId, cameraBlendAlpha)

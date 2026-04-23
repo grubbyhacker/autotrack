@@ -28,12 +28,12 @@ local function makePart(name: string, size: Vector3, cf: CFrame, sectorId: numbe
 	return TrackVisuals.makeCollisionPart(parent, name, size, cf, sectorId, "Straight")
 end
 
-function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame: CFrame)
+function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame)
 	local p = state.params
-	assert(p.amplitude,          "ChicaneBuilder: missing amplitude")
-	assert(p.transition_length,  "ChicaneBuilder: missing transition_length")
-	assert(p.corridor_width,     "ChicaneBuilder: missing corridor_width")
-	assert(p.amplitude > 0,      "ChicaneBuilder: amplitude must be positive")
+	assert(p.amplitude, "ChicaneBuilder: missing amplitude")
+	assert(p.transition_length, "ChicaneBuilder: missing transition_length")
+	assert(p.corridor_width, "ChicaneBuilder: missing corridor_width")
+	assert(p.amplitude > 0, "ChicaneBuilder: amplitude must be positive")
 	assert(p.transition_length > 0, "ChicaneBuilder: transition_length must be positive")
 	assert(p.corridor_width > 0, "ChicaneBuilder: corridor_width must be positive")
 
@@ -56,7 +56,13 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		local delta = worldEnd - worldStart
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart("ChicEntryFlat", Vector3.new(width, Constants.TRACK_THICKNESS, startOffset), cf, state.sector_id, folder)
+		makePart(
+			"ChicEntryFlat",
+			Vector3.new(width, Constants.TRACK_THICKNESS, startOffset),
+			cf,
+			state.sector_id,
+			folder
+		)
 	end
 
 	local points = ChicanePath.buildLocalCenterlinePoints(amplitude, transitionLength)
@@ -74,7 +80,13 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		assert(length > 0, "ChicaneBuilder.build: zero-length segment")
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart(string.format("ChicSeg_%02d", index), Vector3.new(width, Constants.TRACK_THICKNESS, length), cf, state.sector_id, folder)
+		makePart(
+			string.format("ChicSeg_%02d", index),
+			Vector3.new(width, Constants.TRACK_THICKNESS, length),
+			cf,
+			state.sector_id,
+			folder
+		)
 	end
 
 	local exitFlatLength = Constants.STRAIGHT_LENGTH - (startOffset + totalLength)
@@ -86,7 +98,13 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, exitFrame:
 		local delta = worldEnd - worldStart
 		local center = worldStart:Lerp(worldEnd, 0.5)
 		local cf = CFrame.lookAt(center, center + delta.Unit)
-		makePart("ChicExitFlat", Vector3.new(width, Constants.TRACK_THICKNESS, exitFlatLength), cf, state.sector_id, folder)
+		makePart(
+			"ChicExitFlat",
+			Vector3.new(width, Constants.TRACK_THICKNESS, exitFlatLength),
+			cf,
+			state.sector_id,
+			folder
+		)
 	end
 
 	local visualFolder = TrackVisuals.getVisualFolder(state.sector_id)

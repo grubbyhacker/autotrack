@@ -11,8 +11,10 @@ local function encode(value): string
 	return HttpService:JSONEncode(value)
 end
 
-local DESIGN_INTENT_SCHEMA = [[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params_hint":"short text","rationale":"short text","target_score_band":"low|medium|high|extreme","target_budget_tolerance":"low|medium|high","target_reliability":"conservative|balanced|risky","spectacle_priority":"low|medium|high","novelty_priority":"low|medium|high","replacement_intent":"open_slot_preferred|replace_if_gain|preserve_good_sector","desired_feel":"short text","constraints":["short constraint"]}]]
-local MEMORY_NOTE_SCHEMA = [[{"author":"orchestrator","scope":"orchestrator","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}]]
+local DESIGN_INTENT_SCHEMA =
+	[[{"sector_id":number,"mechanic":"RampJump|Chicane|CrestDip","params_hint":"short text","rationale":"short text","target_score_band":"low|medium|high|extreme","target_budget_tolerance":"low|medium|high","target_reliability":"conservative|balanced|risky","spectacle_priority":"low|medium|high","novelty_priority":"low|medium|high","replacement_intent":"open_slot_preferred|replace_if_gain|preserve_good_sector","desired_feel":"short text","constraints":["short constraint"]}]]
+local MEMORY_NOTE_SCHEMA =
+	[[{"author":"orchestrator","scope":"orchestrator","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}]]
 
 local function relevantMemory(context: OrchestratorContext)
 	local memory = context and context.memory or nil
@@ -43,7 +45,7 @@ function OrchestratorPromptBuilder.messages(context: OrchestratorContext): { { r
 				"If you include memory_note, it must stay in scope 'orchestrator' and capture only a short durable lesson.",
 				"Every string field must stay short. constraints must be a short list of explicit downstream-preservation rules.",
 				"Return either the full DesignIntent object",
-				"or {\"action\":\"begin_loop\",\"rationale\":\"short reason\"} when the track is balanced enough to start the live continuous loop.",
+				'or {"action":"begin_loop","rationale":"short reason"} when the track is balanced enough to start the live continuous loop.',
 				"When proposing a candidate, make the object decision-complete for downstream proposal and repair agents.",
 			}, "\n"),
 		},

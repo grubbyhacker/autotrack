@@ -46,9 +46,7 @@ local function sectorFolderById(sectorId)
 end
 
 local function folderOrSector(sectorOrFolder, name)
-	local folder = if type(sectorOrFolder) == "number"
-		then sectorFolderById(sectorOrFolder)
-		else sectorOrFolder
+	local folder = if type(sectorOrFolder) == "number" then sectorFolderById(sectorOrFolder) else sectorOrFolder
 	local child = folder:FindFirstChild(name)
 	assert(child and child:IsA("Folder"), string.format("TrackVisuals: missing folder %s under %s", name, folder.Name))
 	return child
@@ -56,13 +54,17 @@ end
 
 local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: string)
 	local existing = anchor:FindFirstChildWhichIsA("BillboardGui")
-	if existing then existing:Destroy() end
+	if existing then
+		existing:Destroy()
+	end
 	local existingParticle = anchor:FindFirstChildOfClass("ParticleEmitter")
-	if existingParticle then existingParticle:Destroy() end
+	if existingParticle then
+		existingParticle:Destroy()
+	end
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "SectorLabel"
-	gui.Size = UDim2.new(0, 72, 0, 44)
+	gui.Size = UDim2.fromOffset(72, 44)
 	gui.StudsOffset = Vector3.new(0, 24, 0)
 	gui.AlwaysOnTop = true
 	gui.LightInfluence = 0
@@ -73,7 +75,7 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 	bg.BackgroundColor3 = LABEL_GLOW_BG
 	bg.BackgroundTransparency = 0.72
 	bg.BorderSizePixel = 0
-	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.Size = UDim2.fromScale(1, 1)
 	bg.Parent = gui
 	local bgCorner = Instance.new("UICorner")
 	bgCorner.CornerRadius = UDim.new(0, 10)
@@ -87,7 +89,7 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 	local scoreLabel = Instance.new("TextLabel")
 	scoreLabel.Name = "SectorScoreLabel"
 	scoreLabel.BackgroundTransparency = 1
-	scoreLabel.Position = UDim2.new(0, 0, 0, 2)
+	scoreLabel.Position = UDim2.fromOffset(0, 2)
 	scoreLabel.Size = UDim2.new(1, 0, 0, 16)
 	scoreLabel.Text = ""
 	scoreLabel.TextColor3 = LABEL_GREEN
@@ -102,7 +104,7 @@ local function addSectorLabel(anchor: Part, sectorId: number, _sectorKind: strin
 	local label = Instance.new("TextLabel")
 	label.Name = "SectorNameLabel"
 	label.BackgroundTransparency = 1
-	label.Position = UDim2.new(0, 0, 0, 17)
+	label.Position = UDim2.fromOffset(0, 17)
 	label.Size = UDim2.new(1, 0, 0, 24)
 	label.Text = "S" .. tostring(sectorId)
 	label.TextColor3 = LABEL_GREEN
@@ -193,7 +195,7 @@ local function addCenterDashes(parent, usableLength)
 	end
 end
 
-local function addArcRibbon(
+local function _addArcRibbon(
 	parent,
 	namePrefix,
 	arcCenter,
@@ -264,7 +266,18 @@ local function joinExtension(width: number, previousTangent: Vector3, currentTan
 	return math.clamp(extension, 0, width * 0.35)
 end
 
-local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffset, color, material, overlap, dynamicJoinCoverage: boolean?)
+local function addPathRibbon(
+	parent,
+	namePrefix,
+	points,
+	width,
+	thickness,
+	yOffset,
+	color,
+	material,
+	overlap,
+	dynamicJoinCoverage: boolean?
+)
 	local joinOverlap = overlap or PATH_RIBBON_OVERLAP
 	for index = 2, #points do
 		local p0 = points[index - 1]
@@ -274,12 +287,8 @@ local function addPathRibbon(parent, namePrefix, points, width, thickness, yOffs
 		local startExtension = joinOverlap * 0.5
 		local endExtension = joinOverlap * 0.5
 		if dynamicJoinCoverage == true then
-			local previousTangent = if index > 2
-				then tangentAt(points, index - 2, index - 1)
-				else tangent
-			local nextTangent = if index < #points
-				then tangentAt(points, index - 1, index)
-				else tangent
+			local previousTangent = if index > 2 then tangentAt(points, index - 2, index - 1) else tangent
+			local nextTangent = if index < #points then tangentAt(points, index - 1, index) else tangent
 			startExtension += joinExtension(width, previousTangent, tangent)
 			endExtension += joinExtension(width, tangent, nextTangent)
 		end
@@ -534,7 +543,10 @@ function TrackVisuals.renderTrackFoundation(trackFolder, sectors)
 	local topRight = sectorById[5]
 	local bottomRight = sectorById[6]
 	local bottomLeft = sectorById[10]
-	assert(topLeft and topRight and bottomRight and bottomLeft, "TrackVisuals.renderTrackFoundation: missing perimeter sectors")
+	assert(
+		topLeft and topRight and bottomRight and bottomLeft,
+		"TrackVisuals.renderTrackFoundation: missing perimeter sectors"
+	)
 
 	local rowSpanX = (topRight.center.X - topLeft.center.X) + CELL_WIDTH
 	local columnSpanZ = (bottomLeft.center.Z - topLeft.center.Z) + CELL_WIDTH
@@ -576,11 +588,11 @@ function TrackVisuals.renderTrackFoundation(trackFolder, sectors)
 	)
 end
 
-function TrackVisuals.renderCellShell(visualFolder, cellCFrame, cellSize, name)
+function TrackVisuals.renderCellShell(_visualFolder, _cellCFrame, _cellSize, _name)
 	return
 end
 
-function TrackVisuals.renderStraightFlatVisuals(visualFolder, cellCFrame, cellSize, entryFrame, exitFrame)
+function TrackVisuals.renderStraightFlatVisuals(visualFolder, _cellCFrame, _cellSize, entryFrame, exitFrame)
 	clearFolder(visualFolder)
 
 	local center = roadSurfaceCenter(entryFrame, exitFrame)
@@ -596,7 +608,7 @@ function TrackVisuals.renderStraightFlatVisuals(visualFolder, cellCFrame, cellSi
 	addCenterDashes(road, road.Size.Z)
 end
 
-function TrackVisuals.renderCornerFlatVisuals(visualFolder, cellCFrame, cellSize, entryFrame, exitFrame)
+function TrackVisuals.renderCornerFlatVisuals(visualFolder, _cellCFrame, _cellSize, entryFrame, exitFrame)
 	clearFolder(visualFolder)
 	local points = CornerPath.buildWorldCenterlinePoints(
 		entryFrame,
@@ -609,7 +621,7 @@ function TrackVisuals.renderCornerFlatVisuals(visualFolder, cellCFrame, cellSize
 	TrackVisuals.renderPathSurface(visualFolder, points, Constants.TRACK_WIDTH)
 end
 
-function TrackVisuals.renderStraightMechanicShell(visualFolder, cellCFrame, cellSize, name)
+function TrackVisuals.renderStraightMechanicShell(visualFolder, _cellCFrame, _cellSize, _name)
 	clearFolder(visualFolder)
 end
 

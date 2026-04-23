@@ -36,11 +36,7 @@ function TestPhase3.run()
 		"lap failed: " .. tostring(result.failure and result.failure.type)
 	)
 
-	T.expect(
-		"metrics_lap_time_positive",
-		result.metrics.lap_time > 0,
-		"lap_time=" .. tostring(result.metrics.lap_time)
-	)
+	T.expect("metrics_lap_time_positive", result.metrics.lap_time > 0, "lap_time=" .. tostring(result.metrics.lap_time))
 
 	T.expect(
 		"metrics_entry_speed_captured",
@@ -101,17 +97,8 @@ function TestPhase3.run()
 	FailureDetector.reset()
 	local overturnedFailure = nil
 	for _, elapsed in ipairs({ 0, 0.4, 0.8, 1.0 }) do
-		overturnedFailure = FailureDetector.check(
-			elapsed,
-			3,
-			Vector3.new(0, 3, 0),
-			Vector3.new(0, 3, 0),
-			true,
-			0,
-			0,
-			-1,
-			1
-		)
+		overturnedFailure =
+			FailureDetector.check(elapsed, 3, Vector3.new(0, 3, 0), Vector3.new(0, 3, 0), true, 0, 0, -1, 1)
 		if overturnedFailure then
 			break
 		end

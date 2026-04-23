@@ -1,8 +1,8 @@
-# Code Hygiene Milestone (Phase 1)
+# Code Hygiene Milestone
 
 ## Goal
 
-Add a small deterministic Luau hygiene gate that agents can run the same way locally and in CI, without forcing a broad style/type migration.
+Maintain a deterministic Luau hygiene gate that agents can run the same way locally and in CI, while ratcheting scope carefully and keeping risky type-system work explicit.
 
 ## Toolchain Manager
 
@@ -35,6 +35,7 @@ Run through `make`:
 make fmt
 make fmt-check
 make typecheck
+make typecheck-report
 make lint
 make hygiene
 ```
@@ -49,24 +50,24 @@ No interactive prompts are used.
 
 ## Current Scope Boundary
 
-To avoid a giant migration, hygiene currently targets `src/common/*.luau`.
+Formatting and linting now target repo-tracked Luau source under `src/` plus repo-tracked Luau source under `studio/`.
 
-In-scope examples:
+Repo-wide source hygiene intentionally excludes analyzer definition inputs such as `tools/luau/globals.d.luau`.
+
+Examples now in scope for `fmt` / `fmt-check` / `lint`:
 
 - `src/common/Constants.luau`
-- `src/common/LLMConfig.luau`
-- `src/common/LaunchOutlier.luau`
-- `src/common/LevelMappings.luau`
-- `src/common/PadValueUtils.luau`
-- `src/common/RuntimeTuning.luau`
-- `src/common/Types.luau`
+- `src/orchestrator/JobRunner.luau`
+- `src/ui/HUDRegistry.luau`
+- `src/verifier/VerifierController.luau`
 
 Typecheck boundary:
 
-- `make typecheck` currently excludes `src/common/Types.luau`.
-- Reason: under the current deterministic CLI analyzer setup, Roblox nominal type names in this schema module still produce environment-resolution noise.
+- `make typecheck` remains a documented green subset target.
+- `make typecheck-report` runs the analyzer across repo-wide tracked source without failing the overall hygiene contract.
+- Reason: under the current deterministic CLI analyzer setup, full-repo analysis still hits Roblox environment-resolution gaps (`Vector3`, `CFrame`, `Enum`, `DateTime`, etc.) and exported-type resolution gaps (`Types.*`) that are larger than a formatting/lint ratchet.
 
-Formatting is non-negotiable inside this scoped set.
+Formatting is non-negotiable across the repo-wide source hygiene set.
 
 ## Strict Mode Boundary
 
@@ -79,5 +80,6 @@ Reason:
 
 Future ratchet:
 
-- Expand hygiene file scope in small batches.
+- Expand the green `make typecheck` subset in small, explicit batches.
 - Convert leaf modules to `--!strict` only when they can be made green with small safe edits.
+- Treat analyzer-environment fixes and exported-type cleanup as their own tracked work rather than hiding them behind disabled checks.

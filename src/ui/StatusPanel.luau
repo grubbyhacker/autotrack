@@ -14,7 +14,11 @@ local function refs()
 end
 
 local function tween(instance: Instance, duration: number, propertyTable)
-	local animation = TweenService:Create(instance, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), propertyTable)
+	local animation = TweenService:Create(
+		instance,
+		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		propertyTable
+	)
 	animation:Play()
 	return animation
 end
@@ -103,11 +107,11 @@ end
 function StatusPanel.setEndurance(
 	active: boolean,
 	terminal: boolean,
-	lapCount: number,
-	used: number,
-	total: number,
+	_lapCount: number,
+	_used: number,
+	_total: number,
 	hotfixActive: boolean?,
-	objectiveText: string?
+	_objectiveText: string?
 )
 	local hud = refs()
 	hud.enduranceBadge.Visible = active == true
@@ -120,7 +124,7 @@ function StatusPanel.setMemorySummary(active: boolean, summaryText: string)
 	hud.memoryLabel.Text = if active == true then summaryText else ""
 end
 
-function StatusPanel.setRuntimeIdentity(buildStamp: string, controllerProfile: string)
+function StatusPanel.setRuntimeIdentity(_buildStamp: string, _controllerProfile: string)
 	return
 end
 
@@ -141,7 +145,7 @@ function StatusPanel.setRepairAction(text: string)
 	renderDetailLine()
 end
 
-function StatusPanel.setError(text: string, finalStatus: string, hotfixActive: boolean?, warningText: string?)
+function StatusPanel.setError(text: string, _finalStatus: string, _hotfixActive: boolean?, warningText: string?)
 	local hud = refs()
 	local isLLMError = text ~= "" and string.find(text, "LLM error:", 1, true) == 1
 	local warning = warningText or ""
@@ -184,7 +188,7 @@ function StatusPanel.setFailureBanner(text: string, isVisible: boolean)
 	end
 end
 
-function StatusPanel.setHotfixBanner(text: string, isVisible: boolean)
+function StatusPanel.setHotfixBanner(_text: string, isVisible: boolean)
 	local hud = refs()
 	hud.hotfixBadge.Visible = isVisible
 	hud.hotfixBanner.Visible = false

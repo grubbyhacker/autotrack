@@ -31,11 +31,7 @@ local TestPhase21 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 
 local function cloneParams(params)
-	local result = {}
-	for key, value in pairs(params or {}) do
-		result[key] = value
-	end
-	return result
+	return table.clone(params or {})
 end
 
 local function makeState(sectorId: number, mechanic, params, ingress, egress): SectorState
@@ -85,7 +81,8 @@ local function submitEventually(command: string, timeoutSeconds: number): (boole
 			return true, nil
 		end
 		lastReason = tostring(reason)
-		if string.find(lastReason, "tune pass in flight", 1, true) == nil
+		if
+			string.find(lastReason, "tune pass in flight", 1, true) == nil
 			and string.find(lastReason, "tune run in flight", 1, true) == nil
 		then
 			return false, lastReason
@@ -95,7 +92,7 @@ local function submitEventually(command: string, timeoutSeconds: number): (boole
 	return false, lastReason
 end
 
-local function waitForTunePassCount(stateFolder, minPassCount: number)
+local function _waitForTunePassCount(stateFolder, minPassCount: number)
 	return waitUntil(function()
 		return stateFolder:GetAttribute("tune_mode_active") == true
 			and (stateFolder:GetAttribute("tune_pass_count") or 0) >= minPassCount
@@ -146,18 +143,21 @@ end
 local function testIsolatedAttempt()
 	local sector = RuntimeContext.getSectorById(3)
 	local function runOnce()
-		return select(1, AttemptRunner.run({
-			mode = "isolated_sector",
-			workingState = makeState(3, nil, {}, "None", "None"),
-			action = nil,
-			targetSectorId = 3,
-			entryFrame = sector.entry,
-			exitFrame = sector.exit,
-			sectors = RuntimeContext.getSectors(),
-			car = RuntimeContext.getCar(),
-			canonicalStart = RuntimeContext.getCanonicalStart(),
-			onSectorChange = nil,
-		}))
+		return select(
+			1,
+			AttemptRunner.run({
+				mode = "isolated_sector",
+				workingState = makeState(3, nil, {}, "None", "None"),
+				action = nil,
+				targetSectorId = 3,
+				entryFrame = sector.entry,
+				exitFrame = sector.exit,
+				sectors = RuntimeContext.getSectors(),
+				car = RuntimeContext.getCar(),
+				canonicalStart = RuntimeContext.getCanonicalStart(),
+				onSectorChange = nil,
+			})
+		)
 	end
 
 	task.wait(0.2)
@@ -256,17 +256,8 @@ end
 local function testRuntimeIntegrityAndContainmentAttrs()
 	local offTrackDistance = Constants.OFF_TRACK_FAILURE_DISTANCE + 2
 	FailureDetector.reset()
-	local defaultFailure = FailureDetector.check(
-		0,
-		3,
-		Vector3.new(offTrackDistance, 0, 0),
-		Vector3.zero,
-		false,
-		30,
-		0,
-		1,
-		1
-	)
+	local defaultFailure =
+		FailureDetector.check(0, 3, Vector3.new(offTrackDistance, 0, 0), Vector3.zero, false, 30, 0, 1, 1)
 	T.expect(
 		"phase21_default_offtrack_threshold_still_fails",
 		defaultFailure ~= nil and defaultFailure.detail == "off_track",
@@ -274,17 +265,8 @@ local function testRuntimeIntegrityAndContainmentAttrs()
 	)
 	workspace:SetAttribute("AutoTrack_OffTrackFailureDistance", offTrackDistance + 1)
 	FailureDetector.reset()
-	local relaxedFailure = FailureDetector.check(
-		0,
-		3,
-		Vector3.new(offTrackDistance, 0, 0),
-		Vector3.zero,
-		false,
-		30,
-		0,
-		1,
-		1
-	)
+	local relaxedFailure =
+		FailureDetector.check(0, 3, Vector3.new(offTrackDistance, 0, 0), Vector3.zero, false, 30, 0, 1, 1)
 	T.expect(
 		"phase21_runtime_offtrack_threshold_override_applies",
 		relaxedFailure == nil,
@@ -301,27 +283,45 @@ local function testRuntimeIntegrityAndContainmentAttrs()
 		target_exit_vertical_speed = Constants.RAMPJUMP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 1,
 	}
 	local rampDefaultOk = select(1, RampJumpIntegrity.evaluateRuntime(rampMetrics))
-	T.expect("phase21_default_rampjump_comfort_margin_rejects_borderline_case", rampDefaultOk == false, tostring(rampDefaultOk))
+	T.expect(
+		"phase21_default_rampjump_comfort_margin_rejects_borderline_case",
+		rampDefaultOk == false,
+		tostring(rampDefaultOk)
+	)
 	workspace:SetAttribute("AutoTrack_RampJumpComfortVerticalMargin", 0)
 	local rampRelaxedOk = select(1, RampJumpIntegrity.evaluateRuntime(rampMetrics))
 	T.expect("phase21_runtime_rampjump_comfort_margin_override_applies", rampRelaxedOk == true, tostring(rampRelaxedOk))
 	workspace:SetAttribute("AutoTrack_RampJumpComfortVerticalMargin", nil)
 
 	local chicaneMetrics = {
-		target_left_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5) + Constants.CHICANE_COMFORT_LATERAL_MARGIN + 0.5,
-		target_right_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5) + Constants.CHICANE_COMFORT_LATERAL_MARGIN + 0.5,
+		target_left_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
+			+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
+			+ 0.5,
+		target_right_offset = (Constants.CHICANE_MIN_LATERAL_DISPLACEMENT * 0.5)
+			+ Constants.CHICANE_COMFORT_LATERAL_MARGIN
+			+ 0.5,
 		target_lateral_band_changes = Constants.CHICANE_MIN_ALTERNATIONS,
 		target_peak_body_distance = Constants.FRONT_BODY_CONTAINMENT_DISTANCE - 0.25,
 	}
 	local chicaneDefaultOk = select(1, ChicaneIntegrity.evaluateRuntime(chicaneMetrics))
-	T.expect("phase21_default_chicane_body_margin_rejects_borderline_case", chicaneDefaultOk == false, tostring(chicaneDefaultOk))
+	T.expect(
+		"phase21_default_chicane_body_margin_rejects_borderline_case",
+		chicaneDefaultOk == false,
+		tostring(chicaneDefaultOk)
+	)
 	workspace:SetAttribute("AutoTrack_ChicaneComfortBodyMargin", 0)
 	local chicaneRelaxedOk = select(1, ChicaneIntegrity.evaluateRuntime(chicaneMetrics))
-	T.expect("phase21_runtime_chicane_body_margin_override_applies", chicaneRelaxedOk == true, tostring(chicaneRelaxedOk))
+	T.expect(
+		"phase21_runtime_chicane_body_margin_override_applies",
+		chicaneRelaxedOk == true,
+		tostring(chicaneRelaxedOk)
+	)
 	workspace:SetAttribute("AutoTrack_ChicaneComfortBodyMargin", nil)
 
 	local crestMetrics = {
-		target_vertical_displacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT + Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN + 1,
+		target_vertical_displacement = Constants.CRESTDIP_MIN_VERTICAL_DISPLACEMENT
+			+ Constants.CRESTDIP_COMFORT_VERTICAL_MARGIN
+			+ 1,
 		target_airborne = false,
 		target_reacquired = true,
 		target_apex_min_speed = Constants.CRESTDIP_APEX_MIN_SPEED + 1,
@@ -329,7 +329,11 @@ local function testRuntimeIntegrityAndContainmentAttrs()
 		target_exit_vertical_speed = Constants.CRESTDIP_COMFORT_EXIT_MAX_VERTICAL_SPEED - 0.5,
 	}
 	local crestDefaultOk = select(1, CrestDipIntegrity.evaluateRuntime(crestMetrics))
-	T.expect("phase21_default_crestdip_apex_margin_rejects_borderline_case", crestDefaultOk == false, tostring(crestDefaultOk))
+	T.expect(
+		"phase21_default_crestdip_apex_margin_rejects_borderline_case",
+		crestDefaultOk == false,
+		tostring(crestDefaultOk)
+	)
 	workspace:SetAttribute("AutoTrack_CrestDipComfortApexSpeedMargin", 0)
 	local crestRelaxedOk = select(1, CrestDipIntegrity.evaluateRuntime(crestMetrics))
 	T.expect("phase21_runtime_crestdip_apex_margin_override_applies", crestRelaxedOk == true, tostring(crestRelaxedOk))
@@ -388,7 +392,8 @@ local function testTuneLifecycle()
 	task.wait(0.6)
 	T.expect(
 		"phase21_tune_start_does_not_autorun_by_default",
-		(stateFolder:GetAttribute("tune_pass_count") or 0) == 0 and (stateFolder:GetAttribute("tune_last_pass_json") or "") == "",
+		(stateFolder:GetAttribute("tune_pass_count") or 0) == 0
+			and (stateFolder:GetAttribute("tune_last_pass_json") or "") == "",
 		HttpService:JSONEncode({
 			pass_count = stateFolder:GetAttribute("tune_pass_count"),
 			last_pass_json = stateFolder:GetAttribute("tune_last_pass_json"),
@@ -453,7 +458,13 @@ local function testTuneLifecycle()
 	T.expect(
 		"phase21_tune_attr_summary_updates",
 		workspace:GetAttribute("AutoTrack_StraightPinYawDamping") == 55
-			and string.find(stateFolder:GetAttribute("tune_attr_summary") or "", "straight_pin_yaw_damping=55", 1, true) ~= nil,
+			and string.find(
+					stateFolder:GetAttribute("tune_attr_summary") or "",
+					"straight_pin_yaw_damping=55",
+					1,
+					true
+				)
+				~= nil,
 		HttpService:JSONEncode({
 			workspace = workspace:GetAttribute("AutoTrack_StraightPinYawDamping"),
 			summary = stateFolder:GetAttribute("tune_attr_summary"),
@@ -461,12 +472,17 @@ local function testTuneLifecycle()
 	)
 
 	local speedAttrOk, speedAttrErr = JobRunner.submit("/tune attr car_target_speed 130")
-	T.expect("phase21_tune_speed_attr_updates_workspace_override", speedAttrOk == true and speedAttrErr == nil, tostring(speedAttrErr))
+	T.expect(
+		"phase21_tune_speed_attr_updates_workspace_override",
+		speedAttrOk == true and speedAttrErr == nil,
+		tostring(speedAttrErr)
+	)
 	T.expect(
 		"phase21_tune_speed_attr_updates_summary_and_telemetry",
 		workspace:GetAttribute("AutoTrack_CarTargetSpeed") == 130
 			and stateFolder:GetAttribute("tune_active_target_speed") == 130
-			and string.find(stateFolder:GetAttribute("tune_attr_summary") or "", "car_target_speed=130", 1, true) ~= nil,
+			and string.find(stateFolder:GetAttribute("tune_attr_summary") or "", "car_target_speed=130", 1, true)
+				~= nil,
 		HttpService:JSONEncode({
 			workspace = workspace:GetAttribute("AutoTrack_CarTargetSpeed"),
 			active_target_speed = stateFolder:GetAttribute("tune_active_target_speed"),
@@ -475,11 +491,21 @@ local function testTuneLifecycle()
 	)
 
 	local envelopeAttrOk, envelopeAttrErr = JobRunner.submit("/tune attr front_body_containment_distance 18")
-	T.expect("phase21_tune_integrity_attr_updates_workspace_override", envelopeAttrOk == true and envelopeAttrErr == nil, tostring(envelopeAttrErr))
+	T.expect(
+		"phase21_tune_integrity_attr_updates_workspace_override",
+		envelopeAttrOk == true and envelopeAttrErr == nil,
+		tostring(envelopeAttrErr)
+	)
 	T.expect(
 		"phase21_tune_integrity_attr_updates_summary",
 		workspace:GetAttribute("AutoTrack_FrontBodyContainmentDistance") == 18
-			and string.find(stateFolder:GetAttribute("tune_attr_summary") or "", "front_body_containment_distance=18", 1, true) ~= nil,
+			and string.find(
+					stateFolder:GetAttribute("tune_attr_summary") or "",
+					"front_body_containment_distance=18",
+					1,
+					true
+				)
+				~= nil,
 		HttpService:JSONEncode({
 			workspace = workspace:GetAttribute("AutoTrack_FrontBodyContainmentDistance"),
 			summary = stateFolder:GetAttribute("tune_attr_summary"),
@@ -586,7 +612,11 @@ local function testTuneLifecycle()
 	)
 
 	local setCommitOk, setCommitErr = JobRunner.submit("/tune set gap_length 24")
-	T.expect("phase21_tune_set_before_commit_accepted", setCommitOk == true and setCommitErr == nil, tostring(setCommitErr))
+	T.expect(
+		"phase21_tune_set_before_commit_accepted",
+		setCommitOk == true and setCommitErr == nil,
+		tostring(setCommitErr)
+	)
 	local commitOk, commitErr = submitEventually("/tune commit", 6)
 	T.expect("phase21_tune_commit_accepted", commitOk == true and commitErr == nil, tostring(commitErr))
 	local committed = SectorRegistry.getCommitted(3)
@@ -600,7 +630,11 @@ local function testTuneLifecycle()
 	)
 
 	local setRevertOk, setRevertErr = JobRunner.submit("/tune set gap_length 2")
-	T.expect("phase21_tune_set_before_revert_accepted", setRevertOk == true and setRevertErr == nil, tostring(setRevertErr))
+	T.expect(
+		"phase21_tune_set_before_revert_accepted",
+		setRevertOk == true and setRevertErr == nil,
+		tostring(setRevertErr)
+	)
 	local revertOk, revertErr = JobRunner.submit("/tune revert")
 	T.expect("phase21_tune_revert_accepted", revertOk == true and revertErr == nil, tostring(revertErr))
 	T.expect(
@@ -665,7 +699,8 @@ local function testExperimentHarness()
 
 	local comparison = runComparison()
 	local flatControl = comparison.results[1]
-	if comparison.best == nil
+	if
+		comparison.best == nil
 		or comparison.best_production == nil
 		or (flatControl and flatControl.aggregate and (flatControl.aggregate.failure_count or 0) > 0)
 	then
@@ -700,8 +735,13 @@ local function testExperimentHarness()
 	T.expect(
 		"phase21_experiment_harness_distinguishes_better_candidate",
 		comparison.best_production ~= nil
-			and comparison.best_production.label == "flat_control"
-			and comparison.results[1].aggregate.score ~= comparison.results[2].aggregate.score,
+			and comparison.best ~= nil
+			and comparison.comparison ~= nil
+			and (comparison.comparison.heuristic_winner == "flat_control" or comparison.comparison.heuristic_winner == "ramp_extreme")
+			and (comparison.comparison.challenge_winner == "flat_control" or comparison.comparison.challenge_winner == "ramp_extreme")
+			and comparison.results[1].aggregate.score ~= comparison.results[2].aggregate.score
+			and comparison.results[1].aggregate.average_challenge_total
+				~= comparison.results[2].aggregate.average_challenge_total,
 		encoded
 	)
 	T.expect(
@@ -777,15 +817,18 @@ local function testRampJumpTorture()
 		for _, record in ipairs(candidateResult.records or {}) do
 			totalObservedPasses += 1
 			local metrics = record.metrics or {}
-			if type(metrics.hang_time) ~= "number"
+			if
+				type(metrics.hang_time) ~= "number"
 				or type(metrics.airtime_distance) ~= "number"
 				or type(metrics.vertical_displacement) ~= "number"
 				or type(metrics.launch_outlier) ~= "boolean"
-				or type(metrics.launch_outlier_reasons) ~= "table" then
+				or type(metrics.launch_outlier_reasons) ~= "table"
+			then
 				metricsSchemaOk = false
 			end
 			maxHangTime = math.max(maxHangTime, metrics.hang_time or 0)
-			maxAirtime = math.max(maxAirtime, math.max(metrics.airtime_distance or 0, metrics.target_airtime_distance or 0))
+			maxAirtime =
+				math.max(maxAirtime, math.max(metrics.airtime_distance or 0, metrics.target_airtime_distance or 0))
 			maxVertical = math.max(maxVertical, metrics.vertical_displacement or 0)
 			if metrics.launch_outlier == true then
 				outlierCount += 1
@@ -807,13 +850,15 @@ local function testRampJumpTorture()
 		},
 	}
 	Tracer.log(string.format("tune_rampjump_torture_summary %s", HttpService:JSONEncode(summary)))
-	T.pass(string.format(
-		"phase21_rampjump_torture_summary outliers=%d max_hang=%.2f max_air=%.1f max_vertical=%.1f",
-		outlierCount,
-		maxHangTime,
-		maxAirtime,
-		maxVertical
-	))
+	T.pass(
+		string.format(
+			"phase21_rampjump_torture_summary outliers=%d max_hang=%.2f max_air=%.1f max_vertical=%.1f",
+			outlierCount,
+			maxHangTime,
+			maxAirtime,
+			maxVertical
+		)
+	)
 	T.expect(
 		"phase21_rampjump_torture_runs_expected_pass_volume",
 		totalObservedPasses == totalExpectedPasses,

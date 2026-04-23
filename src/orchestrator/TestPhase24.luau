@@ -5,14 +5,10 @@ local T = require(script.Parent.TestUtils)
 local TestPhase24 = {}
 
 local function cloneState(state)
-	local params = {}
-	for key, value in pairs(state.params) do
-		params[key] = value
-	end
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = params,
+		params = table.clone(state.params),
 		pads = {
 			ingress = state.pads.ingress,
 			egress = state.pads.egress,
@@ -42,11 +38,13 @@ end
 local function result(success: boolean, failureType: string?, failureSector: number?, detail: string?)
 	return {
 		success = success,
-		failure = if success then nil else {
-			type = failureType or "local_execution_failure",
-			sector_id = failureSector or 3,
-			detail = detail,
-		},
+		failure = if success
+			then nil
+			else {
+				type = failureType or "local_execution_failure",
+				sector_id = failureSector or 3,
+				detail = detail,
+			},
 		metrics = {
 			entry_speed = 80,
 			exit_speed = 70,
@@ -116,7 +114,11 @@ local function testIsolatedThenCommitLap()
 	T.expect(
 		"phase24_isolated_then_commit_lap_applies_action_once",
 		actionApplyCount == 1 and summary.updated_state.params.ramp_angle == 14,
-		string.format("actionApplyCount=%d ramp_angle=%s", actionApplyCount, tostring(summary.updated_state.params.ramp_angle))
+		string.format(
+			"actionApplyCount=%d ramp_angle=%s",
+			actionApplyCount,
+			tostring(summary.updated_state.params.ramp_angle)
+		)
 	)
 	T.expect(
 		"phase24_isolated_then_commit_lap_stage_metadata",
@@ -172,7 +174,9 @@ local function testCommitLapFailureSurfacesAsCommitStage()
 			table.insert(calls, mode)
 			local updated = cloneState(state)
 			if mode == "full_lap" then
-				return result(false, "downstream_failure", 7, "target sector exit speed too low for downstream"), { "downstream" }, updated
+				return result(false, "downstream_failure", 7, "target sector exit speed too low for downstream"),
+					{ "downstream" },
+					updated
 			end
 			return result(true), {}, updated
 		end,
@@ -263,8 +267,11 @@ local function testBudgetRefreshUsesCommittedFullLapOnly()
 	)
 	T.expect(
 		"phase24_budget_refresh_ignores_missing_final_result",
-		OrchestratorAgent._commitLapSlowdownRatio(previous, { final_status = "committed", final_result = nil }) == previous,
-		tostring(OrchestratorAgent._commitLapSlowdownRatio(previous, { final_status = "committed", final_result = nil }))
+		OrchestratorAgent._commitLapSlowdownRatio(previous, { final_status = "committed", final_result = nil })
+			== previous,
+		tostring(
+			OrchestratorAgent._commitLapSlowdownRatio(previous, { final_status = "committed", final_result = nil })
+		)
 	)
 end
 

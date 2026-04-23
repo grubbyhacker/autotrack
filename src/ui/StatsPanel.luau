@@ -41,7 +41,7 @@ function StatsPanel.setSlowdown(ratio: number)
 	refs().slowdownLabel.Text = ("%% %+d%%"):format(percent)
 end
 
-function StatsPanel.setCurrentSpeed(speed: number, commandedSpeed: number?, targetSpeed: number?)
+function StatsPanel.setCurrentSpeed(speed: number, _commandedSpeed: number?, _targetSpeed: number?)
 	refs().speedValueLabel.Text = string.format("%5.1f", speed or 0)
 end
 
@@ -54,17 +54,17 @@ function StatsPanel.setPitch(deg: number)
 end
 
 function StatsPanel.setScore(
-	sectorId: number,
-	total: number,
-	air: number,
-	lateral: number,
-	edge: number,
-	cost: number,
-	overBudget: boolean,
+	_sectorId: number,
+	_total: number,
+	_air: number,
+	_lateral: number,
+	_edge: number,
+	_cost: number,
+	_overBudget: boolean,
 	trackTotal: number,
 	trackCount: number,
 	trackBudgetUsed: number,
-	trackBudgetHeadroom: number,
+	_trackBudgetHeadroom: number,
 	trackOverBudget: boolean
 )
 	local label = refs().scoreLabel

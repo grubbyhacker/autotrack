@@ -54,13 +54,7 @@ local function makeSegment(
 	local worldEnd = worldPoint(entryFrame, endPoint)
 	local center = worldStart:Lerp(worldEnd, 0.5)
 	local cf = CFrame.lookAt(center, center + (worldEnd - worldStart).Unit)
-	return makePart(
-		name,
-		Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length),
-		cf,
-		color,
-		parent
-	)
+	return makePart(name, Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length), cf, color, parent)
 end
 
 function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame)
@@ -77,12 +71,7 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, _exitFram
 	)
 
 	local folder = getSectorFolder(state.sector_id)
-	local profile = RampJumpPath.buildProfile(
-		p.ramp_angle,
-		p.ramp_length,
-		p.gap_length,
-		p.landing_length
-	)
+	local profile = RampJumpPath.buildProfile(p.ramp_angle, p.ramp_length, p.gap_length, p.landing_length)
 	local lastSlopedSegment = nil
 
 	for index = 2, #profile.rampPoints do
@@ -97,14 +86,8 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, _exitFram
 			kind = "RampBlend"
 		end
 
-		local part = makeSegment(
-			string.format("%s_%02d", kind, index - 1),
-			startPoint,
-			endPoint,
-			entryFrame,
-			color,
-			folder
-		)
+		local part =
+			makeSegment(string.format("%s_%02d", kind, index - 1), startPoint, endPoint, entryFrame, color, folder)
 		if kind ~= "EntryFlat" then
 			lastSlopedSegment = part
 			TrackVisuals.addRampSupports(part, math.max(startPoint.Y, endPoint.Y))
@@ -118,14 +101,8 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, _exitFram
 		local color = if kind == "Landing"
 			then BrickColor.new("Dark stone grey")
 			else BrickColor.new("Medium stone grey")
-		local part = makeSegment(
-			string.format("%s_%02d", kind, index - 1),
-			startPoint,
-			endPoint,
-			entryFrame,
-			color,
-			folder
-		)
+		local part =
+			makeSegment(string.format("%s_%02d", kind, index - 1), startPoint, endPoint, entryFrame, color, folder)
 		if kind == "Landing" then
 			TrackVisuals.addCurbs(part)
 		end

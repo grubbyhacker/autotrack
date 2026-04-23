@@ -17,7 +17,9 @@ local TestPhase11 = {}
 local function stateCrest(overrides)
 	local params = { height_or_depth = 6, radius = 20, sector_length = 40 }
 	if overrides then
-		for k, v in pairs(overrides) do params[k] = v end
+		for k, v in pairs(overrides) do
+			params[k] = v
+		end
 	end
 	return {
 		sector_id = 3,
@@ -31,7 +33,9 @@ end
 local function stateJump(overrides)
 	local params = { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 }
 	if overrides then
-		for k, v in pairs(overrides) do params[k] = v end
+		for k, v in pairs(overrides) do
+			params[k] = v
+		end
 	end
 	return {
 		sector_id = 3,
@@ -45,7 +49,9 @@ end
 local function stateChicane(overrides)
 	local params = { amplitude = 8, transition_length = 15, corridor_width = 14 }
 	if overrides then
-		for k, v in pairs(overrides) do params[k] = v end
+		for k, v in pairs(overrides) do
+			params[k] = v
+		end
 	end
 	return {
 		sector_id = 3,
@@ -58,21 +64,34 @@ end
 
 local function metrics(overrides)
 	local m = {
-		entry_speed = 80, exit_speed = 60,
-		airborne = false, air_distance = 0,
-		lateral_error = 0, vertical_displacement = 0,
-		reacquired = true, airtime_distance = 0,
-		target_airborne = false, target_air_distance = 0,
-		target_vertical_displacement = 0, target_reacquired = true,
+		entry_speed = 80,
+		exit_speed = 60,
+		airborne = false,
+		air_distance = 0,
+		lateral_error = 0,
+		vertical_displacement = 0,
+		reacquired = true,
+		airtime_distance = 0,
+		target_airborne = false,
+		target_air_distance = 0,
+		target_vertical_displacement = 0,
+		target_reacquired = true,
 		target_airtime_distance = 0,
-		target_left_offset = 0, target_right_offset = 0,
+		target_left_offset = 0,
+		target_right_offset = 0,
 		target_lateral_band_changes = 0,
-		target_exited = false, target_progress = 0,
-		lap_time = 25, slowdown_ratio = 1.0,
-		hang_time = 0, peak_lateral_g = 0, target_min_speed = 80,
+		target_exited = false,
+		target_progress = 0,
+		lap_time = 25,
+		slowdown_ratio = 1.0,
+		hang_time = 0,
+		peak_lateral_g = 0,
+		target_min_speed = 80,
 	}
 	if overrides then
-		for k, v in pairs(overrides) do m[k] = v end
+		for k, v in pairs(overrides) do
+			m[k] = v
+		end
 	end
 	return m
 end
@@ -81,35 +100,29 @@ local function runUnit()
 	-- 1. Zero metrics → zero score, not over budget.
 	do
 		local s = ChallengeScore.compute(stateCrest(), metrics())
-		T.expect("phase11_zero_metrics_total_zero",
+		T.expect(
+			"phase11_zero_metrics_total_zero",
 			math.abs(s.total) < 1e-6,
-			"expected near-zero total, got " .. tostring(s.total))
-		T.expect("phase11_zero_metrics_not_over_budget",
-			s.over_budget == false, "over_budget should be false")
-		T.expect("phase11_zero_metrics_budget_used_zero",
-			math.abs(s.budget_used) < 1e-6, "budget_used should be 0")
+			"expected near-zero total, got " .. tostring(s.total)
+		)
+		T.expect("phase11_zero_metrics_not_over_budget", s.over_budget == false, "over_budget should be false")
+		T.expect("phase11_zero_metrics_budget_used_zero", math.abs(s.budget_used) < 1e-6, "budget_used should be 0")
 	end
 
 	-- 2. Air component saturates at HANG_TIME_FULL_SCORE.
 	do
-		local s = ChallengeScore.compute(
-			stateJump(),
-			metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 2 })
-		)
-		T.expect("phase11_air_saturates_at_10",
+		local s = ChallengeScore.compute(stateJump(), metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 2 }))
+		T.expect(
+			"phase11_air_saturates_at_10",
 			math.abs(s.air - 10) < 1e-6,
-			"expected air==10, got " .. tostring(s.air))
+			"expected air==10, got " .. tostring(s.air)
+		)
 	end
 
 	-- 3. Air component is linear below saturation.
 	do
-		local s = ChallengeScore.compute(
-			stateJump(),
-			metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 0.5 })
-		)
-		T.expect("phase11_air_linear_half",
-			math.abs(s.air - 5) < 0.01,
-			"expected air~5, got " .. tostring(s.air))
+		local s = ChallengeScore.compute(stateJump(), metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE * 0.5 }))
+		T.expect("phase11_air_linear_half", math.abs(s.air - 5) < 0.01, "expected air~5, got " .. tostring(s.air))
 	end
 
 	-- 4. CrestDip near-miss: airtime at 90% of the cap scores close to 9.
@@ -118,17 +131,21 @@ local function runUnit()
 			stateCrest(),
 			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.9 })
 		)
-		T.expect("phase11_crest_near_miss_high",
+		T.expect(
+			"phase11_crest_near_miss_high",
 			s.near_miss >= 8.9 and s.near_miss <= 9.1,
-			"expected near_miss≈9, got " .. tostring(s.near_miss))
+			"expected near_miss≈9, got " .. tostring(s.near_miss)
+		)
 	end
 
 	-- 5. CrestDip near-miss is zero when airtime is zero.
 	do
 		local s = ChallengeScore.compute(stateCrest(), metrics())
-		T.expect("phase11_crest_near_miss_zero",
+		T.expect(
+			"phase11_crest_near_miss_zero",
 			math.abs(s.near_miss) < 1e-6,
-			"expected near_miss==0, got " .. tostring(s.near_miss))
+			"expected near_miss==0, got " .. tostring(s.near_miss)
+		)
 	end
 
 	-- 6. Chicane near-miss rewards occupancy above the threshold.
@@ -145,9 +162,11 @@ local function runUnit()
 				target_min_speed = 80,
 			})
 		)
-		T.expect("phase11_chicane_near_miss_high",
+		T.expect(
+			"phase11_chicane_near_miss_high",
 			s.near_miss > 5,
-			"expected near_miss > 5 at high occupancy, got " .. tostring(s.near_miss))
+			"expected near_miss > 5 at high occupancy, got " .. tostring(s.near_miss)
+		)
 	end
 
 	-- 7. Chicane near-miss is zero at low occupancy.
@@ -156,9 +175,11 @@ local function runUnit()
 			stateChicane({ corridor_width = 14 }),
 			metrics({ target_left_offset = 1, target_right_offset = 1, target_min_speed = 80 })
 		)
-		T.expect("phase11_chicane_near_miss_low",
+		T.expect(
+			"phase11_chicane_near_miss_low",
 			s.near_miss < 1e-6,
-			"expected near_miss==0 at low occupancy, got " .. tostring(s.near_miss))
+			"expected near_miss==0 at low occupancy, got " .. tostring(s.near_miss)
+		)
 	end
 
 	-- 8. Chicane one-sided occupancy scores lower than balanced occupancy.
@@ -181,9 +202,11 @@ local function runUnit()
 				target_min_speed = 80,
 			})
 		)
-		T.expect("phase11_chicane_balanced_beats_one_sided",
+		T.expect(
+			"phase11_chicane_balanced_beats_one_sided",
 			balanced.near_miss > oneSided.near_miss,
-			string.format("expected balanced > one-sided, got %.3f vs %.3f", balanced.near_miss, oneSided.near_miss))
+			string.format("expected balanced > one-sided, got %.3f vs %.3f", balanced.near_miss, oneSided.near_miss)
+		)
 	end
 
 	-- 9. Chicane near-miss falls when the car scrubs too much speed.
@@ -206,9 +229,11 @@ local function runUnit()
 				target_min_speed = 35,
 			})
 		)
-		T.expect("phase11_chicane_speed_retention_matters",
+		T.expect(
+			"phase11_chicane_speed_retention_matters",
 			fast.near_miss > slow.near_miss,
-			string.format("expected fast > slow, got %.3f vs %.3f", fast.near_miss, slow.near_miss))
+			string.format("expected fast > slow, got %.3f vs %.3f", fast.near_miss, slow.near_miss)
+		)
 	end
 
 	-- 9b. Chicane near-miss rises for the same swing when peak spacing tightens.
@@ -231,30 +256,34 @@ local function runUnit()
 				target_min_speed = 75,
 			})
 		)
-		T.expect("phase11_chicane_tighter_spacing_scores_higher",
+		T.expect(
+			"phase11_chicane_tighter_spacing_scores_higher",
 			tightSpacing.near_miss > wideSpacing.near_miss,
-			string.format("expected tight spacing > wide spacing, got %.3f vs %.3f", tightSpacing.near_miss, wideSpacing.near_miss))
+			string.format(
+				"expected tight spacing > wide spacing, got %.3f vs %.3f",
+				tightSpacing.near_miss,
+				wideSpacing.near_miss
+			)
+		)
 	end
 
 	-- 10. Over-budget flag fires when slowdown_ratio exceeds (1 + ratio).
 	do
 		local ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.01
 		local s = ChallengeScore.compute(stateJump(), metrics({ slowdown_ratio = ratio }))
-		T.expect("phase11_over_budget_fires",
+		T.expect(
+			"phase11_over_budget_fires",
 			s.over_budget == true,
-			"over_budget should be true for slowdown " .. tostring(ratio))
+			"over_budget should be true for slowdown " .. tostring(ratio)
+		)
 	end
 
 	-- 11. Over-budget flag does NOT fire at exact cap.
 	do
 		local ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO
 		local s = ChallengeScore.compute(stateJump(), metrics({ slowdown_ratio = ratio }))
-		T.expect("phase11_at_cap_not_over_budget",
-			s.over_budget == false,
-			"over_budget should be false exactly at cap")
-		T.expect("phase11_at_cap_budget_used_one",
-			math.abs(s.budget_used - 1) < 1e-6,
-			"budget_used should be 1 at cap")
+		T.expect("phase11_at_cap_not_over_budget", s.over_budget == false, "over_budget should be false exactly at cap")
+		T.expect("phase11_at_cap_budget_used_one", math.abs(s.budget_used - 1) < 1e-6, "budget_used should be 1 at cap")
 	end
 
 	-- 12. Time cost reduces total but does not make near-miss score negative alone.
@@ -270,10 +299,11 @@ local function runUnit()
 				slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO * 0.5,
 			})
 		)
-		T.expect("phase11_time_cost_reduces_total",
+		T.expect(
+			"phase11_time_cost_reduces_total",
 			slowed.total < base.total,
-			string.format("expected slowed total < base; got slowed=%.3f base=%.3f",
-				slowed.total, base.total))
+			string.format("expected slowed total < base; got slowed=%.3f base=%.3f", slowed.total, base.total)
+		)
 	end
 
 	-- 13. CrestDip exit brake is no longer explicitly penalized by ChallengeScore.
@@ -282,19 +312,18 @@ local function runUnit()
 			stateCrest(),
 			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
 		)
-		local braked = ChallengeScore.compute(
-			{
-				sector_id = 3,
-				mechanic = "CrestDip",
-				params = { height_or_depth = 6, radius = 20, sector_length = 40 },
-				pads = { ingress = "None", egress = "Brake10" },
-				version = 0,
-			},
-			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
-		)
-		T.expect("phase11_crestdip_egress_brake_not_explicitly_penalized",
+		local braked = ChallengeScore.compute({
+			sector_id = 3,
+			mechanic = "CrestDip",
+			params = { height_or_depth = 6, radius = 20, sector_length = 40 },
+			pads = { ingress = "None", egress = "Brake10" },
+			version = 0,
+		}, metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 }))
+		T.expect(
+			"phase11_crestdip_egress_brake_not_explicitly_penalized",
 			math.abs(braked.total - free.total) < 1e-6,
-			string.format("expected equal totals; got %.3f vs %.3f", braked.total, free.total))
+			string.format("expected equal totals; got %.3f vs %.3f", braked.total, free.total)
+		)
 	end
 
 	-- 14. A challenging chicane (both sides + lateral G) totals higher than zero metrics.
@@ -309,9 +338,11 @@ local function runUnit()
 				peak_lateral_g = Constants.LATERAL_G_FULL_SCORE * 0.5,
 			})
 		)
-		T.expect("phase11_chicane_with_signal_scores_positive",
+		T.expect(
+			"phase11_chicane_with_signal_scores_positive",
 			s.total > 1,
-			"expected total > 1, got " .. tostring(s.total))
+			"expected total > 1, got " .. tostring(s.total)
+		)
 	end
 
 	-- 14. The nearMissMargin helper exposes the raw [0,1] margin.
@@ -320,9 +351,7 @@ local function runUnit()
 			stateCrest(),
 			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 })
 		)
-		T.expect("phase11_near_miss_margin_half",
-			math.abs(m - 0.5) < 1e-6,
-			"expected margin~0.5, got " .. tostring(m))
+		T.expect("phase11_near_miss_margin_half", math.abs(m - 0.5) < 1e-6, "expected margin~0.5, got " .. tostring(m))
 	end
 
 	-- 15. Chicane ingress brake is no longer explicitly penalized by ChallengeScore.
@@ -351,44 +380,55 @@ local function runUnit()
 				target_min_speed = 80,
 			})
 		)
-		T.expect("phase11_chicane_ingress_brake_not_explicitly_penalized",
+		T.expect(
+			"phase11_chicane_ingress_brake_not_explicitly_penalized",
 			math.abs(clean.total - braked.total) < 1e-6,
-			string.format("expected equal totals; got %.3f vs %.3f", clean.total, braked.total))
+			string.format("expected equal totals; got %.3f vs %.3f", clean.total, braked.total)
+		)
 	end
 
 	-- 16. aggregate sums and halves over-budget totals.
 	do
-		local a = ChallengeScore.compute(stateCrest(),
-			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 }))
-		local b = ChallengeScore.compute(stateCrest(),
-			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 }))
+		local a = ChallengeScore.compute(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 })
+		)
+		local b = ChallengeScore.compute(
+			stateCrest(),
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.5 })
+		)
 		local agg = ChallengeScore.aggregate({ a, b })
-		T.expect("phase11_aggregate_sum",
+		T.expect(
+			"phase11_aggregate_sum",
 			math.abs(agg.total - (a.total + b.total)) < 1e-6,
-			"expected sum; got " .. tostring(agg.total))
-		T.expect("phase11_aggregate_count",
-			agg.sector_count == 2, "expected count=2")
-		T.expect("phase11_aggregate_not_over_budget",
-			agg.any_over_budget == false, "should not be over budget")
+			"expected sum; got " .. tostring(agg.total)
+		)
+		T.expect("phase11_aggregate_count", agg.sector_count == 2, "expected count=2")
+		T.expect("phase11_aggregate_not_over_budget", agg.any_over_budget == false, "should not be over budget")
 	end
 
 	-- 17. aggregate halves when any sector is over budget.
 	do
 		local a = ChallengeScore.compute(stateJump(), metrics({ hang_time = Constants.HANG_TIME_FULL_SCORE }))
-		local b = ChallengeScore.compute(stateJump(),
-			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local b = ChallengeScore.compute(
+			stateJump(),
+			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 })
+		)
 		local agg = ChallengeScore.aggregate({ a, b })
-		T.expect("phase11_aggregate_over_budget_flag",
-			agg.any_over_budget == true, "expected any_over_budget=true")
-		T.expect("phase11_aggregate_over_budget_halved",
+		T.expect("phase11_aggregate_over_budget_flag", agg.any_over_budget == true, "expected any_over_budget=true")
+		T.expect(
+			"phase11_aggregate_over_budget_halved",
 			math.abs(agg.total - (a.total + b.total) * 0.5) < 1e-6,
-			string.format("expected halved; got %.3f vs %.3f", agg.total, (a.total + b.total) * 0.5))
+			string.format("expected halved; got %.3f vs %.3f", agg.total, (a.total + b.total) * 0.5)
+		)
 	end
 
 	-- 18. suggestEscalation returns nil when over budget.
 	do
-		local s = ChallengeScore.compute(stateJump(),
-			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local s = ChallengeScore.compute(
+			stateJump(),
+			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 })
+		)
 		local lever = ChallengeScore.suggestEscalation(stateJump(), s)
 		T.expect("phase11_escalation_blocked_over_budget", lever == nil, "expected nil when over budget")
 	end
@@ -397,18 +437,22 @@ local function runUnit()
 	do
 		local s = ChallengeScore.compute(stateJump(), metrics())
 		local lever = ChallengeScore.suggestEscalation(stateJump(), s)
-		T.expect("phase11_escalation_jump_prefers_angle",
+		T.expect(
+			"phase11_escalation_jump_prefers_angle",
 			lever == "ramp_angle",
-			"expected ramp_angle; got " .. tostring(lever))
+			"expected ramp_angle; got " .. tostring(lever)
+		)
 	end
 
 	-- 20. Once the wave is already tall, chicane escalation tightens peak spacing.
 	do
 		local s = ChallengeScore.compute(stateChicane(), metrics())
 		local lever = ChallengeScore.suggestEscalation(stateChicane(), s)
-		T.expect("phase11_escalation_chicane_prefers_spacing_after_tall_wave",
+		T.expect(
+			"phase11_escalation_chicane_prefers_spacing_after_tall_wave",
 			lever == "transition_length",
-			"expected transition_length; got " .. tostring(lever))
+			"expected transition_length; got " .. tostring(lever)
+		)
 	end
 
 	-- 21. Runner escalation: RampJump flat state nudges ramp_angle upward.
@@ -416,12 +460,16 @@ local function runUnit()
 		local st = stateJump()
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever, reason = ChallengeRunner._escalateState(st, s)
-		T.expect("phase11_runner_jump_lever",
+		T.expect(
+			"phase11_runner_jump_lever",
 			lever == "ramp_angle",
-			"expected ramp_angle; got " .. tostring(lever) .. " reason=" .. tostring(reason))
-		T.expect("phase11_runner_jump_increases_angle",
+			"expected ramp_angle; got " .. tostring(lever) .. " reason=" .. tostring(reason)
+		)
+		T.expect(
+			"phase11_runner_jump_increases_angle",
 			next_ ~= nil and next_.params.ramp_angle > st.params.ramp_angle,
-			"expected ramp_angle to increase")
+			"expected ramp_angle to increase"
+		)
 	end
 
 	-- 22. Runner escalation: Chicane state below amplitude ceiling escalates amplitude.
@@ -430,12 +478,12 @@ local function runUnit()
 		local st = stateChicane({ amplitude = 6 })
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever = ChallengeRunner._escalateState(st, s)
-		T.expect("phase11_runner_chicane_lever",
-			lever == "amplitude",
-			"expected amplitude; got " .. tostring(lever))
-		T.expect("phase11_runner_chicane_mutates",
+		T.expect("phase11_runner_chicane_lever", lever == "amplitude", "expected amplitude; got " .. tostring(lever))
+		T.expect(
+			"phase11_runner_chicane_mutates",
 			next_ ~= nil and next_.params.amplitude > st.params.amplitude,
-			"expected amplitude to increase")
+			"expected amplitude to increase"
+		)
 	end
 
 	-- 23. Runner escalation: CrestDip flat state drives height_or_depth up.
@@ -443,12 +491,16 @@ local function runUnit()
 		local st = stateCrest()
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever = ChallengeRunner._escalateState(st, s)
-		T.expect("phase11_runner_crest_lever",
+		T.expect(
+			"phase11_runner_crest_lever",
 			lever == "height_or_depth" or lever == "sector_length",
-			"expected height_or_depth or sector_length; got " .. tostring(lever))
-		T.expect("phase11_runner_crest_mutates",
+			"expected height_or_depth or sector_length; got " .. tostring(lever)
+		)
+		T.expect(
+			"phase11_runner_crest_mutates",
 			next_ ~= nil and next_.params[lever] ~= st.params[lever],
-			"expected lever value to change")
+			"expected lever value to change"
+		)
 	end
 
 	-- 24. Runner escalation respects the LEVER_FLOOR: a lever already at
@@ -465,13 +517,13 @@ local function runUnit()
 		-- or it picks a different lever that is allowed. Both are acceptable —
 		-- the invariant we care about is "no floor underflow".
 		if next_ ~= nil then
-			T.expect("phase11_runner_no_underflow",
+			T.expect(
+				"phase11_runner_no_underflow",
 				next_.params.corridor_width >= 8,
-				"corridor_width dropped below floor to " .. tostring(next_.params.corridor_width))
+				"corridor_width dropped below floor to " .. tostring(next_.params.corridor_width)
+			)
 		else
-			T.expect("phase11_runner_rejects_with_reason",
-				reason ~= nil and #reason > 0,
-				"expected a rejection reason")
+			T.expect("phase11_runner_rejects_with_reason", reason ~= nil and #reason > 0, "expected a rejection reason")
 		end
 		-- Silence unused lever warning.
 		local _ = lever
@@ -480,12 +532,13 @@ local function runUnit()
 	-- 25. Runner escalation: nil returned when score says over budget.
 	do
 		local st = stateJump()
-		local s = ChallengeScore.compute(st,
-			metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
+		local s = ChallengeScore.compute(st, metrics({ slowdown_ratio = 1 + Constants.CHALLENGE_BUDGET_RATIO + 0.1 }))
 		local next_, lever = ChallengeRunner._escalateState(st, s)
-		T.expect("phase11_runner_blocks_over_budget",
+		T.expect(
+			"phase11_runner_blocks_over_budget",
 			next_ == nil and lever == nil,
-			"expected nil state when over budget")
+			"expected nil state when over budget"
+		)
 	end
 
 	-- 26. Extreme proposals start more aggressively than normal proposals.
@@ -500,16 +553,24 @@ local function runUnit()
 		assert(normalState ~= nil, "expected normal initial state: " .. tostring(normalStateErr))
 		assert(extremeState ~= nil, "expected extreme initial state: " .. tostring(extremeStateErr))
 
-		T.expect("phase11_extreme_bias_jump_angle",
+		T.expect(
+			"phase11_extreme_bias_jump_angle",
 			extremeState.params.ramp_angle > normalState.params.ramp_angle,
-			string.format("expected extreme angle > normal; got %s vs %s",
+			string.format(
+				"expected extreme angle > normal; got %s vs %s",
 				tostring(extremeState.params.ramp_angle),
-				tostring(normalState.params.ramp_angle)))
-		T.expect("phase11_extreme_bias_jump_gap",
+				tostring(normalState.params.ramp_angle)
+			)
+		)
+		T.expect(
+			"phase11_extreme_bias_jump_gap",
 			extremeState.params.gap_length > normalState.params.gap_length,
-			string.format("expected extreme gap > normal; got %s vs %s",
+			string.format(
+				"expected extreme gap > normal; got %s vs %s",
 				tostring(extremeState.params.gap_length),
-				tostring(normalState.params.gap_length)))
+				tostring(normalState.params.gap_length)
+			)
+		)
 	end
 
 	-- 27. Endurance build submits can trigger the proposer-owned challenge-up do-over.
@@ -545,14 +606,16 @@ local function runUnit()
 			},
 		}
 		local shouldRun, why, strategy = JobRunner._shouldRunChallengeUp(request, result, true)
-		T.expect("phase11_endurance_challenge_up_uses_proposal_do_over",
+		T.expect(
+			"phase11_endurance_challenge_up_uses_proposal_do_over",
 			shouldRun == true and why == nil and strategy == "proposal_do_over",
 			string.format(
 				"expected proposer do-over, got shouldRun=%s why=%s strategy=%s",
 				tostring(shouldRun),
 				tostring(why),
 				tostring(strategy)
-			))
+			)
+		)
 	end
 
 	-- 28. Pre-target failures must revert instead of repairing the target sector.
@@ -569,9 +632,11 @@ local function runUnit()
 				target_progress = 0.4,
 			}),
 		}
-		T.expect("phase11_pre_target_failure_reverts",
+		T.expect(
+			"phase11_pre_target_failure_reverts",
 			JobRunner._shouldRevertPreTargetFailure(result, 3) == true,
-			"expected pre-target failure revert guard to fire")
+			"expected pre-target failure revert guard to fire"
+		)
 	end
 
 	-- 29. Once the target was entered, downstream failures remain repairable.
@@ -588,9 +653,11 @@ local function runUnit()
 				target_progress = 1,
 			}),
 		}
-		T.expect("phase11_post_target_failure_does_not_revert",
+		T.expect(
+			"phase11_post_target_failure_does_not_revert",
 			JobRunner._shouldRevertPreTargetFailure(result, 3) == false,
-			"expected guard to stay off after target entry")
+			"expected guard to stay off after target entry"
+		)
 	end
 
 	-- 30. Halfway target progress unlocks extra repair attempts.
@@ -607,21 +674,28 @@ local function runUnit()
 				target_progress = 0.6,
 			}),
 		}
-		T.expect("phase11_halfway_progress_gets_extra_attempts",
-			JobRunner._attemptLimitForResult(result, 3) == Constants.MAX_REPAIR_ATTEMPTS + Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS,
-			"expected extra repair attempts after halfway progress")
+		T.expect(
+			"phase11_halfway_progress_gets_extra_attempts",
+			JobRunner._attemptLimitForResult(result, 3)
+				== Constants.MAX_REPAIR_ATTEMPTS + Constants.EXTRA_REPAIR_ATTEMPTS_AFTER_HALF_PROGRESS,
+			"expected extra repair attempts after halfway progress"
+		)
 	end
 
 	-- 31–32. Endurance lap-time budget gate follows the current configured ratio.
 	do
 		local ratio = Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO
 		local overThreshold = 1 + ratio + 0.01
-		T.expect("phase11_endurance_budget_not_over_at_1_39",
+		T.expect(
+			"phase11_endurance_budget_not_over_at_1_39",
 			1.39 <= 1 + ratio,
-			"expected 1.39 to be within endurance budget (ratio=" .. tostring(ratio) .. ")")
-		T.expect("phase11_endurance_budget_over_at_1_41",
+			"expected 1.39 to be within endurance budget (ratio=" .. tostring(ratio) .. ")"
+		)
+		T.expect(
+			"phase11_endurance_budget_over_at_1_41",
 			overThreshold > 1 + ratio,
-			"expected ratio+0.01 to exceed endurance budget (ratio=" .. tostring(ratio) .. ")")
+			"expected ratio+0.01 to exceed endurance budget (ratio=" .. tostring(ratio) .. ")"
+		)
 	end
 end
 
@@ -641,7 +715,6 @@ local function waitForBaseline(): boolean
 end
 
 local function waitForIdle(timeoutSeconds: number): boolean
-	local JobRunner = require(script.Parent.JobRunner)
 	local deadline = os.clock() + timeoutSeconds
 	while os.clock() < deadline do
 		if JobRunner.isBusy() == false then
@@ -671,16 +744,19 @@ local function summariseAttempts(job): string
 				actionText = string.format("%s=%s", action.lever, tostring(action.value))
 			end
 		end
-		table.insert(parts, string.format(
-			"%d:%s/%s/%s action=%s progress=%.2f hints=%s",
-			attempt.attempt_index,
-			tostring(result.success),
-			tostring(failure and failure.type or "none"),
-			tostring(failure and failure.detail or "-"),
-			actionText,
-			result.metrics and result.metrics.target_progress or 0,
-			if #hints > 0 then table.concat(hints, "&") else "-"
-		))
+		table.insert(
+			parts,
+			string.format(
+				"%d:%s/%s/%s action=%s progress=%.2f hints=%s",
+				attempt.attempt_index,
+				tostring(result.success),
+				tostring(failure and failure.type or "none"),
+				tostring(failure and failure.detail or "-"),
+				actionText,
+				result.metrics and result.metrics.target_progress or 0,
+				if #hints > 0 then table.concat(hints, "&") else "-"
+			)
+		)
 	end
 
 	return table.concat(parts, " || ")
@@ -710,23 +786,34 @@ function TestPhase11.runIntegration()
 	T.expect("phase11_extreme_reaches_idle", idle, "JobRunner never returned to idle")
 
 	local job = JobRunner.getLastJob()
-	T.expect("phase11_extreme_job_committed",
+	T.expect(
+		"phase11_extreme_job_committed",
 		job ~= nil and job.final_status == "committed",
-		"expected committed; got " .. tostring(job and job.final_status) .. " :: " .. summariseAttempts(job))
+		"expected committed; got " .. tostring(job and job.final_status) .. " :: " .. summariseAttempts(job)
+	)
 
 	local state = SectorRegistry.getCommitted(3)
-	T.expect("phase11_extreme_commit_is_rampjump",
+	T.expect(
+		"phase11_extreme_commit_is_rampjump",
 		state ~= nil and state.mechanic == "RampJump",
-		"expected RampJump commit; got " .. tostring(state and state.mechanic) .. " :: " .. summariseAttempts(job))
+		"expected RampJump commit; got " .. tostring(state and state.mechanic) .. " :: " .. summariseAttempts(job)
+	)
 
 	local stateFolder = ReplicatedStorage2:WaitForChild("AutoTrackUIState")
-	T.expect("phase11_extreme_score_published",
+	T.expect(
+		"phase11_extreme_score_published",
 		stateFolder:GetAttribute("last_score_sector") == 3,
-		"expected last_score_sector=3; got " .. tostring(stateFolder:GetAttribute("last_score_sector")) .. " :: " .. summariseAttempts(job))
+		"expected last_score_sector=3; got "
+			.. tostring(stateFolder:GetAttribute("last_score_sector"))
+			.. " :: "
+			.. summariseAttempts(job)
+	)
 	local total = stateFolder:GetAttribute("last_score_total") or -1
-	T.expect("phase11_extreme_score_nonzero",
+	T.expect(
+		"phase11_extreme_score_nonzero",
 		type(total) == "number" and total >= 0,
-		"expected numeric score; got " .. tostring(total))
+		"expected numeric score; got " .. tostring(total)
+	)
 
 	-- Chicane scoring is verified by unit tests (phase11_chicane_*); the
 	-- integration test omits a separate chicane step to avoid sector-coupling

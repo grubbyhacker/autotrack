@@ -1,6 +1,4 @@
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local T = require(script.Parent.TestUtils)
 local JobRunner = require(script.Parent.JobRunner)
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
@@ -57,11 +55,7 @@ local function makeOrchestratorContext()
 end
 
 local function makeRequest(designIntent)
-	local request = JobRunner._buildEnduranceRequest(
-		designIntent,
-		"internal intent artifact",
-		"phase19-req"
-	)
+	local request = JobRunner._buildEnduranceRequest(designIntent, "internal intent artifact", "phase19-req")
 	return request
 end
 
@@ -130,8 +124,8 @@ function TestPhase19.run()
 	T.expect(
 		"phase19_propose_messages_include_design_intent",
 		string.find(proposeMessages[2].content, "Shared design intent:", 1, true) ~= nil
-			and string.find(proposeMessages[2].content, "\"desired_feel\":\"big airtime but still recoverable\"", 1, true) ~= nil
-			and string.find(proposeMessages[2].content, "\"target_score_band\":\"extreme\"", 1, true) ~= nil,
+			and string.find(proposeMessages[2].content, '"desired_feel":"big airtime but still recoverable"', 1, true) ~= nil
+			and string.find(proposeMessages[2].content, '"target_score_band":"extreme"', 1, true) ~= nil,
 		proposeMessages[2].content
 	)
 	T.expect(
@@ -145,7 +139,7 @@ function TestPhase19.run()
 	T.expect(
 		"phase19_repair_messages_include_same_design_intent",
 		string.find(repairTail, "Shared design intent:", 1, true) ~= nil
-			and string.find(repairTail, "\"replacement_intent\":\"replace_if_gain\"", 1, true) ~= nil,
+			and string.find(repairTail, '"replacement_intent":"replace_if_gain"', 1, true) ~= nil,
 		repairTail
 	)
 	T.expect(
@@ -155,7 +149,8 @@ function TestPhase19.run()
 		repairTail
 	)
 
-	local structured = JobRunner._buildEnduranceRequest(designIntent, "not parseable as a player request", "phase19-intent")
+	local structured =
+		JobRunner._buildEnduranceRequest(designIntent, "not parseable as a player request", "phase19-intent")
 	T.expect(
 		"phase19_endurance_submit_bypasses_request_roundtrip",
 		structured.origin == "endurance"
@@ -232,8 +227,13 @@ function TestPhase19.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			local verbose = makeDesignIntent(7, "RampJump", "extreme tall really long dramatic jump request with extra descriptive words")
-			verbose.rationale = string.rep("This is a deliberately verbose rationale sentence that should be truncated safely. ", 4)
+			local verbose = makeDesignIntent(
+				7,
+				"RampJump",
+				"extreme tall really long dramatic jump request with extra descriptive words"
+			)
+			verbose.rationale =
+				string.rep("This is a deliberately verbose rationale sentence that should be truncated safely. ", 4)
 			verbose.desired_feel = string.rep("big airtime but still recoverable and readable to the player ", 4)
 			verbose.constraints = {
 				string.rep("preserve downstream stability and avoid overspending the slowdown budget ", 3),
@@ -292,11 +292,7 @@ function TestPhase19.run()
 	})
 
 	local _, _, _, _, repairErr = LLMAdapter.repair(packet, {}, designIntent)
-	T.expect(
-		"phase19_repair_accepts_design_intent_context",
-		repairErr == nil,
-		tostring(repairErr)
-	)
+	T.expect("phase19_repair_accepts_design_intent_context", repairErr == nil, tostring(repairErr))
 
 	LLMAdapter.setProvider("phase19-bad-intent", {
 		propose = function()
@@ -402,7 +398,12 @@ function TestPhase19.run()
 				sawOrchestrateIntent = true
 			end
 		end
-		if event.direction == "prompt" and event.kind == "propose" and event.payload and event.payload.design_intent then
+		if
+			event.direction == "prompt"
+			and event.kind == "propose"
+			and event.payload
+			and event.payload.design_intent
+		then
 			sawProposeIntent = event.payload.design_intent.desired_feel == designIntent.desired_feel
 		end
 		if event.direction == "prompt" and event.kind == "repair" and event.payload and event.payload.design_intent then

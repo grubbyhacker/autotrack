@@ -26,6 +26,11 @@ local _tumbleStartTime: number? = nil
 local _lastCheckTime: number? = nil
 local _spinAngleAccum = 0
 
+local function resetNoProgressWindow(elapsed: number, carPosition: Vector3)
+	_noProgressStartTime = elapsed
+	_noProgressStartPosition = carPosition
+end
+
 function FailureDetector.reset()
 	_stallStartTime = nil
 	_noProgressStartTime = nil
@@ -67,10 +72,11 @@ function FailureDetector.check(
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "fell_below_kill_plane" }
 	end
 
-	if not isAirborne and (carPosition - trackCenterlinePoint).Magnitude > RuntimeTuning.numberAttr(
-		"AutoTrack_OffTrackFailureDistance",
-		Constants.OFF_TRACK_FAILURE_DISTANCE
-	) then
+	if
+		not isAirborne
+		and (carPosition - trackCenterlinePoint).Magnitude
+			> RuntimeTuning.numberAttr("AutoTrack_OffTrackFailureDistance", Constants.OFF_TRACK_FAILURE_DISTANCE)
+	then
 		return { type = "local_execution_failure", sector_id = currentSector, detail = "off_track" }
 	end
 
@@ -88,10 +94,8 @@ function FailureDetector.check(
 
 	local groundedTumble = not isAirborne
 		and (upDot <= Constants.TUMBLE_UP_DOT_THRESHOLD or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD)
-	local airborneTumble = isAirborne
-		and (upDot <= 0.1 or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD)
-	local tumbling = angularSpeed >= Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD
-		and (groundedTumble or airborneTumble)
+	local airborneTumble = isAirborne and (upDot <= 0.1 or facingDot <= Constants.BACKWARD_FACING_DOT_THRESHOLD)
+	local tumbling = angularSpeed >= Constants.TUMBLE_ANGULAR_SPEED_THRESHOLD and (groundedTumble or airborneTumble)
 	if tumbling then
 		if _tumbleStartTime == nil then
 			_tumbleStartTime = elapsed
@@ -139,14 +143,16 @@ function FailureDetector.check(
 
 	if speed <= Constants.STALL_SPEED_THRESHOLD and angularSpeed <= Constants.CRASH_ANGULAR_SPEED_THRESHOLD then
 		if _noProgressStartTime == nil or _noProgressStartPosition == nil then
-			_noProgressStartTime = elapsed
-			_noProgressStartPosition = carPosition
-		elseif (carPosition - _noProgressStartPosition).Magnitude <= Constants.NO_PROGRESS_DISTANCE_THRESHOLD
-			and elapsed - _noProgressStartTime >= Constants.NO_PROGRESS_TIME_THRESHOLD then
-			return { type = "local_execution_failure", sector_id = currentSector, detail = "no_progress" }
-		elseif (carPosition - _noProgressStartPosition).Magnitude > Constants.NO_PROGRESS_DISTANCE_THRESHOLD then
-			_noProgressStartTime = elapsed
-			_noProgressStartPosition = carPosition
+			resetNoProgressWindow(elapsed, carPosition)
+		else
+			local noProgressDistance = (carPosition - _noProgressStartPosition).Magnitude
+			if noProgressDistance <= Constants.NO_PROGRESS_DISTANCE_THRESHOLD then
+				if elapsed - _noProgressStartTime >= Constants.NO_PROGRESS_TIME_THRESHOLD then
+					return { type = "local_execution_failure", sector_id = currentSector, detail = "no_progress" }
+				end
+			else
+				resetNoProgressWindow(elapsed, carPosition)
+			end
 		end
 	else
 		_noProgressStartTime = nil

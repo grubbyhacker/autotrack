@@ -7,20 +7,20 @@ local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForC
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local RampJumpIntegrity = require(script.Parent.RampJumpIntegrity)
-local ChicaneIntegrity  = require(script.Parent.ChicaneIntegrity)
+local ChicaneIntegrity = require(script.Parent.ChicaneIntegrity)
 local CrestDipIntegrity = require(script.Parent.CrestDipIntegrity)
-local ChallengeScore    = require(script.Parent.ChallengeScore)
+local ChallengeScore = require(script.Parent.ChallengeScore)
 
 type SectorState = Types.SectorState
-type RunMetrics  = Types.RunMetrics
-type RunResult   = Types.RunResult
+type RunMetrics = Types.RunMetrics
+type RunResult = Types.RunResult
 type FailureInfo = Types.FailureInfo
 
 local LapEvaluator = {}
 
 local INTEGRITY_EVALUATORS = {
 	RampJump = RampJumpIntegrity.evaluate,
-	Chicane  = ChicaneIntegrity.evaluate,
+	Chicane = ChicaneIntegrity.evaluate,
 	CrestDip = CrestDipIntegrity.evaluate,
 }
 
@@ -63,10 +63,7 @@ local function zeroMetrics(): RunMetrics
 	}
 end
 
-function LapEvaluator.preflight(
-	targetState: SectorState,
-	targetSectorId: number
-): (RunResult?, { string })
+function LapEvaluator.preflight(targetState: SectorState, targetSectorId: number): (RunResult?, { string })
 	if targetState.mechanic == nil then
 		return nil, {}
 	end
@@ -81,7 +78,8 @@ function LapEvaluator.preflight(
 					sector_id = targetSectorId,
 				},
 				metrics = zeroMetrics(),
-			}, hints
+			},
+				hints
 		end
 	elseif targetState.mechanic == "RampJump" then
 		local ok, hints = RampJumpIntegrity.preflight(targetState)
@@ -93,7 +91,8 @@ function LapEvaluator.preflight(
 					sector_id = targetSectorId,
 				},
 				metrics = zeroMetrics(),
-			}, hints
+			},
+				hints
 		end
 	elseif targetState.mechanic == "Chicane" then
 		local ok, hints = ChicaneIntegrity.preflight(targetState)
@@ -105,7 +104,8 @@ function LapEvaluator.preflight(
 					sector_id = targetSectorId,
 				},
 				metrics = zeroMetrics(),
-			}, hints
+			},
+				hints
 		end
 	end
 	return nil, {}
@@ -128,9 +128,11 @@ function LapEvaluator.evaluate(
 	-- Reclassify local_execution_failure in a non-target sector as downstream_failure.
 	if lapFailure then
 		local failure = lapFailure
-		if failure.type == "local_execution_failure"
+		if
+			failure.type == "local_execution_failure"
 			and failure.sector_id ~= targetSectorId
-			and metrics.target_entered == true then
+			and metrics.target_entered == true
+		then
 			local runtimeEvaluator = targetState.mechanic and RUNTIME_EVALUATORS[targetState.mechanic]
 			if runtimeEvaluator then
 				local runtimeOk, runtimeHints = runtimeEvaluator(metrics)
@@ -142,7 +144,8 @@ function LapEvaluator.evaluate(
 							sector_id = targetSectorId,
 						},
 						metrics = metrics,
-					}, runtimeHints
+					},
+						runtimeHints
 				end
 			end
 			if metrics.target_exited == true then
@@ -174,7 +177,8 @@ function LapEvaluator.evaluate(
 				sector_id = targetSectorId,
 			},
 			metrics = metrics,
-		}, hints
+		},
+			hints
 	end
 
 	return {
@@ -245,12 +249,12 @@ function LapEvaluator.buildFailurePacket(
 	end
 
 	return {
-		request       = request,
-		sector_state  = state,
+		request = request,
+		sector_state = state,
 		attempt_index = attemptIndex,
-		last_action   = lastAction,
-		run_result    = result,
-		diagnostics   = diagnostics,
+		last_action = lastAction,
+		run_result = result,
+		diagnostics = diagnostics,
 		legal_actions = { numeric_levers = legalLevers, pads = { "ingress", "egress" } },
 		design_intent = request.design_intent,
 		memory_context = request.memory_context,
