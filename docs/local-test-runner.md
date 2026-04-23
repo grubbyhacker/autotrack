@@ -82,3 +82,11 @@ The mapping lives in [`tools/test_bridge_config.json`](../tools/test_bridge_conf
 - Studio must already be open on the synced place.
 - The plugin source is checked in, but plugin packaging/install is still manual.
 - The localhost bridge runs one suite per command and is not a long-lived daemon.
+- Bridge-backed commands are serialized by a CLI queue lock (`tools/.autotrack_bridge.lock`). If two commands start at once, the later one waits instead of failing with a port-in-use race.
+- Lock timeout defaults to 1800 seconds; override with `AUTOTRACK_BRIDGE_LOCK_TIMEOUT_SECONDS` (`0` = wait forever).
+
+## Bridge diagnostics
+
+- The plugin now logs bridge polling failures to Studio Output with the prefix `[AutoTrackTestBridge]`.
+- If `make ...` reports `Studio bridge did not connect`, check Studio Output first for HTTP/permission errors.
+- After Studio upgrades, re-allow localhost HTTP access prompts if they reappear.

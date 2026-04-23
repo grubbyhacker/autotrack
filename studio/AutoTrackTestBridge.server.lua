@@ -7,6 +7,7 @@ local PLUGIN_NAME = "AutoTrackTestBridge"
 local SETTINGS_KEY_ENABLED = "bridge_enabled"
 local DEFAULT_BASE_URL = "http://127.0.0.1:8765"
 local DEFAULT_POLL_SECONDS = 1
+local POLL_ERROR_LOG_INTERVAL_SECONDS = 10
 local BRIDGE_EXPORT_REQUEST_ATTR = "AutoTrack_BridgeExportLLMTraceRequestId"
 local BRIDGE_EXPORT_RESULT_ATTR = "AutoTrack_BridgeExportLLMTraceResultId"
 local BRIDGE_EXPORT_ERROR_ATTR = "AutoTrack_BridgeExportLLMTraceError"
@@ -26,8 +27,44 @@ if enabled == nil then
 	enabled = true
 end
 
+local lastPollErrorLogAt = 0
+local lastPollErrorText = ""
+local hasSeenBridgeThisSession = false
+
 local function syncButton()
 	toggleButton:SetActive(enabled)
+end
+
+local function warnPollFailure(err)
+	local now = os.clock()
+	local errText = tostring(err)
+	if errText == "" then
+		errText = "unknown poll failure"
+	end
+	local isConnectFail = string.find(errText, "ConnectFail", 1, true) ~= nil
+	if isConnectFail and not hasSeenBridgeThisSession then
+		-- No local bridge process is expected most of the time while Studio is idle.
+		-- Suppress noisy warnings until we've seen a live bridge at least once.
+		return
+	end
+
+	local sameAsLast = errText == lastPollErrorText
+	local withinInterval = (now - lastPollErrorLogAt) < POLL_ERROR_LOG_INTERVAL_SECONDS
+	if sameAsLast and withinInterval then
+		return
+	end
+
+	lastPollErrorLogAt = now
+	lastPollErrorText = errText
+
+	local hint = "Ensure the plugin is enabled and localhost HTTP permissions are allowed in Studio."
+	if isConnectFail then
+		hint = "No local bridge process is listening. This is normal unless a make/test command is currently running."
+	elseif string.find(string.lower(errText), "http", 1, true) then
+		hint = "Local bridge may be down or blocked. Re-check Studio localhost HTTP permission prompts."
+	end
+
+	warn(string.format("[%s] bridge poll failed: %s | %s", PLUGIN_NAME, errText, hint))
 end
 
 local function request(method: string, path: string, body)
@@ -295,18 +332,24 @@ end)
 syncButton()
 
 task.spawn(function()
+	print(string.format("[%s] polling %s every %.1fs (enabled=%s)", PLUGIN_NAME, DEFAULT_BASE_URL, DEFAULT_POLL_SECONDS, tostring(enabled)))
 	while true do
 		if enabled and not busy then
 			local ok, response = pcall(function()
 				return request("GET", "/poll?plugin_name=" .. PLUGIN_NAME, nil)
 			end)
 
-			if ok and response.command ~= nil then
-				task.spawn(executeCommand, response.command)
-			elseif not ok then
-				-- Local bridge is expected to be absent most of the time.
+				if ok and response.command ~= nil then
+					hasSeenBridgeThisSession = true
+					lastPollErrorText = ""
+					task.spawn(executeCommand, response.command)
+				elseif not ok then
+					warnPollFailure(response)
+				else
+					hasSeenBridgeThisSession = true
+					lastPollErrorText = ""
+				end
 			end
-		end
 
 		task.wait(DEFAULT_POLL_SECONDS)
 	end

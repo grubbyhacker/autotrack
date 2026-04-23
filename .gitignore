@@ -15,3 +15,10 @@ traces/
 .DS_Store
 Thumbs.db
 *.log
+
+# Python runtime artifacts
+__pycache__/
+*.pyc
+
+# Local Studio bridge queue lock
+tools/.autotrack_bridge.lock

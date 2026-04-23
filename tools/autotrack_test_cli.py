@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,12 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "tools" / "test_bridge_config.json"
+BRIDGE_LOCK_PATH = ROOT / "tools" / ".autotrack_bridge.lock"
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
 
 
 @dataclass
@@ -33,6 +40,86 @@ class BridgeState:
     plugin_seen_at: float | None = None
     plugin_name: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+class BridgeLockError(RuntimeError):
+    pass
+
+
+def _lock_timeout_seconds() -> float | None:
+    raw = os.environ.get("AUTOTRACK_BRIDGE_LOCK_TIMEOUT_SECONDS", "1800").strip()
+    if raw == "":
+        return 1800.0
+    try:
+        timeout = float(raw)
+    except ValueError:
+        return 1800.0
+    if timeout <= 0:
+        return None
+    return timeout
+
+
+@contextmanager
+def bridge_command_lock() -> Any:
+    if fcntl is None:  # pragma: no cover - non-POSIX fallback
+        yield
+        return
+
+    timeout = _lock_timeout_seconds()
+    BRIDGE_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = BRIDGE_LOCK_PATH.open("a+", encoding="utf-8")
+    wait_started = time.time()
+    wait_logged = False
+    owner_detail = ""
+
+    try:
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not wait_logged:
+                    try:
+                        lock_file.seek(0)
+                        owner_detail = lock_file.read().strip()
+                    except OSError:
+                        owner_detail = ""
+                    detail = f" ({owner_detail})" if owner_detail else ""
+                    eprint(f"Another Studio bridge command is running; waiting for queue lock{detail}...")
+                    wait_logged = True
+                if timeout is not None and time.time() - wait_started >= timeout:
+                    raise BridgeLockError(
+                        "Timed out waiting for Studio bridge queue lock. "
+                        "Set AUTOTRACK_BRIDGE_LOCK_TIMEOUT_SECONDS to a larger value, "
+                        "or 0 to wait indefinitely."
+                    )
+                time.sleep(0.25)
+            except OSError as exc:
+                raise BridgeLockError(f"Failed to acquire Studio bridge queue lock: {exc}") from exc
+
+        try:
+            lock_file.seek(0)
+            lock_file.truncate()
+            lock_file.write(f"pid={os.getpid()} started_at={int(time.time())}")
+            lock_file.flush()
+        except OSError:
+            pass
+
+        if wait_logged:
+            eprint("Bridge queue lock acquired; starting command.")
+        yield
+    finally:
+        try:
+            lock_file.seek(0)
+            lock_file.truncate()
+            lock_file.flush()
+        except OSError:
+            pass
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        lock_file.close()
 
 
 def load_config() -> dict[str, Any]:
@@ -725,11 +812,26 @@ def main() -> int:
     if args.command == "list":
         return print_suite_list(config)
     if args.command == "run":
-        return run_suite(config, args.suite)
+        try:
+            with bridge_command_lock():
+                return run_suite(config, args.suite)
+        except BridgeLockError as exc:
+            eprint(str(exc))
+            return 2
     if args.command == "export-llm-trace":
-        return export_llm_trace(config)
+        try:
+            with bridge_command_lock():
+                return export_llm_trace(config)
+        except BridgeLockError as exc:
+            eprint(str(exc))
+            return 2
     if args.command == "endurance-trace":
-        return endurance_trace(config, args.model, args.duration, args.out)
+        try:
+            with bridge_command_lock():
+                return endurance_trace(config, args.model, args.duration, args.out)
+        except BridgeLockError as exc:
+            eprint(str(exc))
+            return 2
     if args.command == "inspect-llm-trace":
         return inspect_llm_trace(args.trace_path, args.show_raw, args.max_chars)
     return 2
