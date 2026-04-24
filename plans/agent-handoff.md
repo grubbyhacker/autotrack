@@ -38,7 +38,7 @@
 | 28 | Complete — scoped Luau hygiene baseline (`fmt`/`fmt-check`/`typecheck`/`lint`/`hygiene`), pinned tools/config, and docs contract |
 | 29 | Complete — hygiene ratchet to full `src/common` format/lint coverage with conservative `Types.luau` typecheck exclusion |
 | 30 | Complete — repo-wide Luau format/lint coverage, `typecheck-report`, and Phase 30 suite wiring with policy-aligned Phase 21 experiment assertions |
-| 31 | Planned — Roblox-aware Luau typecheck foundation (`plans/phase31.md`) |
+| 31 | Complete — Roblox-aware Luau typecheck foundation: vendored Roblox definitions, generated Rojo sourcemap, pilot green subset expansion |
 
 ## Current state
 
@@ -48,8 +48,8 @@
 - Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
 - Phase 26 Session HUD now reads commit-authoritative lap attrs (`committed_lap_time`/`committed_slowdown_ratio`) for `Last/%`, while per-sector committed scores move to Overview-only label annotations (`sector_<id>_committed_score`).
 - Phase 27 now shifts RampJump back toward high-risk/high-reward with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance backed by touchdown telemetry.
-- Phase 30 expands `make fmt`, `make fmt-check`, and `make lint` repo-wide across tracked `.luau` source under `src/` and `studio/`, keeps `make typecheck` on a documented green subset, and adds `make typecheck-report` as the non-gating full-repo analyzer backlog report.
-- Phase 31 is now planned in `plans/phase31.md`. The main typecheck blockers are analyzer-environment issues, not hygiene noise: current `luau-lsp analyze` only knows the hand-declared globals in `tools/luau/globals.d.luau`, so Roblox engine globals/types (`Vector3`, `CFrame`, `Enum`, `DateTime`, `Camera`, `BasePart`, etc.) and Rojo/DataModel require resolution are still missing from the full-repo analyzer path.
+- Phase 30 expands `make fmt`, `make fmt-check`, and `make lint` repo-wide across tracked `.luau` source under `src/` and `studio/`, keeps `make typecheck` conservative, and adds `make typecheck-report` as the non-gating full-repo analyzer backlog report.
+- Phase 31 replaces the old four-global analyzer shim with vendored Roblox definitions plus generated Rojo sourcemap analysis. `make typecheck` now includes `src/common/Types.luau`, `src/agent/ActionValidator.luau`, and `src/client/TrackCamera.client.luau` in the green subset, while `make typecheck-report` remains the non-gating full-repo backlog view.
 
 ## Hard-won invariants
 
@@ -82,7 +82,7 @@
 - RampJump on-ramp/landing instability should be corrected in the verifier first (grounded surface stabilization) before widening failure tolerances globally; otherwise weaker models overfit around physics noise and churn repair attempts.
 - Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
 - `phase21_experiment_harness_distinguishes_better_candidate` should assert the comparison contract (winner labels and differing heuristic/challenge aggregates), not a hard-coded winner. Live experiment telemetry can legitimately change which candidate wins.
-- Full-repo `typecheck-report` failures currently cluster into three buckets: missing Roblox globals/types, unresolved `Types.*` exported aliases downstream of `src/common/Types.luau`, and only then genuine module-level code/type issues. Fix the analyzer environment and Rojo/sourcemap resolution first or the remaining report is mostly noise.
+- Standalone `luau-lsp analyze` for this repo needs both inputs: vendored Roblox definitions and a Rojo sourcemap. `--platform=roblox` alone is not enough for the maintained CLI gate.
 
 ## Maintained verification snapshot
 

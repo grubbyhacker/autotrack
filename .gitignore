@@ -10,6 +10,7 @@ bin/
 .wally/
 vendor/
 traces/
+sourcemap.json
 
 # System / OS
 .DS_Store

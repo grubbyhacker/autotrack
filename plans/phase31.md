@@ -30,7 +30,7 @@ Make `luau-lsp analyze` understand Roblox globals/types and Rojo-based module re
 ### 1) Replace the minimal analyzer environment with a Roblox-aware contract
 
 - Update the checked-in typecheck workflow so `luau-lsp analyze` runs in a Roblox-aware configuration instead of relying on `--platform=standard` plus four hand-written globals.
-- Prefer built-in `luau-lsp` Roblox type support and configuration over hand-maintained declaration files for the Roblox engine API.
+- Supply Roblox engine API types through a vendored pinned third-party definitions file (`globalTypes.None.d.luau`) checked into `tools/luau/`.
 - Keep custom definition files only for true project-specific globals if any remain necessary after the Roblox-aware setup is in place.
 - Do not hand-write a broad Roblox declarations layer in-repo unless a very small targeted shim is required for a proven gap.
 
@@ -145,5 +145,5 @@ If any typecheck-driven code edits touch runtime-heavy modules, also run:
 ## Assumptions and Defaults
 
 - The main blocker is analyzer environment/resolution, not formatting/lint cleanliness.
-- Roblox globals/types should be supplied by `luau-lsp` Roblox-aware configuration plus Rojo sourcemap support, not by a large hand-maintained declarations file in this repo.
+- Roblox globals/types should be supplied by a vendored pinned `luau-lsp` definitions artifact plus Rojo sourcemap support, not by a large hand-maintained declarations file in this repo.
 - Full-repo typechecking is still not a gate in this phase; the goal is to make a materially larger green subset trustworthy.

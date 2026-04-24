@@ -26,7 +26,7 @@ function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?
 	if action.type == "SetNumericLever" then
 		local legal = LevelMappings.NUMERIC_LEVERS[mechanic]
 		if not legal then
-			return false, "unknown mechanic: " .. mechanic
+			return false, "unknown mechanic: " .. tostring(mechanic)
 		end
 		local found = false
 		for _, lever in legal do
@@ -36,7 +36,7 @@ function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?
 			end
 		end
 		if not found then
-			return false, "lever '" .. action.lever .. "' not legal for " .. mechanic
+			return false, "lever '" .. action.lever .. "' not legal for " .. tostring(mechanic)
 		end
 		if type(action.value) ~= "number" then
 			return false, "lever value must be a number"

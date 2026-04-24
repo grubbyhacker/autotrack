@@ -25,7 +25,7 @@ Why this set:
 - Native Luau-focused tools with stable CLIs.
 - Fast and deterministic output.
 - Easy pinning and reproducibility through existing `rokit` workflow.
-- Typecheck runs with a tiny pinned Luau globals definitions file: `tools/luau/globals.d.luau`.
+- Typecheck runs with vendored Roblox definitions (`tools/luau/globalTypes.None.d.luau`) plus a generated Rojo sourcemap (`sourcemap.json`).
 
 ## Command Contract
 
@@ -52,7 +52,7 @@ No interactive prompts are used.
 
 Formatting and linting now target repo-tracked Luau source under `src/` plus repo-tracked Luau source under `studio/`.
 
-Repo-wide source hygiene intentionally excludes analyzer definition inputs such as `tools/luau/globals.d.luau`.
+Repo-wide source hygiene intentionally excludes vendored analyzer inputs such as `tools/luau/globalTypes.None.d.luau`.
 
 Examples now in scope for `fmt` / `fmt-check` / `lint`:
 
@@ -65,7 +65,9 @@ Typecheck boundary:
 
 - `make typecheck` remains a documented green subset target.
 - `make typecheck-report` runs the analyzer across repo-wide tracked source without failing the overall hygiene contract.
-- Reason: under the current deterministic CLI analyzer setup, full-repo analysis still hits Roblox environment-resolution gaps (`Vector3`, `CFrame`, `Enum`, `DateTime`, etc.) and exported-type resolution gaps (`Types.*`) that are larger than a formatting/lint ratchet.
+- Phase 31 makes standalone analysis Roblox-aware by generating `sourcemap.json` from `default.project.json` and passing the vendored Roblox definitions file to `luau-lsp analyze`.
+- The green subset now includes `src/common/Types.luau`, `src/agent/ActionValidator.luau`, and `src/client/TrackCamera.client.luau` in addition to the Phase 30 common-module subset.
+- Full-repo analysis remains non-gating because the remaining backlog is now primarily real module-level type work and later ratchet decisions, not missing Roblox globals or missing Rojo/DataModel resolution.
 
 Formatting is non-negotiable across the repo-wide source hygiene set.
 

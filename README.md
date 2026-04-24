@@ -120,6 +120,8 @@ make hygiene
 
 Phase 30 expands `fmt` / `fmt-check` / `lint` repo-wide across tracked `.luau` source under `src/` and `studio/`.
 
+Phase 31 makes `make typecheck` and `make typecheck-report` Roblox-aware by generating a Rojo sourcemap and using a vendored Roblox definitions file for standalone `luau-lsp analyze` runs.
+
 `make typecheck` remains intentionally conservative and green on a documented subset while `make typecheck-report` exposes the current full-repo analyzer backlog without gating local iteration.
 
 See `docs/code-hygiene.md` for scope, rationale, and the current typecheck boundary.

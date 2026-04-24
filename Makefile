@@ -1,25 +1,24 @@
 PYTHON ?= python3
 TEST_CLI := tools/autotrack_test_cli.py
 ROKIT_BIN ?= $(HOME)/.rokit/bin
+ROJO := $(ROKIT_BIN)/rojo
 STYLUA := $(ROKIT_BIN)/stylua
 LUAU_LSP := $(ROKIT_BIN)/luau-lsp
 SELENE := $(ROKIT_BIN)/selene
 HYGIENE_SOURCE_FILES := $(shell find src studio -type f \( -name '*.luau' -o -name '*.server.luau' -o -name '*.client.luau' \) 2>/dev/null | LC_ALL=C sort)
-TYPECHECK_SUBSET_FILES := \
-	src/common/Constants.luau \
-	src/common/LLMConfig.luau \
-	src/common/LaunchOutlier.luau \
-	src/common/LevelMappings.luau \
-	src/common/PadValueUtils.luau \
-	src/common/RuntimeTuning.luau \
-	src/common/Types.luau
+ROJO_PROJECT := default.project.json
+TYPECHECK_SOURCEMAP := sourcemap.json
+ROBLOX_GLOBAL_TYPES := tools/luau/globalTypes.None.d.luau
 TYPECHECK_GREEN_FILES := \
 	src/common/Constants.luau \
 	src/common/LLMConfig.luau \
 	src/common/LaunchOutlier.luau \
 	src/common/LevelMappings.luau \
 	src/common/PadValueUtils.luau \
-	src/common/RuntimeTuning.luau
+	src/common/RuntimeTuning.luau \
+	src/common/Types.luau \
+	src/agent/ActionValidator.luau \
+	src/client/TrackCamera.client.luau
 
 .PHONY: test test-list \
 	test-contracts \
@@ -54,11 +53,13 @@ fmt-check:
 	@$(STYLUA) --check $(HYGIENE_SOURCE_FILES)
 
 typecheck:
-	@$(LUAU_LSP) analyze --platform=standard --definitions @base=tools/luau/globals.d.luau $(TYPECHECK_GREEN_FILES)
+	@$(ROJO) sourcemap $(ROJO_PROJECT) --output $(TYPECHECK_SOURCEMAP) --absolute >/dev/null
+	@$(LUAU_LSP) analyze --platform=roblox --definitions @roblox=$(ROBLOX_GLOBAL_TYPES) --sourcemap $(TYPECHECK_SOURCEMAP) $(TYPECHECK_GREEN_FILES)
 
 typecheck-report:
+	@$(ROJO) sourcemap $(ROJO_PROJECT) --output $(TYPECHECK_SOURCEMAP) --absolute >/dev/null
 	@set +e; \
-	$(LUAU_LSP) analyze --platform=standard --definitions @base=tools/luau/globals.d.luau $(HYGIENE_SOURCE_FILES); \
+	$(LUAU_LSP) analyze --platform=roblox --definitions @roblox=$(ROBLOX_GLOBAL_TYPES) --sourcemap $(TYPECHECK_SOURCEMAP) $(HYGIENE_SOURCE_FILES); \
 	rc=$$?; \
 	echo "[typecheck-report] luau-lsp exit=$$rc"; \
 	exit 0
