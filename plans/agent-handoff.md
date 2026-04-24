@@ -83,6 +83,7 @@
 - Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
 - `phase21_experiment_harness_distinguishes_better_candidate` should assert the comparison contract (winner labels and differing heuristic/challenge aggregates), not a hard-coded winner. Live experiment telemetry can legitimately change which candidate wins.
 - Standalone `luau-lsp analyze` for this repo needs both inputs: vendored Roblox definitions and a Rojo sourcemap. `--platform=roblox` alone is not enough for the maintained CLI gate.
+- `studio/AutoTrackTestBridge.server.lua` should only poll from Studio/edit or server-side Play contexts. Client-side Play polling is noise and should stay suppressed; idle `ConnectFail` is normal when no local `make/test` bridge process is running.
 
 ## Maintained verification snapshot
 

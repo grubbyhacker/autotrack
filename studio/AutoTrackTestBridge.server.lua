@@ -42,9 +42,16 @@ local function warnPollFailure(err)
 		errText = "unknown poll failure"
 	end
 	local isConnectFail = string.find(errText, "ConnectFail", 1, true) ~= nil
-	if isConnectFail and not hasSeenBridgeThisSession then
+	if isConnectFail then
 		-- No local bridge process is expected most of the time while Studio is idle.
-		-- Suppress noisy warnings until we've seen a live bridge at least once.
+		-- Silence this case entirely; the CLI side is authoritative when a bridge
+		-- command is actually expected to be live.
+		return
+	end
+
+	if string.find(errText, "Http requests can only be executed by game server", 1, true) ~= nil then
+		-- This plugin is only meant to poll from the Studio/edit or server-side Play
+		-- contexts. Client-side Play polling is skipped below; suppress any race/noise.
 		return
 	end
 
@@ -65,6 +72,14 @@ local function warnPollFailure(err)
 	end
 
 	warn(string.format("[%s] bridge poll failed: %s | %s", PLUGIN_NAME, errText, hint))
+end
+
+local function shouldPollBridge(): boolean
+	if RunService:IsRunning() and RunService:IsClient() then
+		return false
+	end
+
+	return true
 end
 
 local function request(method: string, path: string, body)
@@ -334,7 +349,7 @@ syncButton()
 task.spawn(function()
 	print(string.format("[%s] polling %s every %.1fs (enabled=%s)", PLUGIN_NAME, DEFAULT_BASE_URL, DEFAULT_POLL_SECONDS, tostring(enabled)))
 	while true do
-		if enabled and not busy then
+		if enabled and not busy and shouldPollBridge() then
 			local ok, response = pcall(function()
 				return request("GET", "/poll?plugin_name=" .. PLUGIN_NAME, nil)
 			end)
