@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase5.luau
 -- Verifies Phase 5 deliverables: mechanic integrity evaluators and LapEvaluator wiring.
 -- All tests are unit tests (synthetic metrics/state) — SkipBootBaseline compatible.
@@ -5,6 +7,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local T = require(script.Parent.TestUtils)
 local RampJumpIntegrity = require(script.Parent.Parent.Integrity.RampJumpIntegrity)
 local ChicaneIntegrity = require(script.Parent.Parent.Integrity.ChicaneIntegrity)
@@ -12,89 +15,162 @@ local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegri
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 
+type FailureInfo = Types.FailureInfo
+type Request = Types.Request
+type RunMetrics = Types.RunMetrics
+type RunResult = Types.RunResult
+type SectorState = Types.SectorState
+
+type MetricsOverrides = {
+	entry_speed: number?,
+	exit_speed: number?,
+	airborne: boolean?,
+	air_distance: number?,
+	lateral_error: number?,
+	vertical_displacement: number?,
+	reacquired: boolean?,
+	airtime_distance: number?,
+	target_airborne: boolean?,
+	target_air_distance: number?,
+	target_vertical_displacement: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_left_offset: number?,
+	target_right_offset: number?,
+	target_lateral_band_changes: number?,
+	target_entered: boolean?,
+	target_exited: boolean?,
+	target_progress: number?,
+	target_reacquire_distance: number?,
+	target_reacquire_lateral_offset: number?,
+	target_peak_body_distance: number?,
+	target_exit_angular_speed: number?,
+	target_exit_vertical_speed: number?,
+	target_touchdown_up_dot: number?,
+	target_touchdown_down_speed: number?,
+	target_apex_min_speed: number?,
+	lap_time: number?,
+	slowdown_ratio: number?,
+}
+
+type RampJumpOverrides = {
+	sector_id: number?,
+	ramp_angle: number?,
+	ramp_length: number?,
+	gap_length: number?,
+	landing_length: number?,
+}
+
+type ChicaneOverrides = {
+	sector_id: number?,
+	amplitude: number?,
+	transition_length: number?,
+	corridor_width: number?,
+}
+
+type CrestDipOverrides = {
+	sector_id: number?,
+	height_or_depth: number?,
+	radius: number?,
+	sector_length: number?,
+}
+
 local TestPhase5 = {}
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-local function makeMetrics(overrides)
-	overrides = overrides or {}
+local function makeMetrics(overrides: MetricsOverrides?): RunMetrics
+	local source: MetricsOverrides = if overrides ~= nil then overrides else {}
 	return {
-		entry_speed = overrides.entry_speed or 40,
-		exit_speed = overrides.exit_speed or 38,
-		airborne = overrides.airborne or false,
-		air_distance = overrides.air_distance or 0,
-		lateral_error = overrides.lateral_error or 0,
-		vertical_displacement = overrides.vertical_displacement or 0,
-		reacquired = if overrides.reacquired ~= nil then overrides.reacquired else true,
-		airtime_distance = overrides.airtime_distance or 0,
-		target_airborne = if overrides.target_airborne ~= nil then overrides.target_airborne else nil,
-		target_air_distance = overrides.target_air_distance,
-		target_vertical_displacement = overrides.target_vertical_displacement,
-		target_reacquired = overrides.target_reacquired,
-		target_airtime_distance = overrides.target_airtime_distance,
-		target_left_offset = overrides.target_left_offset,
-		target_right_offset = overrides.target_right_offset,
-		target_lateral_band_changes = overrides.target_lateral_band_changes,
-		target_entered = if overrides.target_entered ~= nil then overrides.target_entered else true,
-		target_exited = if overrides.target_exited ~= nil then overrides.target_exited else true,
-		target_progress = if overrides.target_progress ~= nil then overrides.target_progress else 1,
-		lap_time = overrides.lap_time or 25,
-		slowdown_ratio = overrides.slowdown_ratio or 1,
-		target_apex_min_speed = overrides.target_apex_min_speed,
+		entry_speed = source.entry_speed or 40,
+		exit_speed = source.exit_speed or 38,
+		airborne = source.airborne or false,
+		air_distance = source.air_distance or 0,
+		lateral_error = source.lateral_error or 0,
+		vertical_displacement = source.vertical_displacement or 0,
+		reacquired = if source.reacquired ~= nil then source.reacquired else true,
+		airtime_distance = source.airtime_distance or 0,
+		target_airborne = source.target_airborne,
+		target_air_distance = source.target_air_distance,
+		target_vertical_displacement = source.target_vertical_displacement,
+		target_reacquired = source.target_reacquired,
+		target_airtime_distance = source.target_airtime_distance,
+		target_left_offset = source.target_left_offset,
+		target_right_offset = source.target_right_offset,
+		target_lateral_band_changes = source.target_lateral_band_changes,
+		target_entered = if source.target_entered ~= nil then source.target_entered else true,
+		target_exited = if source.target_exited ~= nil then source.target_exited else true,
+		target_progress = if source.target_progress ~= nil then source.target_progress else 1,
+		target_reacquire_distance = source.target_reacquire_distance,
+		target_reacquire_lateral_offset = source.target_reacquire_lateral_offset,
+		target_peak_body_distance = source.target_peak_body_distance,
+		target_exit_angular_speed = source.target_exit_angular_speed,
+		target_exit_vertical_speed = source.target_exit_vertical_speed,
+		target_touchdown_up_dot = source.target_touchdown_up_dot,
+		target_touchdown_down_speed = source.target_touchdown_down_speed,
+		target_apex_min_speed = source.target_apex_min_speed,
+		lap_time = source.lap_time or 25,
+		slowdown_ratio = source.slowdown_ratio or 1,
 	}
 end
 
-local function makeRampJumpState(overrides)
-	overrides = overrides or {}
+local function makeRampJumpState(overrides: RampJumpOverrides?): SectorState
+	local source: RampJumpOverrides = if overrides ~= nil then overrides else {}
 	return {
-		sector_id = overrides.sector_id or 2,
+		sector_id = source.sector_id or 2,
 		mechanic = "RampJump",
 		params = {
-			ramp_angle = overrides.ramp_angle or 20,
-			ramp_length = overrides.ramp_length or 12,
-			gap_length = if overrides.gap_length ~= nil then overrides.gap_length else 8,
-			landing_length = overrides.landing_length or 12,
+			ramp_angle = source.ramp_angle or 20,
+			ramp_length = source.ramp_length or 12,
+			gap_length = if source.gap_length ~= nil then source.gap_length else 8,
+			landing_length = source.landing_length or 12,
 		},
 		pads = { ingress = "None", egress = "None" },
 		version = 1,
 	}
 end
 
-local function makeChicaneState(overrides)
-	overrides = overrides or {}
+local function makeChicaneState(overrides: ChicaneOverrides?): SectorState
+	local source: ChicaneOverrides = if overrides ~= nil then overrides else {}
 	return {
-		sector_id = overrides.sector_id or 2,
+		sector_id = source.sector_id or 2,
 		mechanic = "Chicane",
 		params = {
-			amplitude = if overrides.amplitude ~= nil then overrides.amplitude else 8,
-			transition_length = if overrides.transition_length ~= nil then overrides.transition_length else 15,
-			corridor_width = overrides.corridor_width or 14,
+			amplitude = if source.amplitude ~= nil then source.amplitude else 8,
+			transition_length = if source.transition_length ~= nil then source.transition_length else 15,
+			corridor_width = source.corridor_width or 14,
 		},
 		pads = { ingress = "None", egress = "None" },
 		version = 1,
 	}
 end
 
-local function makeCrestDipState(overrides)
-	overrides = overrides or {}
+local function makeCrestDipState(overrides: CrestDipOverrides?): SectorState
+	local source: CrestDipOverrides = if overrides ~= nil then overrides else {}
 	return {
-		sector_id = overrides.sector_id or 2,
+		sector_id = source.sector_id or 2,
 		mechanic = "CrestDip",
 		params = {
-			height_or_depth = if overrides.height_or_depth ~= nil then overrides.height_or_depth else 8,
-			radius = overrides.radius or 20,
-			sector_length = overrides.sector_length or 30,
+			height_or_depth = if source.height_or_depth ~= nil then source.height_or_depth else 8,
+			radius = source.radius or 20,
+			sector_length = source.sector_length or 30,
 		},
 		pads = { ingress = "None", egress = "None" },
 		version = 1,
 	}
 end
 
-local function makeRequest()
+local function makeRequest(): Request
 	return {
 		request_id = "test-001",
 		raw_text = "add a ramp jump to sector 2",
-		parsed = { sector_id = 2, mechanic = "RampJump" },
+		parsed = {
+			sector_id = 2,
+			mechanic = "RampJump",
+			request_kind = "Mechanic",
+			pad_side = nil,
+			pad_value = nil,
+		},
 		qualifiers = {},
 		timestamp = os.time(),
 	}
@@ -434,11 +510,11 @@ local function testFailurePacket()
 
 	-- RampJump legal levers
 	local rjState = makeRampJumpState()
-	local rjResult =
-		{ success = false, failure = { type = "mechanic_integrity_failure", sector_id = 2 }, metrics = makeMetrics() }
+	local rjFailure: FailureInfo = { type = "mechanic_integrity_failure", sector_id = 2 }
+	local rjResult: RunResult = { success = false, failure = rjFailure, metrics = makeMetrics() }
 	local packet = LapEvaluator.buildFailurePacket(req, rjState, 1, nil, rjResult, 2, { "gap too small" })
 
-	local expectedRJ = LevelMappings.NUMERIC_LEVERS["RampJump"]
+	local expectedRJ = LevelMappings.NUMERIC_LEVERS.RampJump
 	local rjLeversMatch = #packet.legal_actions.numeric_levers == #expectedRJ
 	if rjLeversMatch then
 		for i, v in ipairs(expectedRJ) do
@@ -456,10 +532,10 @@ local function testFailurePacket()
 
 	-- Chicane legal levers
 	local chState = makeChicaneState()
-	local chResult =
-		{ success = false, failure = { type = "mechanic_integrity_failure", sector_id = 2 }, metrics = makeMetrics() }
+	local chFailure: FailureInfo = { type = "mechanic_integrity_failure", sector_id = 2 }
+	local chResult: RunResult = { success = false, failure = chFailure, metrics = makeMetrics() }
 	local chPacket = LapEvaluator.buildFailurePacket(req, chState, 1, nil, chResult, 2, {})
-	local expectedCh = LevelMappings.NUMERIC_LEVERS["Chicane"]
+	local expectedCh = LevelMappings.NUMERIC_LEVERS.Chicane
 	local chLeversMatch = #chPacket.legal_actions.numeric_levers == #expectedCh
 	T.expect(
 		"failurepacket_legal_levers_chicane",
@@ -469,10 +545,10 @@ local function testFailurePacket()
 
 	-- CrestDip legal levers
 	local cdState = makeCrestDipState()
-	local cdResult =
-		{ success = false, failure = { type = "mechanic_integrity_failure", sector_id = 2 }, metrics = makeMetrics() }
+	local cdFailure: FailureInfo = { type = "mechanic_integrity_failure", sector_id = 2 }
+	local cdResult: RunResult = { success = false, failure = cdFailure, metrics = makeMetrics() }
 	local cdPacket = LapEvaluator.buildFailurePacket(req, cdState, 1, nil, cdResult, 2, {})
-	local expectedCd = LevelMappings.NUMERIC_LEVERS["CrestDip"]
+	local expectedCd = LevelMappings.NUMERIC_LEVERS.CrestDip
 	local cdLeversMatch = #cdPacket.legal_actions.numeric_levers == #expectedCd
 	T.expect(
 		"failurepacket_legal_levers_crestdip",
