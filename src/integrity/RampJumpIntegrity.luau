@@ -1,3 +1,5 @@
+--!strict
+
 -- RampJumpIntegrity.luau
 -- Evaluates whether a completed run satisfies RampJump mechanic integrity.
 -- prd_plan.md §11.2, §15.7, Phase 5
