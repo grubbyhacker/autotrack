@@ -1,3 +1,4 @@
+--!strict
 -- TestPhase4_5.luau
 -- Verifies Phase 4.5 deliverables: arc-based corner waypoints and corner speed reduction.
 
