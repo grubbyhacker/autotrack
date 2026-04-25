@@ -1,3 +1,4 @@
+--!strict
 -- RampJumpBuilder.luau
 -- Builds RampJump geometry from a SectorState.
 -- prd_plan.md §4.1, Phase 4 / Phase 15
@@ -72,7 +73,7 @@ function RampJumpBuilder.build(state: SectorState, entryFrame: CFrame, _exitFram
 
 	local folder = getSectorFolder(state.sector_id)
 	local profile = RampJumpPath.buildProfile(p.ramp_angle, p.ramp_length, p.gap_length, p.landing_length)
-	local lastSlopedSegment = nil
+	local lastSlopedSegment: Part? = nil
 
 	for index = 2, #profile.rampPoints do
 		local startPoint = profile.rampPoints[index - 1]
