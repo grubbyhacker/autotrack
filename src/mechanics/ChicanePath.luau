@@ -1,3 +1,4 @@
+--!strict
 -- ChicanePath.luau
 -- Shared centerline helper for chicane geometry and verifier guidance.
 -- The chicane is a single smooth wave: centerline -> +peak -> -peak -> centerline.
