@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,10 +17,35 @@ local TestFactories = require(script.Parent.TestFactories)
 local UIState = require(script.Parent.UIState)
 
 type MemoryEntry = Types.MemoryEntry
+type MemoryAuthor = Types.MemoryAuthor
+type MemoryScope = Types.MemoryScope
+type RunMemory = Types.RunMemory
+type Request = Types.Request
+type DesignIntent = Types.DesignIntent
+type SectorState = Types.SectorState
+type RunResult = Types.RunResult
+type RunMetrics = Types.RunMetrics
+type ChallengeScore = Types.ChallengeScore
+type FailureInfo = Types.FailureInfo
+type Diagnostics = Types.Diagnostics
+type LegalActions = Types.LegalActions
+type FailurePacket = Types.FailurePacket
+type OrchestratorContext = Types.OrchestratorContext
+type OrchestratorDecision = Types.OrchestratorDecision
+type OrchestratorSectorSnapshot = Types.OrchestratorSectorSnapshot
+type OrchestratorSubmitDecision = Types.OrchestratorSubmitDecision
+type JsonArray = Types.JsonArray
+type JsonObject = Types.JsonObject
+
+type SubmitRecord = {
+	intent: OrchestratorSubmitDecision,
+	rawText: string,
+	memory: RunMemory,
+}
 
 local TestPhase20 = {}
 
-local function makeStoredNote(author: string, scope: string, note: string, sourceRef: string): MemoryEntry
+local function makeStoredNote(author: MemoryAuthor, scope: MemoryScope, note: string, sourceRef: string): MemoryEntry
 	return {
 		entry_id = author .. "-" .. scope .. "-" .. sourceRef,
 		author = author,
@@ -31,7 +58,7 @@ local function makeStoredNote(author: string, scope: string, note: string, sourc
 	}
 end
 
-local function makeMemory()
+local function makeMemory(): RunMemory
 	local memory = EnduranceMemory.new()
 	EnduranceMemory.append(
 		memory,
@@ -51,7 +78,7 @@ local function makeMemory()
 	return memory
 end
 
-local function makeDesignIntent()
+local function makeDesignIntent(): DesignIntent
 	return TestFactories.designIntent({
 		rationale = "raise spectacle without repeating stale failures",
 		constraints = {
@@ -61,20 +88,21 @@ local function makeDesignIntent()
 	})
 end
 
-local function makeSubmitDecision()
+local function makeSubmitDecision(): OrchestratorSubmitDecision
 	return TestFactories.submitDecision(makeDesignIntent())
 end
 
-local function makeContext(memory)
+local function makeContext(memory: RunMemory): OrchestratorContext
+	local sectorStates: { [number]: OrchestratorSectorSnapshot } = {
+		[2] = { mechanic = nil, params = {}, score = 0 },
+		[3] = { mechanic = "Chicane", params = { amplitude = 8 }, score = 12 },
+		[4] = { mechanic = nil, params = {}, score = 0 },
+		[7] = { mechanic = nil, params = {}, score = 0 },
+		[8] = { mechanic = nil, params = {}, score = 0 },
+		[9] = { mechanic = nil, params = {}, score = 0 },
+	}
 	return TestFactories.orchestratorContext({
-		sector_states = {
-			[2] = { mechanic = nil, params = {}, score = 0 },
-			[3] = { mechanic = "Chicane", params = { amplitude = 8 }, score = 12 },
-			[4] = { mechanic = nil, params = {}, score = 0 },
-			[7] = { mechanic = nil, params = {}, score = 0 },
-			[8] = { mechanic = nil, params = {}, score = 0 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
-		},
+		sector_states = sectorStates,
 		budget = { used = 0.2, over_budget = false },
 		attempt_budget = { used = 1, total = 8 },
 		last_result = nil,
@@ -90,11 +118,11 @@ local function makeContext(memory)
 	})
 end
 
-local function makeRequest(memory)
+local function makeRequest(memory: RunMemory): Request
 	return JobRunner._buildEnduranceRequest(makeDesignIntent(), "internal memory artifact", "phase20-req", memory)
 end
 
-local function makeState()
+local function makeState(): SectorState
 	return {
 		sector_id = 7,
 		mechanic = "RampJump",
@@ -109,52 +137,78 @@ local function makeState()
 	}
 end
 
-local function makeResult(success: boolean)
+local function makeResult(success: boolean): RunResult
+	local failure: FailureInfo? = if success
+		then nil
+		else { type = "local_execution_failure", sector_id = 7, detail = "no_progress" }
+	local metrics: RunMetrics = {
+		entry_speed = 45,
+		exit_speed = if success then 38 else 0,
+		airborne = success,
+		air_distance = if success then 11 else 4,
+		lateral_error = 0,
+		vertical_displacement = if success then 5 else 6,
+		reacquired = success,
+		airtime_distance = if success then 11 else 4,
+		target_progress = if success then 1 else 0.4,
+		target_entered = true,
+		target_exited = success,
+		target_airborne = success,
+		target_air_distance = if success then 11 else 4,
+		target_reacquired = success,
+		target_airtime_distance = if success then 11 else 4,
+		target_vertical_displacement = if success then 5 else 6,
+		target_apex_min_speed = if success then 22 else 12,
+		lap_time = 31,
+		slowdown_ratio = if success then 1.08 else 1.15,
+	}
+	local score: ChallengeScore? = if success
+		then {
+			total = 22,
+			air = 7,
+			lateral = 2,
+			near_miss = 4,
+			time_cost = 1,
+			budget_used = 0.35,
+			over_budget = false,
+		}
+		else nil
 	return {
 		success = success,
-		failure = if success then nil else { type = "local_execution_failure", sector_id = 7, detail = "no_progress" },
-		metrics = {
-			entry_speed = 45,
-			exit_speed = if success then 38 else 0,
-			target_progress = if success then 1 else 0.4,
-			target_entered = true,
-			target_exited = success,
-			target_reacquired = success,
-			target_airtime_distance = if success then 11 else 4,
-			target_vertical_displacement = if success then 5 else 6,
-			target_apex_min_speed = if success then 22 else 12,
-			lap_time = 31,
-			slowdown_ratio = if success then 1.08 else 1.15,
-		},
-		score = if success
-			then {
-				total = 22,
-				air = 7,
-				lateral = 2,
-				near_miss = 4,
-				time_cost = 1,
-				budget_used = 0.35,
-				over_budget = false,
-			}
-			else nil,
+		failure = failure,
+		metrics = metrics,
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = score,
 	}
 end
 
-local function makePacket(request)
+local function makePacket(request: Request): FailurePacket
+	local diagnostics: Diagnostics = {
+		failure_sector = 7,
+		hints = { "boost first", "avoid lengthening the ramp" },
+		failure_type = "local_execution_failure",
+		failure_detail = "no_progress",
+		target_entry_speed = 45,
+		target_exit_speed = 0,
+		target_reacquired = false,
+		target_airtime_distance = 4,
+		target_apex_min_speed = 12,
+		downstream_sector_state = nil,
+	}
+	local legalActions: LegalActions = {
+		numeric_levers = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
+		pads = { "ingress", "egress" },
+	}
 	return {
 		request = request,
 		sector_state = makeState(),
 		attempt_index = 1,
 		last_action = nil,
 		run_result = makeResult(false),
-		diagnostics = {
-			failure_sector = 7,
-			hints = { "boost first", "avoid lengthening the ramp" },
-		},
-		legal_actions = {
-			numeric_levers = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
-			pads = { "ingress", "egress" },
-		},
+		diagnostics = diagnostics,
+		legal_actions = legalActions,
 		design_intent = request.design_intent,
 		memory_context = request.memory_context,
 	}
@@ -238,14 +292,12 @@ function TestPhase20.run()
 		end,
 		orchestrate = function()
 			local decision = makeSubmitDecision()
-			decision.memory_note = {
-				author = "orchestrator",
-				scope = "orchestrator",
-				note = "Sector 7 still has room for spectacle if recovery stays readable.",
-				confidence = "medium",
-				source_type = "explicit_policy",
-				source_ref = "decision-1",
-			}
+			decision.memory_note = makeStoredNote(
+				"orchestrator",
+				"orchestrator",
+				"Sector 7 still has room for spectacle if recovery stays readable.",
+				"decision-1"
+			)
 			return HttpService:JSONEncode(decision)
 		end,
 	})
@@ -420,8 +472,8 @@ function TestPhase20.run()
 		HttpService:JSONEncode(sharedNotebook.shared)
 	)
 
-	local orchestratorContexts = {}
-	local submittedMemory = nil
+	local orchestratorContexts: { OrchestratorContext } = {}
+	local submittedMemory: RunMemory? = nil
 	local jobs = {
 		{
 			request = makeRequest(makeMemory()),
@@ -468,7 +520,7 @@ function TestPhase20.run()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function(context)
+			orchestrate = function(context: OrchestratorContext): (OrchestratorDecision?, MemoryEntry?, string?)
 				table.insert(orchestratorContexts, context)
 				if #orchestratorContexts == 1 then
 					return makeSubmitDecision(),
@@ -508,9 +560,9 @@ function TestPhase20.run()
 		})
 	)
 
-	local fallbackSubmits = {}
-	local fallbackLogs = {}
-	local fallbackWarnings = {}
+	local fallbackSubmits: { SubmitRecord } = {}
+	local fallbackLogs: { string } = {}
+	local fallbackWarnings: { string } = {}
 	local fallbackLoopStarted = false
 	local fallbackJobs = {
 		{
@@ -533,7 +585,7 @@ function TestPhase20.run()
 	local fallbackJobIndex = 0
 
 	local fallbackOk, fallbackErr = OrchestratorAgent.run({
-		submitDesignIntent = function(intent, rawText, memoryContext)
+		submitDesignIntent = function(intent: OrchestratorSubmitDecision, rawText: string, memoryContext: RunMemory)
 			table.insert(fallbackSubmits, {
 				intent = intent,
 				rawText = rawText,
@@ -552,7 +604,7 @@ function TestPhase20.run()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function(_context)
+			orchestrate = function(_context: OrchestratorContext): (OrchestratorDecision?, MemoryEntry?, string?)
 				if #fallbackLogs == 0 then
 					return nil, nil, "invalid orchestrate response: sector_id must be an editable sector"
 				end
@@ -560,10 +612,10 @@ function TestPhase20.run()
 			end,
 			setPhase = function() end,
 			setAttemptBudget = function() end,
-			setLLMWarning = function(text)
+			setLLMWarning = function(text: string)
 				table.insert(fallbackWarnings, text)
 			end,
-			appendLog = function(line)
+			appendLog = function(line: string)
 				table.insert(fallbackLogs, line)
 			end,
 			trace = function() end,
@@ -592,9 +644,9 @@ function TestPhase20.run()
 		})
 	)
 
-	local prematureSubmits = {}
-	local prematureWarnings = {}
-	local prematureLogs = {}
+	local prematureSubmits: { SubmitRecord } = {}
+	local prematureWarnings: { string } = {}
+	local prematureLogs: { string } = {}
 	local prematureLoopStarted = false
 	local prematureJobs = {
 		{
@@ -618,7 +670,7 @@ function TestPhase20.run()
 	local prematureOrchestrateCalls = 0
 
 	local prematureOk, prematureErr = OrchestratorAgent.run({
-		submitDesignIntent = function(intent, rawText, memoryContext)
+		submitDesignIntent = function(intent: OrchestratorSubmitDecision, rawText: string, memoryContext: RunMemory)
 			table.insert(prematureSubmits, {
 				intent = intent,
 				rawText = rawText,
@@ -637,7 +689,7 @@ function TestPhase20.run()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function()
+			orchestrate = function(): (OrchestratorDecision?, MemoryEntry?, string?)
 				prematureOrchestrateCalls += 1
 				if prematureOrchestrateCalls == 1 then
 					return { action = "begin_loop", rationale = "track ready immediately" }, nil, nil
@@ -646,10 +698,10 @@ function TestPhase20.run()
 			end,
 			setPhase = function() end,
 			setAttemptBudget = function() end,
-			setLLMWarning = function(text)
+			setLLMWarning = function(text: string)
 				table.insert(prematureWarnings, text)
 			end,
-			appendLog = function(line)
+			appendLog = function(line: string)
 				table.insert(prematureLogs, line)
 			end,
 			trace = function() end,
@@ -715,14 +767,8 @@ function TestPhase20.run()
 		end,
 		orchestrate = function()
 			local traceDecision = makeSubmitDecision()
-			traceDecision.memory_note = {
-				author = "orchestrator",
-				scope = "orchestrator",
-				note = "Trace orchestration note",
-				confidence = "medium",
-				source_type = "explicit_policy",
-				source_ref = "trace-orchestrate",
-			}
+			traceDecision.memory_note =
+				makeStoredNote("orchestrator", "orchestrator", "Trace orchestration note", "trace-orchestrate")
 			return HttpService:JSONEncode(traceDecision)
 		end,
 	})
@@ -735,20 +781,30 @@ function TestPhase20.run()
 		tostring(traceOrchestrateErr or traceProposeErr or traceRepairErr)
 	)
 	LLMTraceJournal.finishRun({ outcome = "phase20_trace_seed" })
-	local exported = LLMTraceJournal.exportLatestRun() or {}
+	local exported = LLMTraceJournal.exportLatestRun()
 	local sawPromptMemory = false
 	local sawResponseMemory = false
-	for _, event in ipairs(exported.events or {}) do
-		if event.direction == "prompt" and event.payload and event.payload.memory_context then
-			sawPromptMemory = true
-		end
-		if
-			event.direction == "response"
-			and event.payload
-			and event.payload.decoded_response
-			and event.payload.decoded_response.memory_note
-		then
-			sawResponseMemory = true
+	local exportedEvents = if exported then exported.events else nil
+	if type(exportedEvents) == "table" then
+		local events: JsonArray = exportedEvents :: JsonArray
+		for _, rawEvent in ipairs(events) do
+			if type(rawEvent) == "table" then
+				local event: JsonObject = rawEvent :: JsonObject
+				local payloadValue = event.payload
+				if type(payloadValue) == "table" then
+					local payload: JsonObject = payloadValue :: JsonObject
+					if event.direction == "prompt" and payload.memory_context ~= nil then
+						sawPromptMemory = true
+					end
+					local decodedResponse = payload.decoded_response
+					if event.direction == "response" and type(decodedResponse) == "table" then
+						local decodedObject: JsonObject = decodedResponse :: JsonObject
+						if decodedObject.memory_note ~= nil then
+							sawResponseMemory = true
+						end
+					end
+				end
+			end
 		end
 	end
 	T.expect(
