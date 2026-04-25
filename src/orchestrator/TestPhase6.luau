@@ -1,3 +1,4 @@
+--!strict
 -- TestPhase6.luau
 -- Verifies Phase 6 deliverables: request parsing, initial proposal, state machine,
 -- runtime context, and the full job commit/revert integration flow.
@@ -7,6 +8,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local T = require(script.Parent.TestUtils)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local JobStateMachine = require(script.Parent.JobStateMachine)
@@ -19,7 +21,11 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 
 local TestPhase6 = {}
 
-local function makeRequest(mechanic, rawText)
+type Mechanic = Types.Mechanic
+type Request = Types.Request
+type SectorMeta = Types.SectorMeta
+
+local function makeRequest(mechanic: Mechanic?, rawText: string?): Request
 	local request, err = RequestParser.parse(rawText or "add a jump in sector 3", "test-request")
 	assert(request ~= nil, "expected valid request: " .. tostring(err))
 	if mechanic then
@@ -162,12 +168,15 @@ function TestPhase6.runUnit()
 	end)
 	T.expect("statemachine_illegal", illegalOk == false, "expected illegal transition to throw")
 
+	local runtimeReady = RuntimeContext.isReady()
+	local runtimeCar: BasePart? = if runtimeReady then RuntimeContext.getCar() else nil
+	local runtimeSector: SectorMeta? = if runtimeReady then RuntimeContext.getSectorById(3) else nil
 	T.expect(
 		"runtime_context_roundtrip",
-		RuntimeContext.isReady()
+		runtimeReady
 			and RuntimeContext.getBaselineLapTime() == (workspace:GetAttribute("AutoTrack_BaselineLapTime") or -1)
-			and RuntimeContext.getCar() ~= nil
-			and RuntimeContext.getSectorById(3) ~= nil,
+			and runtimeCar ~= nil
+			and runtimeSector ~= nil,
 		"runtime context not initialized"
 	)
 end
