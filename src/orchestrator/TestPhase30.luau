@@ -1,3 +1,5 @@
+--!strict
+
 local T = require(script.Parent.TestUtils)
 
 local TestPhase30 = {}
