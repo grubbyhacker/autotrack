@@ -1,3 +1,4 @@
+--!strict
 -- ChicaneIntegrity.luau
 -- Evaluates whether a completed run satisfies Chicane mechanic integrity.
 -- prd_plan.md §11.3, §15.7, Phase 5
