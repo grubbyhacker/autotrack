@@ -1,3 +1,4 @@
+--!strict
 -- TestPhase13.luau
 -- Phase 13: Real LLM integration tests.
 -- Unit tests run with LLM disabled (heuristic). Integration test opts in
@@ -9,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local T = require(script.Parent.TestUtils)
 local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
 local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
@@ -22,24 +24,38 @@ local UIState = require(script.Parent.UIState)
 
 local TestPhase13 = {}
 
-local function savedConfig()
+type DesignIntent = Types.DesignIntent
+type FailurePacket = Types.FailurePacket
+type Mechanic = Types.Mechanic
+type Request = Types.Request
+type RunMetrics = Types.RunMetrics
+type RunResult = Types.RunResult
+type SectorParams = Types.SectorParams
+type SectorState = Types.SectorState
+
+type SavedConfig = {
+	enabled: boolean,
+	modelId: string,
+}
+
+local function savedConfig(): SavedConfig
 	return { enabled = LLMConfig.get().enabled, modelId = LLMConfig.get().modelId }
 end
 
-local function restoreConfig(saved)
+local function restoreConfig(saved: SavedConfig)
 	LLMConfig.setEnabled(saved.enabled)
 	LLMConfig.setModel(saved.modelId)
 	LLMAdapter.useMockProvider()
 end
 
-local function makeRequest(sectorId: number, mechanic: string)
+local function makeRequest(sectorId: number, mechanic: Mechanic): Request
 	local raw = string.format("add a %s in sector %d", string.lower(mechanic), sectorId)
 	local request, err = RequestParser.parse(raw, "test-req")
 	assert(request ~= nil, "parse failed: " .. tostring(err))
 	return request
 end
 
-local function makeState(sectorId, mechanic, params)
+local function makeState(sectorId: number, mechanic: Mechanic, params: SectorParams?): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -49,23 +65,57 @@ local function makeState(sectorId, mechanic, params)
 	}
 end
 
-local function fakePacket(request, state, attemptIndex)
+local function fakeMetrics(): RunMetrics
+	return {
+		entry_speed = 35,
+		exit_speed = 0,
+		airborne = false,
+		air_distance = 0,
+		lateral_error = 0,
+		vertical_displacement = 0,
+		reacquired = false,
+		airtime_distance = 0,
+		lap_time = 30,
+		slowdown_ratio = 1,
+	}
+end
+
+local function fakePacket(request: Request, state: SectorState, attemptIndex: number?): FailurePacket
+	local runResult: RunResult = {
+		success = false,
+		failure = { type = "local_execution_failure", sector_id = state.sector_id, detail = "off_track" },
+		metrics = fakeMetrics(),
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = nil,
+	}
+
 	return {
 		request = request,
 		sector_state = state,
 		attempt_index = attemptIndex or 0,
 		last_action = nil,
-		run_result = {
-			success = false,
-			failure = { type = "local_execution_failure", sector_id = state.sector_id, detail = "off_track" },
-			metrics = { lap_time = 30, slowdown_ratio = 1 },
+		run_result = runResult,
+		diagnostics = {
+			failure_sector = state.sector_id,
+			hints = {},
+			failure_type = "local_execution_failure",
+			failure_detail = "off_track",
+			target_entry_speed = runResult.metrics.entry_speed,
+			target_exit_speed = runResult.metrics.exit_speed,
+			target_reacquired = runResult.metrics.target_reacquired,
+			target_airtime_distance = runResult.metrics.target_airtime_distance,
+			target_apex_min_speed = runResult.metrics.target_apex_min_speed,
+			downstream_sector_state = nil,
 		},
-		diagnostics = { failure_sector = state.sector_id, hints = {} },
 		legal_actions = { numeric_levers = { "amplitude" }, pads = {} },
+		design_intent = nil,
+		memory_context = nil,
 	}
 end
 
-local function makeOrchestratorContext()
+local function makeOrchestratorContext(): Types.OrchestratorContext
 	return TestFactories.orchestratorContext({
 		budget = { used = 0.1, over_budget = false },
 		attempt_budget = { used = 0, total = 8 },
@@ -77,7 +127,7 @@ local function makeOrchestratorContext()
 	})
 end
 
-local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: string)
+local function makeDesignIntent(sectorId: number, mechanic: Mechanic, paramsHint: string): DesignIntent
 	return TestFactories.designIntent({
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -487,12 +537,18 @@ function TestPhase13.runUnit()
 	end
 
 	local recentRuns = LLMTraceJournal.getRecentRuns()
+	local firstMeta = if recentRuns[1] then recentRuns[1].meta else nil
+	local secondMeta = if recentRuns[2] then recentRuns[2].meta else nil
+	local thirdMeta = if recentRuns[3] then recentRuns[3].meta else nil
 	T.expect(
 		"llm_trace_retention_keeps_recent_completed_runs",
 		#recentRuns == 3
-			and recentRuns[1].meta.job_id == "job-4"
-			and recentRuns[2].meta.job_id == "job-3"
-			and recentRuns[3].meta.job_id == "job-2",
+			and firstMeta ~= nil
+			and firstMeta.job_id == "job-4"
+			and secondMeta ~= nil
+			and secondMeta.job_id == "job-3"
+			and thirdMeta ~= nil
+			and thirdMeta.job_id == "job-2",
 		HttpService:JSONEncode(LLMTraceJournal.exportLatestRun() or {})
 	)
 
