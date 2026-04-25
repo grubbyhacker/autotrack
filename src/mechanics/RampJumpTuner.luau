@@ -1,43 +1,67 @@
+--!strict
+
 -- RampJumpTuner.luau
 -- Shared RampJump normalizer with mode-aware envelopes.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 
-local RampJumpTuner = {}
+type SectorParams = Types.SectorParams
 
-local function clampRound(value: number, bound): number
+type LeverBound = {
+	min: number,
+	max: number,
+}
+
+type TuneOptions = {
+	postCorner: boolean?,
+	preferGentle: boolean?,
+	mode: string?,
+}
+
+type RampJumpTunerModule = {
+	tune: (params: SectorParams, options: TuneOptions?) -> SectorParams,
+}
+
+local RampJumpTuner: RampJumpTunerModule = {} :: RampJumpTunerModule
+
+local function clampRound(value: number, bound: LeverBound): number
 	return math.clamp(math.round(value), bound.min, bound.max)
 end
 
-function RampJumpTuner.tune(params, options)
-	options = options or {}
+function RampJumpTuner.tune(params: SectorParams, options: TuneOptions?): SectorParams
+	local tuneOptions: TuneOptions = options or {}
 	local bounds = LevelMappings.LEVER_BOUNDS.RampJump
 	local defaults = LevelMappings.DEFAULTS.RampJump
-	local postCorner = options.postCorner == true
-	local mode = tostring(options.mode or "")
+	local defaultRampAngle = assert(defaults.ramp_angle, "RampJumpTuner: default ramp_angle missing")
+	local defaultRampLength = assert(defaults.ramp_length, "RampJumpTuner: default ramp_length missing")
+	local defaultGapLength = assert(defaults.gap_length, "RampJumpTuner: default gap_length missing")
+	local defaultLandingLength = assert(defaults.landing_length, "RampJumpTuner: default landing_length missing")
+	local postCorner = tuneOptions.postCorner == true
+	local mode = tostring(tuneOptions.mode or "")
 	if mode == "" then
-		mode = if options.preferGentle == true then "repair" else "opening"
+		mode = if tuneOptions.preferGentle == true then "repair" else "opening"
 	end
 	if mode ~= "opening" and mode ~= "challenge_up" and mode ~= "repair" then
 		mode = "opening"
 	end
 
 	local tuned = {
-		ramp_angle = clampRound(params.ramp_angle or defaults.ramp_angle, bounds.ramp_angle),
-		ramp_length = clampRound(params.ramp_length or defaults.ramp_length, bounds.ramp_length),
-		gap_length = clampRound(params.gap_length or defaults.gap_length, bounds.gap_length),
-		landing_length = clampRound(params.landing_length or defaults.landing_length, bounds.landing_length),
+		ramp_angle = clampRound(params.ramp_angle or defaultRampAngle, bounds.ramp_angle),
+		ramp_length = clampRound(params.ramp_length or defaultRampLength, bounds.ramp_length),
+		gap_length = clampRound(params.gap_length or defaultGapLength, bounds.gap_length),
+		landing_length = clampRound(params.landing_length or defaultLandingLength, bounds.landing_length),
 	}
 
-	local minRampAngle
-	local minGapLength
-	local minRampLength
-	local minLandingLength
-	local maxLandingLength
-	local gapLandingFactor
-	local gapLandingBase
+	local minRampAngle: number
+	local minGapLength: number
+	local minRampLength: number
+	local minLandingLength: number
+	local maxLandingLength: number
+	local gapLandingFactor: number
+	local gapLandingBase: number
 
 	if mode == "challenge_up" then
 		minRampAngle = if postCorner then 9 else 12
