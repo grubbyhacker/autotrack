@@ -1,3 +1,5 @@
+--!strict
+
 -- ChicaneBuilder.luau
 -- Builds Chicane as a smooth sine-like wave across the straight.
 -- prd_plan.md §4.2, Phase 4
@@ -10,7 +12,10 @@ local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type SectorState = Types.SectorState
 
-local ChicaneBuilder = {}
+type ChicaneBuilderModule = {
+	build: (state: SectorState, entryFrame: CFrame, exitFrame: CFrame) -> (),
+}
+
 local CHICANE_VISUAL_SURFACE_OVERLAP = 0.18
 
 local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
@@ -28,24 +33,22 @@ local function makePart(name: string, size: Vector3, cf: CFrame, sectorId: numbe
 	return TrackVisuals.makeCollisionPart(parent, name, size, cf, sectorId, "Straight")
 end
 
-function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame)
+local function build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame): ()
 	local p = state.params
-	assert(p.amplitude, "ChicaneBuilder: missing amplitude")
-	assert(p.transition_length, "ChicaneBuilder: missing transition_length")
-	assert(p.corridor_width, "ChicaneBuilder: missing corridor_width")
-	assert(p.amplitude > 0, "ChicaneBuilder: amplitude must be positive")
-	assert(p.transition_length > 0, "ChicaneBuilder: transition_length must be positive")
-	assert(p.corridor_width > 0, "ChicaneBuilder: corridor_width must be positive")
+	local amplitude = assert(p.amplitude, "ChicaneBuilder: missing amplitude")
+	local transitionLength = assert(p.transition_length, "ChicaneBuilder: missing transition_length")
+	local corridorWidth = assert(p.corridor_width, "ChicaneBuilder: missing corridor_width")
+	assert(amplitude > 0, "ChicaneBuilder: amplitude must be positive")
+	assert(transitionLength > 0, "ChicaneBuilder: transition_length must be positive")
+	assert(corridorWidth > 0, "ChicaneBuilder: corridor_width must be positive")
 
-	local totalLength = ChicanePath.totalLength(p.transition_length)
+	local totalLength = ChicanePath.totalLength(transitionLength)
 	assert(
 		totalLength <= Constants.STRAIGHT_LENGTH,
 		"ChicaneBuilder: geometry exceeds STRAIGHT_LENGTH (" .. totalLength .. ")"
 	)
 
-	local amplitude = p.amplitude
-	local transitionLength = p.transition_length
-	local width = math.min(p.corridor_width, Constants.TRACK_WIDTH)
+	local width = math.min(corridorWidth, Constants.TRACK_WIDTH)
 	local visualWidth = Constants.TRACK_WIDTH
 	local folder = getSectorFolder(state.sector_id)
 	local startOffset = math.max(0, (Constants.STRAIGHT_LENGTH - totalLength) * 0.5)
@@ -108,7 +111,7 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame
 	end
 
 	local visualFolder = TrackVisuals.getVisualFolder(state.sector_id)
-	local worldVisualPoints = table.create(#visualPoints)
+	local worldVisualPoints: { Vector3 } = table.create(#visualPoints)
 	for index, point in ipairs(visualPoints) do
 		worldVisualPoints[index] = worldPoint(entryFrame, point)
 	end
@@ -126,5 +129,9 @@ function ChicaneBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame
 		true
 	)
 end
+
+local ChicaneBuilder: ChicaneBuilderModule = {
+	build = build,
+}
 
 return ChicaneBuilder
