@@ -1,3 +1,5 @@
+--!strict
+
 -- JobStateMachine.luau
 -- State machine for one CI job.
 -- prd_plan.md §7, Phase 6
@@ -31,7 +33,7 @@ JobStateMachine.__index = JobStateMachine
 
 export type JobStateMachine = typeof(setmetatable({} :: { state: State }, JobStateMachine))
 
-local LEGAL_TRANSITIONS = {
+local LEGAL_TRANSITIONS: { [State]: { [State]: boolean } } = {
 	Idle = {
 		ParseRequest = true,
 	},
@@ -82,7 +84,7 @@ function JobStateMachine.new(): JobStateMachine
 	}, JobStateMachine)
 end
 
-function JobStateMachine:transition(next: State)
+function JobStateMachine:transition(next: State): ()
 	local legal = LEGAL_TRANSITIONS[self.state]
 	assert(legal and legal[next], string.format("illegal transition: %s -> %s", self.state, next))
 	self.state = next
