@@ -45,12 +45,14 @@
 | 37 | Complete — shared JSON contracts, trace/export serializer strictness, builder/factory tightening, and `13 / 106` strict Luau files |
 | 38 Sidequest | Complete — bridge status UI, disabled-heartbeat protocol, and clearer live-session export diagnostics |
 | 39 | Complete — risk/return strictness expansion across small helper/config/path modules, Phase 39 suite wiring, and `27 / 107` strict Luau files |
+| 40 | Complete — deterministic shell orchestrator for bounded strict-typing migration campaigns, durable Markdown state, per-worker timeout, campaign budgets, STOP handling, and PowerShell notifications |
 ## Current state
 
 - Public slash-command surface remains intentionally narrow: `/demo endurance|camera|rampitup|repair|llmerror|ui-hotfix`, `/test <suite>`, `/tune ...`; tune mode remains the Phase 21 lab with staged-by-default runs, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
 - Endurance verification/objective state remains commit-authoritative: endurance-origin jobs still use isolated-sector vetting plus a commit lap, pad usage stays telemetry-only, and HUD `Last/%` reads committed lap attrs while per-sector committed scores stay Overview-only.
 - RampJump remains back in the high-risk/high-reward pool with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance.
 - The Luau hygiene/typecheck toolchain now uses repo-wide formatting/lint/typecheck coverage, vendored Roblox definitions, generated Rojo sourcemaps, shared `JsonValue`/`JsonObject` contracts, and `27 / 107` strict files. `make typecheck` is the authoritative full static-analysis gate; `make typecheck-report` is only a compatibility alias.
+- Phase 40 added `tools/strict_typing_campaign.sh` plus `plans/phase40_orchestrator.md` for unattended strictness campaigns. Campaign state/log files are intentionally local working files; workers commit only successful target-file migrations.
 
 ## Hard-won invariants
 
@@ -90,6 +92,7 @@
 - Shared config maps read by both dynamic indexing and property access, such as `LevelMappings`, should use explicit mechanic-shaped record types instead of generic `{ [Mechanic]: T }`; Luau preserves `.RampJump`/`.Chicane` reads more reliably with explicit records.
 - `studio/AutoTrackTestBridge.server.lua` should only execute commands from Studio/edit or server-side Play contexts. Client-side Play polling is noise and should stay suppressed; idle `ConnectFail` is normal when no local `make/test` bridge process is running. Disabled bridge plugins still heartbeat with `enabled=false` so the CLI can fail fast instead of timing out as if the plugin were missing. Use `make install-test-bridge-plugin` from WSL to copy the checked-in plugin to `/mnt/c/Users/roger/AppData/Local/Roblox/Plugins`; Studio still needs a restart after plugin code changes. The Phase 38 bridge status UI has been manually verified working in Studio.
 - Trace/export payloads should cross the `LLMTraceJournal` sanitizer and use `Types.JsonObject`; do not reopen broad `{ [string]: any }` JSON surfaces. The `llm_trace_export` bridge path is live-session-only and reports `no active Play session` after sequential `make` suites stop Play.
+- Strictness campaign workers are single-file, stateless iterations. Keep continuation authority in `tools/strict_typing_campaign.sh`; use `WORKER_TIMEOUT_SECONDS` for runaway workers and `MAX_SECONDS` only as a between-worker campaign cap.
 
 ## Maintained verification snapshot
 

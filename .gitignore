@@ -10,7 +10,11 @@ bin/
 .wally/
 vendor/
 traces/
+logs/
 sourcemap.json
+
+# Local strict-typing campaign state
+plans/strict_typing_campaign_state*.md
 
 # System / OS
 .DS_Store
