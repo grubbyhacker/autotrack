@@ -8,6 +8,7 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("RuntimeTuning"))
 
 type RunMetrics = Types.RunMetrics
+type TargetRuntimeMetrics = Types.TargetRuntimeMetrics
 type SectorState = Types.SectorState
 
 local RampJumpIntegrity = {}
@@ -22,7 +23,7 @@ function RampJumpIntegrity.preflight(state: SectorState): (boolean, { string })
 	return #hints == 0, hints
 end
 
-function RampJumpIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
+function RampJumpIntegrity.evaluateRuntime(metrics: TargetRuntimeMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local reacquired = if metrics.target_reacquired ~= nil then metrics.target_reacquired else metrics.reacquired
 	local reacquireDistance = metrics.target_reacquire_distance

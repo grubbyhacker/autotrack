@@ -18,6 +18,8 @@ local RuntimeContext = require(script.Parent.Parent.Orchestrator.RuntimeContext)
 local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 
 type RunResult = Types.RunResult
+type TargetRuntimeMetrics = Types.TargetRuntimeMetrics
+type TargetTelemetrySnapshot = Types.TargetTelemetrySnapshot
 
 local VerifierController = {}
 local TRAIL_POINT_SPACING = 5
@@ -78,6 +80,26 @@ end
 
 local function baseTargetSpeed(): number
 	return math.max(5, runtimeNumberAttr("AutoTrack_CarTargetSpeed", Constants.CAR_TARGET_SPEED))
+end
+
+local function buildTargetRuntimeMetrics(targetMetrics: TargetTelemetrySnapshot): TargetRuntimeMetrics
+	return {
+		target_airborne = targetMetrics.airborne,
+		target_air_distance = targetMetrics.air_distance,
+		target_vertical_displacement = targetMetrics.vertical_displacement,
+		target_reacquired = targetMetrics.reacquired,
+		target_airtime_distance = targetMetrics.airtime_distance,
+		target_left_offset = targetMetrics.left_offset,
+		target_right_offset = targetMetrics.right_offset,
+		target_lateral_band_changes = targetMetrics.lateral_band_changes,
+		target_peak_body_distance = targetMetrics.peak_body_distance,
+		target_reacquire_distance = targetMetrics.reacquire_distance,
+		target_reacquire_lateral_offset = targetMetrics.reacquire_lateral_offset,
+		target_exit_angular_speed = targetMetrics.exit_angular_speed,
+		target_exit_vertical_speed = targetMetrics.exit_vertical_speed,
+		target_touchdown_up_dot = targetMetrics.touchdown_up_dot,
+		target_touchdown_down_speed = targetMetrics.touchdown_down_speed,
+	}
 end
 
 local function buildSectorWaypointRanges(waypointSectors: { number }?): { [number]: { first: number, last: number } }
@@ -1051,41 +1073,16 @@ function VerifierController.runLap(
 		end
 
 		local targetMetrics = MetricCollector.getTargetMetrics()
+		local runtimeMetrics = buildTargetRuntimeMetrics(targetMetrics)
 		local metrics = MetricCollector.finalise(targetSectorId or currentSectorId or 1, elapsed, baselineLapTime)
 		local runtimeOk, runtimeHints
 
 		if targetState.mechanic == "CrestDip" then
-			runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime({
-				target_airborne = targetMetrics.airborne,
-				target_air_distance = targetMetrics.air_distance,
-				target_vertical_displacement = targetMetrics.vertical_displacement,
-				target_reacquired = targetMetrics.reacquired,
-				target_airtime_distance = targetMetrics.airtime_distance,
-				target_reacquire_distance = targetMetrics.reacquire_distance,
-				target_exit_angular_speed = targetMetrics.exit_angular_speed,
-				target_exit_vertical_speed = targetMetrics.exit_vertical_speed,
-			})
+			runtimeOk, runtimeHints = CrestDipIntegrity.evaluateRuntime(runtimeMetrics)
 		elseif targetState.mechanic == "RampJump" then
-			runtimeOk, runtimeHints = RampJumpIntegrity.evaluateRuntime({
-				target_airborne = targetMetrics.airborne,
-				target_air_distance = targetMetrics.air_distance,
-				target_vertical_displacement = targetMetrics.vertical_displacement,
-				target_reacquired = targetMetrics.reacquired,
-				target_airtime_distance = targetMetrics.airtime_distance,
-				target_reacquire_distance = targetMetrics.reacquire_distance,
-				target_reacquire_lateral_offset = targetMetrics.reacquire_lateral_offset,
-				target_exit_angular_speed = targetMetrics.exit_angular_speed,
-				target_exit_vertical_speed = targetMetrics.exit_vertical_speed,
-				target_touchdown_up_dot = targetMetrics.touchdown_up_dot,
-				target_touchdown_down_speed = targetMetrics.touchdown_down_speed,
-			})
+			runtimeOk, runtimeHints = RampJumpIntegrity.evaluateRuntime(runtimeMetrics)
 		elseif targetState.mechanic == "Chicane" then
-			runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime({
-				target_left_offset = targetMetrics.left_offset,
-				target_right_offset = targetMetrics.right_offset,
-				target_lateral_band_changes = targetMetrics.lateral_band_changes,
-				target_peak_body_distance = targetMetrics.peak_body_distance,
-			})
+			runtimeOk, runtimeHints = ChicaneIntegrity.evaluateRuntime(runtimeMetrics)
 		else
 			return nil
 		end
@@ -1172,12 +1169,13 @@ function VerifierController.runLap(
 						end
 					end
 					local previousSectorId = currentSectorId
-					currentSectorId = newSectorId
+					local enteredSectorId = newSectorId
+					currentSectorId = enteredSectorId
 					if
 						runtimeBoolAttr("AutoTrack_SectorEntrySnapEnabled", Constants.SECTOR_ENTRY_SNAP_ENABLED)
-						and shouldSnapOnSectorEntry(previousSectorId, currentSectorId, sectorKinds)
+						and shouldSnapOnSectorEntry(previousSectorId, enteredSectorId, sectorKinds)
 					then
-						local snappedSpeed, snappedDirection = snapIntoSector(currentSectorId, waypointIndex)
+						local snappedSpeed, snappedDirection = snapIntoSector(enteredSectorId, waypointIndex)
 						persistentTargetSpeed = snappedSpeed
 						commandedSpeed = snappedSpeed
 						activePadToken = nil
@@ -1195,7 +1193,7 @@ function VerifierController.runLap(
 					handleSectorChange(currentSectorId :: number, true)
 					publishDebugState(
 						commandedSpeed,
-						if sectorKinds ~= nil then sectorKinds[currentSectorId] else "Straight"
+						if sectorKinds ~= nil then sectorKinds[enteredSectorId] else "Straight"
 					)
 				end
 			end

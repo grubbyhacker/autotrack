@@ -15,7 +15,6 @@ local JobRunner = require(script.Parent.JobRunner)
 local UIState = require(script.Parent.UIState)
 local CameraDemo = require(script.Parent.CameraDemo)
 
-local baselineLapTime: number? = nil
 local skipBootBaseline = workspace:GetAttribute("AutoTrack_SkipBootBaseline") == true
 local cameraLoopDemo = workspace:GetAttribute("AutoTrack_CameraLoopDemo") == true
 
@@ -266,14 +265,14 @@ else
 	end
 
 	if result.success then
-		baselineLapTime = result.metrics.lap_time
-		Tracer.log(string.format("lap_complete %.2f", baselineLapTime))
+		local completedLapTime = result.metrics.lap_time
+		Tracer.log(string.format("lap_complete %.2f", completedLapTime))
 		logContainmentSummary(result.metrics)
 		appendContainmentSummaryToUI(result.metrics)
-		print(string.format("[AutoTrack] Baseline lap complete: %.2fs", baselineLapTime))
-		UIState.setBaselineLapTime(baselineLapTime)
-		UIState.setLastLapTime(baselineLapTime)
-		UIState.appendLog(string.format("Baseline lap complete: %.2fs", baselineLapTime))
+		print(string.format("[AutoTrack] Baseline lap complete: %.2fs", completedLapTime))
+		UIState.setBaselineLapTime(completedLapTime)
+		UIState.setLastLapTime(completedLapTime)
+		UIState.appendLog(string.format("Baseline lap complete: %.2fs", completedLapTime))
 	else
 		logContainmentSummary(result.metrics)
 		appendContainmentSummaryToUI(result.metrics)

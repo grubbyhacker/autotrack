@@ -15,6 +15,10 @@ local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Request = Types.Request
+type MechanicParsedRequest = Types.MechanicParsedRequest
+type PadParsedRequest = Types.PadParsedRequest
+type PadSide = Types.PadSide
+type PadValue = Types.PadValue
 
 local RequestParser = {}
 
@@ -114,7 +118,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		end
 	end
 
-	local padValue = nil
+	local padValue: PadValue? = nil
 	local sawPadToken = false
 	for token, mappedValue in pairs(PAD_VALUE_TOKENS) do
 		local pattern = "%f[%a]" .. token .. "%f[%A]"
@@ -133,7 +137,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		end
 	end
 
-	local padSide = nil
+	local padSide: PadSide? = nil
 	local sawPadWord = string.find(lowered, "%f[%a]pad%f[%A]") ~= nil
 	for _, item in ipairs(PAD_SIDE_PATTERNS) do
 		local pattern = "%f[%a]" .. item.pattern .. "%f[%A]"
@@ -158,16 +162,17 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		if padSide == nil then
 			return nil, "pad side missing"
 		end
+		local parsed: PadParsedRequest = {
+			sector_id = sectorId,
+			mechanic = nil,
+			request_kind = "Pad",
+			pad_side = padSide,
+			pad_value = padValue,
+		}
 		return {
 			request_id = requestId,
 			raw_text = cleaned,
-			parsed = {
-				sector_id = sectorId,
-				mechanic = nil,
-				request_kind = "Pad",
-				pad_side = padSide,
-				pad_value = padValue,
-			},
+			parsed = parsed,
 			qualifiers = {},
 			origin = "player",
 			design_intent = nil,
@@ -193,16 +198,18 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		end
 	end
 
+	local parsed: MechanicParsedRequest = {
+		sector_id = sectorId,
+		mechanic = mechanicsFound[1],
+		request_kind = "Mechanic",
+		pad_side = nil,
+		pad_value = nil,
+	}
+
 	return {
 		request_id = requestId,
 		raw_text = cleaned,
-		parsed = {
-			sector_id = sectorId,
-			mechanic = mechanicsFound[1],
-			request_kind = "Mechanic",
-			pad_side = nil,
-			pad_value = nil,
-		},
+		parsed = parsed,
 		qualifiers = qualifiers,
 		origin = "player",
 		design_intent = nil,

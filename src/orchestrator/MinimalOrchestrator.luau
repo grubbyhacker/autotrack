@@ -5,6 +5,8 @@ local EnduranceObjective = require(script.Parent.EnduranceObjective)
 
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
+type OrchestratorSubmitDecision = Types.OrchestratorSubmitDecision
+type Mechanic = Types.Mechanic
 
 local MinimalOrchestrator = {}
 
@@ -22,8 +24,9 @@ local function sectorIsFilled(context: OrchestratorContext, sectorId: number): b
 	return snapshot ~= nil and snapshot.mechanic ~= nil
 end
 
-local function buildIntent(sectorId: number, mechanic: string, paramsHint: string): OrchestratorDecision
+local function buildIntent(sectorId: number, mechanic: Mechanic, paramsHint: string): OrchestratorSubmitDecision
 	return {
+		action = "submit_request",
 		sector_id = sectorId,
 		mechanic = mechanic,
 		params_hint = paramsHint,

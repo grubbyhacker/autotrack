@@ -29,6 +29,12 @@ local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: 
 	}
 end
 
+local function makeSubmitDecision(sectorId: number, mechanic: string, paramsHint: string)
+	local decision = makeDesignIntent(sectorId, mechanic, paramsHint)
+	decision.action = "submit_request"
+	return decision
+end
+
 local function makeOrchestratorContext()
 	return {
 		editable_sectors = { 2, 3, 4, 7, 8, 9 },
@@ -107,13 +113,15 @@ end
 
 function TestPhase19.run()
 	local designIntent = makeDesignIntent(7, "RampJump", "extreme tall")
+	local submitDecision = makeSubmitDecision(7, "RampJump", "extreme tall")
 	local request = makeRequest(designIntent)
 	local packet = makePacket(request)
 
 	local orchestrationMessages = OrchestratorPromptBuilder.messages(makeOrchestratorContext())
 	T.expect(
 		"phase19_orchestrator_prompt_requests_full_design_intent",
-		string.find(orchestrationMessages[1].content, "DesignIntent schema", 1, true) ~= nil
+		string.find(orchestrationMessages[1].content, "Submit decision schema", 1, true) ~= nil
+			and string.find(orchestrationMessages[1].content, '"action":"submit_request"', 1, true) ~= nil
 			and string.find(orchestrationMessages[1].content, "target_score_band", 1, true) ~= nil
 			and string.find(orchestrationMessages[1].content, "desired_feel", 1, true) ~= nil
 			and string.find(orchestrationMessages[1].content, "constraints", 1, true) ~= nil,
@@ -204,7 +212,7 @@ function TestPhase19.run()
 			})
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(designIntent)
+			return HttpService:JSONEncode(submitDecision)
 		end,
 	})
 
@@ -213,6 +221,7 @@ function TestPhase19.run()
 		"phase19_orchestrate_returns_design_intent",
 		decisionErr == nil
 			and decision ~= nil
+			and decision.action == "submit_request"
 			and decision.desired_feel == designIntent.desired_feel
 			and decision.replacement_intent == designIntent.replacement_intent
 			and decision.constraints[1] == designIntent.constraints[1],
@@ -227,7 +236,7 @@ function TestPhase19.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			local verbose = makeDesignIntent(
+			local verbose = makeSubmitDecision(
 				7,
 				"RampJump",
 				"extreme tall really long dramatic jump request with extra descriptive words"
@@ -287,7 +296,7 @@ function TestPhase19.run()
 			})
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(designIntent)
+			return HttpService:JSONEncode(submitDecision)
 		end,
 	})
 
@@ -302,7 +311,7 @@ function TestPhase19.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			local bad = makeDesignIntent(7, "RampJump", "extreme tall")
+			local bad = makeSubmitDecision(7, "RampJump", "extreme tall")
 			bad.target_score_band = "absurd"
 			return HttpService:JSONEncode(bad)
 		end,
@@ -371,7 +380,7 @@ function TestPhase19.run()
 			})
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(designIntent)
+			return HttpService:JSONEncode(submitDecision)
 		end,
 	})
 

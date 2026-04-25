@@ -519,6 +519,7 @@ local function testPromptAndObjectiveShift()
 
 	local context = makeContext()
 	local repeatedDecision = {
+		action = "submit_request",
 		sector_id = 2,
 		mechanic = "RampJump",
 		params_hint = "safe long",
@@ -533,6 +534,7 @@ local function testPromptAndObjectiveShift()
 		constraints = { "stay stable" },
 	}
 	local upsideDecision = {
+		action = "submit_request",
 		sector_id = 3,
 		mechanic = "Chicane",
 		params_hint = "tight fast",

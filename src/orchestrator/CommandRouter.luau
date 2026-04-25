@@ -6,7 +6,7 @@ local HotfixAgent = require(script.Parent.HotfixAgent)
 local HUDPreviewDemo = require(script.Parent.HUDPreviewDemo)
 local JobLock = require(script.Parent.JobLock)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
-local TestDispatcher = require(script.Parent.TestDispatcher)
+local TestSuiteRunner = require(script.Parent.TestSuiteRunner)
 local TuneMode = require(script.Parent.TuneMode)
 local UIState = require(script.Parent.UIState)
 
@@ -83,7 +83,14 @@ local function canonicalTuneMechanic(text: string): string?
 end
 
 local function handleTune(rawText: string, normalizedArg: string, rawArg: string): (boolean, string?)
-	local tuneCommand, tuneRest = parseTuneCommand(rawArg)
+	local tuneCommand: string, tuneRest: string = parseTuneCommand(rawArg)
+	if tuneCommand == "show" then
+		local ok, reason = TuneMode.show()
+		if not ok then
+			return reject(rawText, tostring(reason), nil)
+		end
+		return true, nil
+	end
 	local canonicalMechanic = canonicalTuneMechanic(normalizedArg)
 
 	if
@@ -109,13 +116,7 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 		return true, nil
 	end
 
-	if tuneCommand == "show" then
-		local ok, reason = TuneMode.show()
-		if not ok then
-			return reject(rawText, tostring(reason), nil)
-		end
-		return true, nil
-	elseif tuneCommand == "set" then
+	if tuneCommand == "set" then
 		local lever, valueText = string.match(tuneRest, "^(%S+)%s*(.-)%s*$")
 		local value = tonumber(valueText)
 		if lever == nil or value == nil then
@@ -276,6 +277,9 @@ local function handleTest(rawText: string, rawArg: string): (boolean, string?)
 	if suite == "" then
 		return reject(rawText, "test name missing; use /test <suite>", nil)
 	end
+	if not TestSuiteRunner.isConfigured() then
+		return reject(rawText, "test runner unavailable", nil)
+	end
 	if CameraDemo.isActive() then
 		return reject(rawText, activeDemoReason("/test"), nil)
 	end
@@ -288,7 +292,11 @@ local function handleTest(rawText: string, rawArg: string): (boolean, string?)
 	UIState.setPhase("RunTest", "Running server-side test...")
 	UIState.appendLog("Running /test " .. suite)
 
-	local snapshot = TestDispatcher.runSuite(suite)
+	local snapshot = TestSuiteRunner.runSuite(suite)
+	if snapshot == nil then
+		UIState.setBusy(false)
+		return reject(rawText, "test runner unavailable", nil)
+	end
 	UIState.setBusy(false)
 
 	if snapshot.status == "passed" then

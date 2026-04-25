@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local TestUtils = require(script.Parent.TestUtils)
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local EnduranceMemory = require(script.Parent.EnduranceMemory)
 local EnduranceObjective = require(script.Parent.EnduranceObjective)
 local MinimalOrchestrator = require(script.Parent.MinimalOrchestrator)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
@@ -37,10 +38,12 @@ local function makeContext(): OrchestratorContext
 			target_budget_used = 0.2,
 			diversity_pressure = {},
 		},
+		memory = EnduranceMemory.new(),
 	}
 end
 
 local function withIntent(decision)
+	decision.action = decision.action or "submit_request"
 	decision.rationale = decision.rationale or "advance variety without repeating stale failures"
 	decision.target_score_band = decision.target_score_band or "high"
 	decision.target_budget_tolerance = decision.target_budget_tolerance or "medium"
@@ -134,7 +137,9 @@ function TestPhase14_5.runUnit()
 	local fallbackDecision = MinimalOrchestrator.decide(objectiveContext)
 	T.expect(
 		"phase14_5_minimal_orchestrator_uses_context_fallback_without_nondeterminism",
-		fallbackDecision.action == nil and fallbackDecision.sector_id == 3 and fallbackDecision.mechanic == "CrestDip",
+		fallbackDecision.action == "submit_request"
+			and fallbackDecision.sector_id == 3
+			and fallbackDecision.mechanic == "CrestDip",
 		HttpService:JSONEncode(fallbackDecision)
 	)
 
@@ -186,7 +191,7 @@ function TestPhase14_5.runUnit()
 			return true, nil
 		end,
 		submit = function(rawText: string)
-			table.insert(orchestratorSubmits, rawText)
+			table.insert(orchestratorSubmits, { raw_text = rawText, intent = nil })
 			lastJobIndex += 1
 			return true, nil
 		end,

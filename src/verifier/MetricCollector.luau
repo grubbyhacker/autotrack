@@ -7,6 +7,7 @@ local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForC
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 
 type RunMetrics = Types.RunMetrics
+type TargetTelemetrySnapshot = Types.TargetTelemetrySnapshot
 
 local MetricCollector = {}
 
@@ -272,7 +273,7 @@ function MetricCollector.onTargetTouchdown(upDot: number, downSpeed: number)
 	_targetTouchdownDownSpeed = math.max(_targetTouchdownDownSpeed, math.max(0, downSpeed))
 end
 
-function MetricCollector.getTargetMetrics()
+function MetricCollector.getTargetMetrics(): TargetTelemetrySnapshot
 	local targetMaxAirSegment = _targetMaxAirSegment
 	if _targetAirborne and _targetCurrentAirSegment > targetMaxAirSegment then
 		targetMaxAirSegment = _targetCurrentAirSegment

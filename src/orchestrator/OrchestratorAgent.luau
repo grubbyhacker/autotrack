@@ -19,6 +19,7 @@ local Tracer = require(script.Parent.Tracer)
 
 type OrchestratorContext = Types.OrchestratorContext
 type OrchestratorDecision = Types.OrchestratorDecision
+type OrchestratorSubmitDecision = Types.OrchestratorSubmitDecision
 type MemoryEntry = Types.MemoryEntry
 type RunMemory = Types.RunMemory
 
@@ -266,7 +267,7 @@ local function hintQualifiers(paramsHint: string?): string
 	return table.concat(picked, " ")
 end
 
-local function buildRequestText(decision: OrchestratorDecision): string
+local function buildRequestText(decision: OrchestratorSubmitDecision): string
 	local mechanicWord = MECHANIC_WORDS[decision.mechanic] or "jump"
 	local qualifiers = hintQualifiers(decision.params_hint)
 	if qualifiers ~= "" then
@@ -313,8 +314,8 @@ local function formatDecisionSummary(decision: OrchestratorDecision): string
 		return "TRACK READY"
 	end
 
-	local summary = string.format("S%d %s", decision.sector_id or 0, tostring(decision.mechanic or ""))
-	local paramsHint = tostring(decision.params_hint or "")
+	local summary = string.format("S%d %s", decision.sector_id, decision.mechanic)
+	local paramsHint = decision.params_hint
 	if paramsHint ~= "" then
 		summary ..= " | " .. paramsHint
 	end
@@ -451,13 +452,13 @@ local function latestRepairNote(job): MemoryEntry?
 	return nil
 end
 
-local function buildSharedLesson(decision: OrchestratorDecision, job, result, decisionIndex: number): MemoryEntry?
-	if job == nil or result == nil or decision.action == "begin_loop" then
+local function buildSharedLesson(decision: OrchestratorSubmitDecision, job, result, decisionIndex: number): MemoryEntry?
+	if job == nil or result == nil then
 		return nil
 	end
 
-	local sectorId = decision.sector_id or 0
-	local mechanic = tostring(decision.mechanic or (job.working_state and job.working_state.mechanic) or "Unknown")
+	local sectorId = decision.sector_id
+	local mechanic = decision.mechanic
 	local localNote = latestRepairNote(job) or job.challenge_up_proposal_note or job.proposal_memory_note
 	local noteText
 	local sourceType = "observed_result"
@@ -538,14 +539,12 @@ local function fallbackOrchestrate(
 	return fallbackDecision, fallbackReason .. ": " .. reason
 end
 
-local function buildHistoryEntry(decision: OrchestratorDecision, job, result, decisionIndex: number)
+local function buildHistoryEntry(decision: OrchestratorSubmitDecision, job, result, decisionIndex: number)
 	local normalizedSignature = EnduranceObjective.signature(decision)
 	return {
-		sector_id = decision.sector_id
-			or (job and job.request and job.request.parsed and job.request.parsed.sector_id)
-			or 0,
-		mechanic = decision.mechanic or (job and job.working_state and job.working_state.mechanic) or nil,
-		params_hint = decision.params_hint or "",
+		sector_id = decision.sector_id,
+		mechanic = decision.mechanic,
+		params_hint = decision.params_hint,
 		normalized_signature = normalizedSignature,
 		outcome = job and job.final_status or "unknown",
 		score = result and result.score and result.score.total or nil,

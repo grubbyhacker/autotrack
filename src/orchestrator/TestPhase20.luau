@@ -70,6 +70,12 @@ local function makeDesignIntent()
 	}
 end
 
+local function makeSubmitDecision()
+	local decision = makeDesignIntent()
+	decision.action = "submit_request"
+	return decision
+end
+
 local function makeContext(memory)
 	return {
 		editable_sectors = { 2, 3, 4, 7, 8, 9 },
@@ -243,7 +249,7 @@ function TestPhase20.run()
 			})
 		end,
 		orchestrate = function()
-			local decision = makeDesignIntent()
+			local decision = makeSubmitDecision()
 			decision.memory_note = {
 				author = "orchestrator",
 				scope = "orchestrator",
@@ -261,6 +267,7 @@ function TestPhase20.run()
 		"phase20_orchestrate_accepts_optional_memory_note",
 		decisionErr == nil
 			and decision ~= nil
+			and decision.action == "submit_request"
 			and decisionNote ~= nil
 			and decisionNote.scope == "orchestrator"
 			and decisionNote.author == "orchestrator",
@@ -307,7 +314,7 @@ function TestPhase20.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(makeDesignIntent())
+			return HttpService:JSONEncode(makeSubmitDecision())
 		end,
 	})
 	local _, _, badScopeErr = LLMAdapter.propose(request, request.design_intent)
@@ -331,7 +338,7 @@ function TestPhase20.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(makeDesignIntent())
+			return HttpService:JSONEncode(makeSubmitDecision())
 		end,
 	})
 	local _, longProposalNote, longErr = LLMAdapter.propose(request, request.design_intent)
@@ -359,7 +366,7 @@ function TestPhase20.run()
 			return "{}"
 		end,
 		orchestrate = function()
-			return HttpService:JSONEncode(makeDesignIntent())
+			return HttpService:JSONEncode(makeSubmitDecision())
 		end,
 	})
 	local emptyNoteState, emptyProposalNote, emptyNoteErr = LLMAdapter.propose(request, request.design_intent)
@@ -476,7 +483,7 @@ function TestPhase20.run()
 			orchestrate = function(context)
 				table.insert(orchestratorContexts, context)
 				if #orchestratorContexts == 1 then
-					return makeDesignIntent(),
+					return makeSubmitDecision(),
 						makeStoredNote(
 							"orchestrator",
 							"orchestrator",
@@ -672,7 +679,7 @@ function TestPhase20.run()
 			and prematureLoopStarted == true
 			and #prematureSubmits == 1
 			and prematureSubmits[1].intent ~= nil
-			and prematureSubmits[1].intent.action == nil
+			and prematureSubmits[1].intent.action == "submit_request"
 			and prematureSubmits[1].intent.sector_id == 2
 			and prematureWarnings[1] == ""
 			and prematureWarnings[2] == "Orchestrator chose track ready before any build; using deterministic fallback"
@@ -719,7 +726,7 @@ function TestPhase20.run()
 			})
 		end,
 		orchestrate = function()
-			local traceDecision = makeDesignIntent()
+			local traceDecision = makeSubmitDecision()
 			traceDecision.memory_note = {
 				author = "orchestrator",
 				scope = "orchestrator",

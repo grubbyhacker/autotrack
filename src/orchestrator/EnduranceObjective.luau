@@ -30,7 +30,7 @@ local function normalizeHint(paramsHint: string?): string
 
 	local words = {}
 	local seen = {}
-	for word in string.gmatch(string.lower(paramsHint), "[%w-]+") do
+	for word in string.gmatch(string.lower(paramsHint), "[%w%-]+") do
 		if #word >= 3 and not seen[word] then
 			seen[word] = true
 			table.insert(words, word)
@@ -47,8 +47,7 @@ function EnduranceObjective.signature(decision: OrchestratorDecision): string
 		return "begin_loop"
 	end
 
-	local sectorId = decision.sector_id or 0
-	return string.format("s%d|%s|%s", sectorId, tostring(decision.mechanic), normalizeHint(decision.params_hint))
+	return string.format("s%d|%s|%s", decision.sector_id, decision.mechanic, normalizeHint(decision.params_hint))
 end
 
 local function sectorAttemptCount(context: OrchestratorContext, sectorId: number): number
@@ -202,7 +201,7 @@ function EnduranceObjective.evaluateCandidate(
 		return score, "loop request cannot be compared in this evaluator"
 	end
 
-	local sectorId = decision.sector_id or 0
+	local sectorId = decision.sector_id
 	local snapshot = context.sector_states and context.sector_states[sectorId]
 	local signature = EnduranceObjective.signature(decision)
 	local repeatPressure = signatureCount(context, signature)
@@ -224,7 +223,7 @@ function EnduranceObjective.evaluateCandidate(
 	local novelty_bonus = clamp01(1 - repeatPressure * 0.22)
 	local repeat_penalty = clamp01(repeatPressure * 0.22)
 	local budget_risk_penalty = currentBudgetRisk(context)
-	local mechanicName = if type(decision.mechanic) == "string" then decision.mechanic else ""
+	local mechanicName = decision.mechanic
 	local realized_yield = realizedYield(context, mechanicName)
 	local exploration_bonus = explorationBonus(context, mechanicName)
 	local repair_complexity_penalty = 0
@@ -276,7 +275,7 @@ function EnduranceObjective.shouldAvoidRepeat(context: OrchestratorContext, deci
 		return false
 	end
 	return signatureCount(context, EnduranceObjective.signature(decision)) >= REPEAT_SKIP_THRESHOLD
-		or sectorAttemptCount(context, decision.sector_id or 0) >= 4
+		or sectorAttemptCount(context, decision.sector_id) >= 4
 end
 
 function EnduranceObjective.threshold()

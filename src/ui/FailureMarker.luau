@@ -50,7 +50,9 @@ function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?)
 	ring.Adornee = core
 	ring.Parent = folder
 
-	for index, point in ipairs(trajectoryTail or {}) do
+	local tailPoints = trajectoryTail or {}
+	local tailCount = math.max(#tailPoints, 1)
+	for index, point in ipairs(tailPoints) do
 		local dot = Instance.new("Part")
 		dot.Name = ("Tail_%02d"):format(index)
 		dot.Anchored = true
@@ -60,7 +62,7 @@ function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?)
 		dot.Shape = Enum.PartType.Ball
 		dot.Material = Enum.Material.Neon
 		dot.Color = Color3.fromRGB(255, 191, 94)
-		dot.Transparency = math.clamp(0.2 + (index / math.max(#trajectoryTail, 1)) * 0.5, 0.2, 0.8)
+		dot.Transparency = math.clamp(0.2 + (index / tailCount) * 0.5, 0.2, 0.8)
 		dot.Size = Vector3.new(0.8, 0.8, 0.8)
 		dot.Position = point + Vector3.new(0, 0.6, 0)
 		dot.Parent = folder

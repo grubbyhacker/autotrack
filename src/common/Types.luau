@@ -9,13 +9,23 @@ export type Mechanic = "RampJump" | "Chicane" | "CrestDip"
 export type PadValue = "None" | "Boost5" | "Boost10" | "Boost25" | "Boost50" | "Brake5" | "Brake10" | "Brake25" | "Brake50"
 export type PadSide = "ingress" | "egress"
 
-export type ParsedRequest = {
+export type MechanicParsedRequest = {
 	sector_id: number,
-	mechanic: Mechanic?,
-	request_kind: "Mechanic" | "Pad",
-	pad_side: PadSide?,
-	pad_value: PadValue?,
+	mechanic: Mechanic,
+	request_kind: "Mechanic",
+	pad_side: nil,
+	pad_value: nil,
 }
+
+export type PadParsedRequest = {
+	sector_id: number,
+	mechanic: nil,
+	request_kind: "Pad",
+	pad_side: PadSide,
+	pad_value: PadValue,
+}
+
+export type ParsedRequest = MechanicParsedRequest | PadParsedRequest
 
 export type RequestOrigin = "player" | "endurance"
 export type TargetScoreBand = "low" | "medium" | "high" | "extreme"
@@ -104,6 +114,55 @@ export type SectorState = {
 export type AgentAction =
 	{ type: "SetNumericLever", lever: string, value: number }
 	| { type: "SetPad", pad: PadSide, value: PadValue }
+
+-- Narrow target-sector runtime telemetry used by mechanic integrity evaluators.
+-- This intentionally excludes finalized lap-only fields such as lap_time and
+-- slowdown_ratio while still permitting legacy fallback reads from the generic
+-- motion fields when a caller only has full-lap metrics available.
+export type TargetRuntimeMetrics = {
+	airborne: boolean?,
+	air_distance: number?,
+	vertical_displacement: number?,
+	reacquired: boolean?,
+	airtime_distance: number?,
+	target_airborne: boolean?,
+	target_air_distance: number?,
+	target_vertical_displacement: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_left_offset: number?,
+	target_right_offset: number?,
+	target_lateral_band_changes: number?,
+	target_reacquire_distance: number?,
+	target_reacquire_lateral_offset: number?,
+	target_peak_body_distance: number?,
+	target_exit_angular_speed: number?,
+	target_exit_vertical_speed: number?,
+	target_touchdown_up_dot: number?,
+	target_touchdown_down_speed: number?,
+	target_apex_min_speed: number?,
+}
+
+-- Raw target-sector snapshot emitted directly by MetricCollector before it is
+-- projected into the prefixed runtime-integrity surface above.
+export type TargetTelemetrySnapshot = {
+	airborne: boolean,
+	air_distance: number,
+	vertical_displacement: number,
+	reacquired: boolean,
+	airtime_distance: number,
+	left_offset: number,
+	right_offset: number,
+	lateral_band_changes: number,
+	in_target_sector: boolean,
+	peak_body_distance: number,
+	reacquire_distance: number,
+	reacquire_lateral_offset: number,
+	exit_angular_speed: number,
+	exit_vertical_speed: number,
+	touchdown_up_dot: number,
+	touchdown_down_speed: number,
+}
 
 export type RunMetrics = {
 	entry_speed: number,
@@ -303,22 +362,30 @@ export type OrchestratorContext = {
 	memory: RunMemory,
 }
 
-export type OrchestratorDecision = {
-	action: "begin_loop"?,
-	sector_id: number?,
-	mechanic: Mechanic?,
-	params_hint: string?,
+export type OrchestratorLoopDecision = {
+	action: "begin_loop",
 	rationale: string?,
-	target_score_band: TargetScoreBand?,
-	target_budget_tolerance: TargetBudgetTolerance?,
-	target_reliability: TargetReliability?,
-	spectacle_priority: PriorityLevel?,
-	novelty_priority: PriorityLevel?,
-	replacement_intent: ReplacementIntent?,
-	desired_feel: string?,
-	constraints: { string }?,
 	memory_note: MemoryEntry?,
 }
+
+export type OrchestratorSubmitDecision = {
+	action: "submit_request",
+	sector_id: number,
+	mechanic: Mechanic,
+	params_hint: string,
+	rationale: string,
+	target_score_band: TargetScoreBand,
+	target_budget_tolerance: TargetBudgetTolerance,
+	target_reliability: TargetReliability,
+	spectacle_priority: PriorityLevel,
+	novelty_priority: PriorityLevel,
+	replacement_intent: ReplacementIntent,
+	desired_feel: string,
+	constraints: { string },
+	memory_note: MemoryEntry?,
+}
+
+export type OrchestratorDecision = OrchestratorLoopDecision | OrchestratorSubmitDecision
 
 export type LLMTraceDirection = "prompt" | "response" | "error"
 export type LLMTraceRole = "orchestrator" | "repair" | "proposal"

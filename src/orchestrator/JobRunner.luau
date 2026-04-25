@@ -36,6 +36,7 @@ local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 type CIJob = Types.CIJob
 type Request = Types.Request
 type DesignIntent = Types.DesignIntent
+type MechanicParsedRequest = Types.MechanicParsedRequest
 type ChallengeUpContext = Types.ChallengeUpContext
 type MemoryEntry = Types.MemoryEntry
 type RunMemory = Types.RunMemory
@@ -321,16 +322,17 @@ local function buildEnduranceRequest(
 	designIntent: DesignIntent,
 	memoryContext: RunMemory?
 ): Request
+	local parsed: MechanicParsedRequest = {
+		sector_id = designIntent.sector_id,
+		mechanic = designIntent.mechanic,
+		request_kind = "Mechanic",
+		pad_side = nil,
+		pad_value = nil,
+	}
 	return {
 		request_id = requestId,
 		raw_text = trim(rawText),
-		parsed = {
-			sector_id = designIntent.sector_id,
-			mechanic = designIntent.mechanic,
-			request_kind = "Mechanic",
-			pad_side = nil,
-			pad_value = nil,
-		},
+		parsed = parsed,
 		qualifiers = extractIntentQualifiers(designIntent.params_hint),
 		origin = "endurance",
 		design_intent = cloneDesignIntent(designIntent),

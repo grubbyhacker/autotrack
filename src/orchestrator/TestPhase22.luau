@@ -7,7 +7,7 @@ local JobLock = require(script.Parent.JobLock)
 local JobRunner = require(script.Parent.JobRunner)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local RuntimeContext = require(script.Parent.RuntimeContext)
-local TestDispatcher = require(script.Parent.TestDispatcher)
+local TestSuiteRunner = require(script.Parent.TestSuiteRunner)
 local TuneMode = require(script.Parent.TuneMode)
 local UIState = require(script.Parent.UIState)
 
@@ -74,9 +74,9 @@ local function cleanupSession()
 end
 
 local function withStubbedRunSuite(callback)
-	local original = TestDispatcher.runSuite
+	local original = TestSuiteRunner.getRunner()
 	local capturedSuite = nil
-	TestDispatcher.runSuite = function(suite)
+	TestSuiteRunner.setRunner(function(suite)
 		capturedSuite = suite
 		return {
 			status = "passed",
@@ -84,7 +84,7 @@ local function withStubbedRunSuite(callback)
 			fail_count = 0,
 			error_count = 0,
 		}
-	end
+	end)
 
 	local ok, err = pcall(function()
 		callback(function()
@@ -92,7 +92,7 @@ local function withStubbedRunSuite(callback)
 		end)
 	end)
 
-	TestDispatcher.runSuite = original
+	TestSuiteRunner.setRunner(original)
 	if not ok then
 		error(err)
 	end
@@ -153,8 +153,8 @@ local function runCommandSurface()
 	)
 
 	local blockedTestCalled = false
-	local blockedOriginalRunSuite = TestDispatcher.runSuite
-	TestDispatcher.runSuite = function(_suite)
+	local blockedOriginalRunSuite = TestSuiteRunner.getRunner()
+	TestSuiteRunner.setRunner(function(_suite)
 		blockedTestCalled = true
 		return {
 			status = "passed",
@@ -162,9 +162,9 @@ local function runCommandSurface()
 			fail_count = 0,
 			error_count = 0,
 		}
-	end
+	end)
 	local blockedTestOk, blockedTestErr = JobRunner.submit("/test phase11_unit")
-	TestDispatcher.runSuite = blockedOriginalRunSuite
+	TestSuiteRunner.setRunner(blockedOriginalRunSuite)
 	T.expect(
 		"phase22_test_rejected_while_camera_demo_active",
 		blockedTestOk == false
@@ -206,8 +206,8 @@ local function runCommandSurface()
 	)
 
 	local testWhileTuneCalled = false
-	local tuneOriginalRunSuite = TestDispatcher.runSuite
-	TestDispatcher.runSuite = function(_suite)
+	local tuneOriginalRunSuite = TestSuiteRunner.getRunner()
+	TestSuiteRunner.setRunner(function(_suite)
 		testWhileTuneCalled = true
 		return {
 			status = "passed",
@@ -215,9 +215,9 @@ local function runCommandSurface()
 			fail_count = 0,
 			error_count = 0,
 		}
-	end
+	end)
 	local testWhileTuneOk, testWhileTuneErr = JobRunner.submit("/test phase11_unit")
-	TestDispatcher.runSuite = tuneOriginalRunSuite
+	TestSuiteRunner.setRunner(tuneOriginalRunSuite)
 	T.expect(
 		"phase22_test_rejected_while_tune_active",
 		testWhileTuneOk == false

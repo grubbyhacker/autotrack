@@ -19,6 +19,7 @@ local MinimalProposer = require(script.Parent.MinimalProposer)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 local ContinuousLapRunner = require(script.Parent.ContinuousLapRunner)
+local EnduranceMemory = require(script.Parent.EnduranceMemory)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local CameraDemo = require(script.Parent.CameraDemo)
@@ -29,6 +30,7 @@ local JobRunner = require(script.Parent.JobRunner)
 local Tracer = require(script.Parent.Tracer)
 
 type SectorState = Types.SectorState
+type OrchestratorContext = Types.OrchestratorContext
 
 local TestPhase14 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
@@ -116,6 +118,21 @@ local function resultSummary(result: Types.RunResult): string
 		tostring(result.metrics.target_reacquired == true),
 		result.metrics.slowdown_ratio or 0
 	)
+end
+
+local function makeOrchestratorContext(args): OrchestratorContext
+	return {
+		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+		sector_states = args.sector_states,
+		budget = args.budget,
+		attempt_budget = args.attempt_budget,
+		last_result = args.last_result,
+		attempt_history = nil,
+		sector_attempt_counts = nil,
+		mechanic_repeat_pressure = nil,
+		track_intent = nil,
+		memory = EnduranceMemory.new(),
+	}
 end
 
 local function waitForBaseline(): boolean
@@ -520,8 +537,7 @@ function TestPhase14.runUnit()
 		end,
 	}
 	LLMAdapter.setProvider("orchestrate-test", orchestrateProvider)
-	local decision, _, orchestrateErr = LLMAdapter.orchestrate({
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+	local decision, _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext({
 		sector_states = {
 			[2] = { mechanic = "RampJump", params = {}, score = 4 },
 			[3] = { mechanic = nil, params = {}, score = 0 },
@@ -533,7 +549,7 @@ function TestPhase14.runUnit()
 		budget = { used = 0.25, over_budget = false },
 		attempt_budget = { used = 1, total = 12 },
 		last_result = nil,
-	})
+	}))
 	T.expect(
 		"phase14_orchestrate_decodes_decision",
 		orchestrateErr == nil and decision ~= nil and decision.sector_id == 8 and decision.mechanic == "Chicane",
@@ -541,8 +557,7 @@ function TestPhase14.runUnit()
 	)
 	LLMAdapter.useMockProvider()
 
-	local minimalDecision = MinimalOrchestrator.decide({
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+	local minimalDecision = MinimalOrchestrator.decide(makeOrchestratorContext({
 		sector_states = {
 			[2] = { mechanic = "RampJump", params = {}, score = 10 },
 			[3] = { mechanic = "CrestDip", params = {}, score = 8 },
@@ -554,26 +569,31 @@ function TestPhase14.runUnit()
 		budget = { used = 0.2, over_budget = false },
 		attempt_budget = { used = 3, total = 12 },
 		last_result = { sector_id = 4, success = true, score = 9 },
-	})
+	}))
 	T.expect(
 		"phase14_minimal_orchestrator_targets_first_unfilled_sector",
-		minimalDecision.action == nil and minimalDecision.sector_id == 7 and minimalDecision.mechanic == "RampJump",
+		minimalDecision.action == "submit_request"
+			and minimalDecision.sector_id == 7
+			and minimalDecision.mechanic == "RampJump",
 		HttpService:JSONEncode(minimalDecision)
 	)
-	T.expect("phase14_minimal_orchestrator_begins_loop_when_over_budget", MinimalOrchestrator.decide({
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
-		sector_states = {
-			[2] = { mechanic = "RampJump", params = {}, score = 10 },
-			[3] = { mechanic = "CrestDip", params = {}, score = 8 },
-			[4] = { mechanic = "Chicane", params = {}, score = 9 },
-			[7] = { mechanic = "RampJump", params = {}, score = 9 },
-			[8] = { mechanic = "Chicane", params = {}, score = 9 },
-			[9] = { mechanic = "CrestDip", params = {}, score = 9 },
-		},
-		budget = { used = 1, over_budget = true },
-		attempt_budget = { used = 6, total = 12 },
-		last_result = nil,
-	}).action == "begin_loop", "expected over-budget heuristic to stop filling sectors")
+	T.expect(
+		"phase14_minimal_orchestrator_begins_loop_when_over_budget",
+		MinimalOrchestrator.decide(makeOrchestratorContext({
+			sector_states = {
+				[2] = { mechanic = "RampJump", params = {}, score = 10 },
+				[3] = { mechanic = "CrestDip", params = {}, score = 8 },
+				[4] = { mechanic = "Chicane", params = {}, score = 9 },
+				[7] = { mechanic = "RampJump", params = {}, score = 9 },
+				[8] = { mechanic = "Chicane", params = {}, score = 9 },
+				[9] = { mechanic = "CrestDip", params = {}, score = 9 },
+			},
+			budget = { used = 1, over_budget = true },
+			attempt_budget = { used = 6, total = 12 },
+			last_result = nil,
+		})).action == "begin_loop",
+		"expected over-budget heuristic to stop filling sectors"
+	)
 
 	local downstreamRepair = MinimalProposer.repair({
 		request = makeRequest("add a crest in sector 2"),

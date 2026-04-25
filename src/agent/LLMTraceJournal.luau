@@ -189,6 +189,7 @@ local function ensureActiveRun(eventLike): LLMTraceRun
 			first_role = inferredRole,
 		})
 	end
+	assert(_activeRun ~= nil, "LLMTraceJournal: active run missing after ensure")
 	return _activeRun
 end
 
@@ -200,7 +201,9 @@ function LLMTraceJournal.beginRun(meta): string
 	end
 
 	_activeRun = buildRun(meta)
-	return _activeRun.run_id
+	local run = _activeRun
+	assert(run ~= nil, "LLMTraceJournal: beginRun failed to create run")
+	return run.run_id
 end
 
 function LLMTraceJournal.append(eventLike): LLMTraceEvent

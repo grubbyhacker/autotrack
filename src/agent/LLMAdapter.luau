@@ -1217,9 +1217,16 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 	if type(decoded) ~= "table" then
 		return nil, "invalid orchestrate response"
 	end
-	if decoded.action == "begin_loop" then
+	local action = decoded.action
+	if action == nil then
+		action = "submit_request"
+	end
+	if action == "begin_loop" then
 		local rationale = coerceShortText(decoded.rationale, 120, "track balanced enough to begin loop")
 		return { action = "begin_loop", rationale = rationale }, nil
+	end
+	if action ~= "submit_request" then
+		return nil, "invalid orchestrate response: action must be submit_request or begin_loop"
 	end
 	if not EDITABLE_SECTORS[decoded.sector_id] then
 		return nil, "invalid orchestrate response: sector_id must be an editable sector"
@@ -1258,6 +1265,7 @@ local function validateOrchestratorDecision(decoded): (OrchestratorDecision?, st
 		return nil, "invalid orchestrate response: " .. tostring(constraintsErr)
 	end
 	return {
+		action = "submit_request",
 		sector_id = decoded.sector_id,
 		mechanic = decoded.mechanic,
 		params_hint = coerceShortText(decoded.params_hint, 96, "") or "",

@@ -10,6 +10,8 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 
 type Request = Types.Request
+type PadValue = Types.PadValue
+type PadSide = Types.PadSide
 type SectorState = Types.SectorState
 type FailurePacket = Types.FailurePacket
 type AgentAction = Types.AgentAction
@@ -175,23 +177,55 @@ local function choose(packet: FailurePacket, candidates: { AgentAction }): (Agen
 	return nil, "no legal state-changing repair action available"
 end
 
-local function strongerBoost(current: string): string
-	return PadValueUtils.stronger("Boost", current)
+local function numericAction(lever: string, value: number): AgentAction
+	return {
+		type = "SetNumericLever",
+		lever = lever,
+		value = value,
+	}
 end
 
-local function strongerBrake(current: string): string
-	return PadValueUtils.stronger("Brake", current)
+local function normalizePadValue(value: string): PadValue
+	local normalized = PadValueUtils.normalize(value)
+	if normalized == "None" then
+		return "None"
+	elseif normalized == "Boost5" then
+		return "Boost5"
+	elseif normalized == "Boost10" then
+		return "Boost10"
+	elseif normalized == "Boost25" then
+		return "Boost25"
+	elseif normalized == "Boost50" then
+		return "Boost50"
+	elseif normalized == "Brake5" then
+		return "Brake5"
+	elseif normalized == "Brake10" then
+		return "Brake10"
+	elseif normalized == "Brake25" then
+		return "Brake25"
+	elseif normalized == "Brake50" then
+		return "Brake50"
+	end
+	error("invalid pad value: " .. tostring(value))
 end
 
-local function weakerBoost(current: string): string
-	return PadValueUtils.weaker("Boost", current)
+local function strongerBoost(current: PadValue): PadValue
+	return normalizePadValue(PadValueUtils.stronger("Boost", current))
 end
 
-local function weakerBrake(current: string): string
-	return PadValueUtils.weaker("Brake", current)
+local function strongerBrake(current: PadValue): PadValue
+	return normalizePadValue(PadValueUtils.stronger("Brake", current))
 end
 
-local function crestIngressBoost(current: string, entrySpeed: number?): string
+local function weakerBoost(current: PadValue): PadValue
+	return normalizePadValue(PadValueUtils.weaker("Boost", current))
+end
+
+local function weakerBrake(current: PadValue): PadValue
+	return normalizePadValue(PadValueUtils.weaker("Brake", current))
+end
+
+local function crestIngressBoost(current: PadValue, entrySpeed: number?): PadValue
 	local speed = entrySpeed or 0
 	if speed > 0 and speed <= Constants.CAR_TARGET_SPEED * 0.4 then
 		local normalized = PadValueUtils.normalize(current)
@@ -236,21 +270,13 @@ local function appendCrestTuneCandidates(
 
 	local function appendHeight()
 		if tunedHeight ~= currentHeight then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "height_or_depth",
-				value = tunedHeight,
-			})
+			table.insert(candidates, numericAction("height_or_depth", tunedHeight))
 		end
 	end
 
 	local function appendLength()
 		if tunedLength ~= currentLength then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "sector_length",
-				value = tunedLength,
-			})
+			table.insert(candidates, numericAction("sector_length", tunedLength))
 		end
 	end
 
@@ -408,26 +434,27 @@ function MinimalProposer.productionBaseline(
 end
 
 function MinimalProposer.initial(request: Request): (SectorState?, string?)
-	local committed = SectorRegistry.getCommitted(request.parsed.sector_id)
+	local parsed = request.parsed
+	local committed = SectorRegistry.getCommitted(parsed.sector_id)
 	if not committed then
-		return nil, "sector " .. tostring(request.parsed.sector_id) .. " is not editable"
+		return nil, "sector " .. tostring(parsed.sector_id) .. " is not editable"
 	end
 
-	if request.parsed.request_kind == "Pad" then
+	if parsed.request_kind == "Pad" then
 		local nextState = cloneState(committed)
-		nextState.pads[request.parsed.pad_side] = PadValueUtils.normalize(request.parsed.pad_value)
+		nextState.pads[parsed.pad_side] = PadValueUtils.normalize(parsed.pad_value)
 		return nextState, nil
 	end
 
 	local nextState = buildInitialState(
-		request.parsed.sector_id,
-		request.parsed.mechanic,
+		parsed.sector_id,
+		parsed.mechanic,
 		request.qualifiers,
 		committed.version,
 		request.design_intent
 	)
 	if nextState == nil then
-		return nil, "unsupported mechanic: " .. tostring(request.parsed.mechanic)
+		return nil, "unsupported mechanic: " .. tostring(parsed.mechanic)
 	end
 	return nextState, nil
 end
@@ -442,7 +469,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 	local state = packet.sector_state
 	local params = state.params
 	local metrics = packet.run_result.metrics
-	local candidates = {}
+	local candidates: { AgentAction } = {}
 	local explanation = "adjusted the target sector"
 
 	if state.mechanic == "RampJump" and failure.type == "downstream_failure" then

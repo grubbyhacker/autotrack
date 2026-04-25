@@ -23,6 +23,7 @@ local function makeRequest(mechanic, rawText)
 	local request, err = RequestParser.parse(rawText or "add a jump in sector 3", "test-request")
 	assert(request ~= nil, "expected valid request: " .. tostring(err))
 	if mechanic then
+		assert(request.parsed.request_kind == "Mechanic", "expected mechanic request fixture")
 		request.parsed.mechanic = mechanic
 	end
 	return request
@@ -72,8 +73,8 @@ function TestPhase6.runUnit()
 	T.expect(
 		"parser_qualifiers_extracted",
 		qualifierRequest ~= nil
-			and string.find(qualifiers, "really", 1, true)
-			and string.find(qualifiers, "tall", 1, true),
+			and string.find(qualifiers, "really", 1, true) ~= nil
+			and string.find(qualifiers, "tall", 1, true) ~= nil,
 		qualifiers
 	)
 

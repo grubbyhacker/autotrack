@@ -29,6 +29,8 @@ export type State =
 local JobStateMachine = {}
 JobStateMachine.__index = JobStateMachine
 
+export type JobStateMachine = typeof(setmetatable({} :: { state: State }, JobStateMachine))
+
 local LEGAL_TRANSITIONS = {
 	Idle = {
 		ParseRequest = true,
@@ -74,7 +76,7 @@ local LEGAL_TRANSITIONS = {
 	},
 }
 
-function JobStateMachine.new(): typeof(JobStateMachine)
+function JobStateMachine.new(): JobStateMachine
 	return setmetatable({
 		state = "Idle" :: State,
 	}, JobStateMachine)

@@ -1,7 +1,5 @@
 # Agent Handoff
-
 ## Phase completion status
-
 | Phase | Status |
 |-------|--------|
 | 1 | Complete — track generator, fixed corners, numbered editable straights, job lock, baseline lap |
@@ -39,17 +37,16 @@
 | 29 | Complete — hygiene ratchet to full `src/common` format/lint coverage with conservative `Types.luau` typecheck exclusion |
 | 30 | Complete — repo-wide Luau format/lint coverage, `typecheck-report`, and Phase 30 suite wiring with policy-aligned Phase 21 experiment assertions |
 | 31 | Complete — Roblox-aware Luau typecheck foundation: vendored Roblox definitions, generated Rojo sourcemap, pilot green subset expansion |
-
+| 32 | Complete — runtime/test cycle break via `TestSuiteRunner` seam, `/test` routing decoupled from `TestDispatcher`, and cycle-free analyzer graph |
+| 33 | Complete — narrow `TargetRuntimeMetrics` / target-snapshot contracts for runtime integrity evaluators, eliminating the `RunMetrics` mismatch bucket |
+| 34 | Complete — tagged `ParsedRequest` / `OrchestratorDecision` unions, explicit `submit_request` orchestration contract, and `AgentAction`-safe proposer repair candidates |
+| 35 | Complete — nilability cleanup, typed orchestrator test fixtures, and a fully green `make typecheck-report` |
 ## Current state
 
-- Public slash-command surface remains intentionally narrow: `/demo endurance|camera|rampitup|repair|llmerror|ui-hotfix`, `/test <suite>`, `/tune ...`.
-- Tune mode remains the Phase 21 lab: staged-by-default, controlled run batches, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
-- Phase 24 endurance verification profile is now two-stage for endurance-origin jobs: isolated sector vetting first, then one commit-lap gate before commit.
-- Phase 25 scoring/objective policy now treats pad usage as telemetry-only (no explicit score penalty) and ranks endurance candidates using realized committed outcomes plus a light mechanic exploration bonus.
-- Phase 26 Session HUD now reads commit-authoritative lap attrs (`committed_lap_time`/`committed_slowdown_ratio`) for `Last/%`, while per-sector committed scores move to Overview-only label annotations (`sector_<id>_committed_score`).
-- Phase 27 now shifts RampJump back toward high-risk/high-reward with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance backed by touchdown telemetry.
-- Phase 30 expands `make fmt`, `make fmt-check`, and `make lint` repo-wide across tracked `.luau` source under `src/` and `studio/`, keeps `make typecheck` conservative, and adds `make typecheck-report` as the non-gating full-repo analyzer backlog report.
-- Phase 31 replaces the old four-global analyzer shim with vendored Roblox definitions plus generated Rojo sourcemap analysis. `make typecheck` now includes `src/common/Types.luau`, `src/agent/ActionValidator.luau`, and `src/client/TrackCamera.client.luau` in the green subset, while `make typecheck-report` remains the non-gating full-repo backlog view.
+- Public slash-command surface remains intentionally narrow: `/demo endurance|camera|rampitup|repair|llmerror|ui-hotfix`, `/test <suite>`, `/tune ...`; tune mode remains the Phase 21 lab with staged-by-default runs, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
+- Endurance verification/objective state remains commit-authoritative: endurance-origin jobs still use isolated-sector vetting plus a commit lap, pad usage stays telemetry-only, and HUD `Last/%` reads committed lap attrs while per-sector committed scores stay Overview-only.
+- RampJump remains back in the high-risk/high-reward pool with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance.
+- The Luau hygiene/typecheck toolchain now uses repo-wide formatting/lint coverage, vendored Roblox definitions, and generated Rojo sourcemaps. Phase 32 removed the analyzer-visible runtime/test cycle bucket, Phase 33 replaced runtime-integrity `RunMetrics` overreach with narrow target-runtime contracts, Phase 34 converted proposer/orchestrator flows to explicit tagged unions, and Phase 35 cleared the nilability/fixture residue. `make typecheck-report` is now green.
 
 ## Hard-won invariants
 
@@ -58,6 +55,9 @@
 - The bridge CLI now has a queue lock (`tools/.autotrack_bridge.lock`) so accidental concurrent bridge commands serialize; keep runs intentionally sequential for fastest feedback.
 - The bridge boot-readiness gate is authoritative. Missing `runtime_context`, `ui_state`, `submit_event`, `track`, or `verifier_car` is a startup regression first.
 - Aggregate test gate modules must lazy-require child suites. Eager top-level requires can collapse boot via cycles.
+- Runtime slash-command modules must not require `TestDispatcher` directly. `/test` routing goes through `TestSuiteRunner`, and the real dispatcher is registered from server bootstrap scripts so tests can stub the seam without recreating analyzer cycles.
+- Mechanic `evaluateRuntime(...)` APIs now consume `Types.TargetRuntimeMetrics`, not full `RunMetrics`. If a caller only has `MetricCollector.getTargetMetrics()`, project that target snapshot into the prefixed runtime surface instead of fabricating full lap fields. `ParsedRequest` and `OrchestratorDecision` are also true tagged unions now: proposal-path orchestration must use `action = "submit_request"` explicitly instead of a missing `action` sentinel.
+- Keep `OrchestratorContext` strict. When tests need one, build it through a local typed helper with `memory = EnduranceMemory.new()` instead of omitting fields or weakening the shared type.
 - Mid-session Rojo reconnects remain untrustworthy for HUD/camera/tune validation. Stop Play, restart Play, retest.
 - Tune observability must stay structured. The authoritative proof of a candidate/pass is the replicated pass payloads (`tune_history_1`, `tune_last_pass_json`, `tune_last_batch_json`), not only summary attrs.
 - Tune mode is staged by default. Use `/tune run <n>` for controlled evaluation; only `/tune auto on` should restore continuous looping.
@@ -92,19 +92,9 @@
 - `make refactor_fast`
 - `make mechanics_regression`
 - `make test TEST=phase14_integration`
-- `make test TEST=phase21`
-- `make test TEST=phase21_unit`
-- `make test TEST=phase21_experiment`
-- `make test TEST=phase21_rampjump_torture`
-- `make test TEST=phase23`
-- `make test TEST=phase24`
-- `make test TEST=phase27`
-- `make fmt-check`
-- `make typecheck`
-- `make typecheck-report`
-- `make lint`
-- `make hygiene`
+- `make test TEST=phase21`, `make test TEST=phase21_unit`, `make test TEST=phase21_experiment`, `make test TEST=phase21_rampjump_torture`
+- `make test TEST=phase23`, `make test TEST=phase24`, `make test TEST=phase27`
+- `make fmt-check`, `make typecheck`, `make typecheck-report`, `make lint`, `make hygiene`
 - `make phase30`
 - `make test TEST=llm_trace_export`
-- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma-after-challenge-gate.json`
-- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=120 OUT=traces/endurance-gemma-after-challenge-gate-120.json`
+- `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma-after-challenge-gate.json`, `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=120 OUT=traces/endurance-gemma-after-challenge-gate-120.json`

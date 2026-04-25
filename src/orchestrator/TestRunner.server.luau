@@ -6,6 +6,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TestDispatcher = require(script.Parent.TestDispatcher)
+local TestSuiteRunner = require(script.Parent.TestSuiteRunner)
 
 local BRIDGE_EXPORT_REQUEST_ATTR = "AutoTrack_BridgeExportLLMTraceRequestId"
 local BRIDGE_EXPORT_RESULT_ATTR = "AutoTrack_BridgeExportLLMTraceResultId"
@@ -14,6 +15,10 @@ local BRIDGE_EXPORT_ERROR_ATTR = "AutoTrack_BridgeExportLLMTraceError"
 local testEvent = Instance.new("RemoteEvent")
 testEvent.Name = "AutoTrack_TestCmd"
 testEvent.Parent = ReplicatedStorage
+
+TestSuiteRunner.setRunner(function(suite)
+	return TestDispatcher.runSuite(suite)
+end)
 
 testEvent.OnServerEvent:Connect(function(_player, cmd)
 	TestDispatcher.runSuite(cmd)

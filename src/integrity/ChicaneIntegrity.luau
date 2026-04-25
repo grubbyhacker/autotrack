@@ -9,6 +9,7 @@ local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 
 type RunMetrics = Types.RunMetrics
+type TargetRuntimeMetrics = Types.TargetRuntimeMetrics
 type SectorState = Types.SectorState
 
 local ChicaneIntegrity = {}
@@ -49,7 +50,7 @@ function ChicaneIntegrity.preflight(state: SectorState): (boolean, { string })
 	return #hints == 0, hints
 end
 
-function ChicaneIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
+function ChicaneIntegrity.evaluateRuntime(metrics: TargetRuntimeMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local leftOffset = metrics.target_left_offset or 0
 	local rightOffset = metrics.target_right_offset or 0

@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StudioTestService = game:GetService("StudioTestService")
 
 local TestDispatcher = require(script.Parent.TestDispatcher)
+local TestSuiteRunner = require(script.Parent.TestSuiteRunner)
 local JobRunner = require(script.Parent.JobRunner)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 
@@ -68,6 +69,10 @@ local function waitForBootReady(timeoutSeconds: number): (boolean, string?)
 end
 
 local args = StudioTestService:GetTestArgs()
+
+TestSuiteRunner.setRunner(function(suite)
+	return TestDispatcher.runSuite(suite)
+end)
 
 if args ~= nil then
 	task.defer(function()

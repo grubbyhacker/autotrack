@@ -8,6 +8,7 @@ local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):Wait
 local RuntimeTuning = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("RuntimeTuning"))
 
 type RunMetrics = Types.RunMetrics
+type TargetRuntimeMetrics = Types.TargetRuntimeMetrics
 type SectorState = Types.SectorState
 
 local CrestDipIntegrity = {}
@@ -40,7 +41,7 @@ function CrestDipIntegrity.preflight(state: SectorState): (boolean, { string })
 	return #hints == 0, hints
 end
 
-function CrestDipIntegrity.evaluateRuntime(metrics: RunMetrics): (boolean, { string })
+function CrestDipIntegrity.evaluateRuntime(metrics: TargetRuntimeMetrics): (boolean, { string })
 	local hints: { string } = {}
 	local verticalDisplacement = metrics.target_vertical_displacement or metrics.vertical_displacement
 	local airborne = if metrics.target_airborne ~= nil then metrics.target_airborne else metrics.airborne
