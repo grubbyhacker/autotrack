@@ -1,3 +1,4 @@
+--!strict
 -- AttemptRunner.luau
 -- Runs one simulation attempt (apply sector → run verifier → collect result).
 -- prd_plan.md §7.3, Phase 6
@@ -17,8 +18,36 @@ local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local Tracer = require(script.Parent.Tracer)
 
 type SectorState = Types.SectorState
+type SectorMeta = Types.SectorMeta
 type RunResult = Types.RunResult
+type RunMetrics = Types.RunMetrics
+type FailureInfo = Types.FailureInfo
+type ChallengeScore = Types.ChallengeScore
 type AgentAction = Types.AgentAction
+type RunMode = "full_lap" | "isolated_sector"
+type RawRunResult = {
+	success: boolean,
+	failure: FailureInfo?,
+	metrics: RunMetrics,
+	failure_position: Vector3?,
+	final_position: Vector3?,
+	trajectory_tail: { Vector3 }?,
+	score: ChallengeScore?,
+	integrity_hints: { string }?,
+}
+
+type AttemptRunArgs = {
+	workingState: SectorState,
+	action: AgentAction?,
+	targetSectorId: number,
+	entryFrame: CFrame,
+	exitFrame: CFrame,
+	mode: RunMode?,
+	sectors: { SectorMeta },
+	car: BasePart,
+	canonicalStart: CFrame,
+	onSectorChange: ((number, boolean) -> ())?,
+}
 
 local AttemptRunner = {}
 
@@ -35,7 +64,7 @@ local function cloneState(state: SectorState): SectorState
 	}
 end
 
-local function applyAction(state: SectorState, action: AgentAction)
+local function applyAction(state: SectorState, action: AgentAction): ()
 	local ok, err = ActionValidator.validateAction(action, state.mechanic)
 	assert(ok, "AttemptRunner.applyAction: " .. tostring(err))
 
@@ -46,7 +75,7 @@ local function applyAction(state: SectorState, action: AgentAction)
 	end
 end
 
-local function getSectorMeta(sectors, targetSectorId: number)
+local function getSectorMeta(sectors: { SectorMeta }, targetSectorId: number): SectorMeta
 	for _, sector in ipairs(sectors) do
 		if sector.id == targetSectorId then
 			return sector
@@ -55,8 +84,13 @@ local function getSectorMeta(sectors, targetSectorId: number)
 	error("AttemptRunner.getSectorMeta: unknown sector " .. tostring(targetSectorId))
 end
 
-local function annotateLaunchOutlier(rawResult, runMode: string, targetSectorId: number, workingState)
-	local metrics = rawResult.metrics or {}
+local function annotateLaunchOutlier(
+	rawResult: RawRunResult,
+	runMode: RunMode,
+	targetSectorId: number,
+	workingState: SectorState
+): ()
+	local metrics = rawResult.metrics
 	local classification = LaunchOutlier.classify(metrics)
 	metrics.launch_outlier = classification.detected
 	metrics.launch_outlier_reasons = classification.reasons
@@ -82,9 +116,9 @@ local function annotateLaunchOutlier(rawResult, runMode: string, targetSectorId:
 	)
 end
 
-function AttemptRunner.run(args): (RunResult, { string }, SectorState)
+function AttemptRunner.run(args: AttemptRunArgs): (RunResult, { string }, SectorState)
 	local workingState = cloneState(args.workingState)
-	local runMode = args.mode or "full_lap"
+	local runMode: RunMode = args.mode or "full_lap"
 	if args.action then
 		applyAction(workingState, args.action)
 	end
@@ -96,7 +130,7 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 
 	SectorApplier.apply(workingState, args.entryFrame, args.exitFrame)
 
-	local waypoints, waypointSectors, sectorKinds
+	local waypoints: { CFrame }, waypointSectors: { number }?, sectorKinds: { [number]: string }?
 	if runMode == "isolated_sector" then
 		local targetSector = getSectorMeta(args.sectors, args.targetSectorId)
 		waypoints, waypointSectors, sectorKinds = TrackGenerator.getSectorPath(targetSector, workingState)
@@ -107,7 +141,7 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 			) * (targetSector.entry - targetSector.entry.Position)
 		)
 	else
-		local stateOverrides = {}
+		local stateOverrides: { [number]: SectorState } = {}
 		for _, state in ipairs(SectorRegistry.getStraights()) do
 			if state.mechanic ~= nil then
 				stateOverrides[state.sector_id] = state
@@ -132,7 +166,7 @@ function AttemptRunner.run(args): (RunResult, { string }, SectorState)
 		{
 			isolated_sector = runMode == "isolated_sector",
 		}
-	)
+	) :: RawRunResult
 	annotateLaunchOutlier(rawResult, runMode, args.targetSectorId, workingState)
 
 	local result, hints = LapEvaluator.evaluate(
