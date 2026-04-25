@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase1.luau
 -- Verifies Phase 1 deliverables: track geometry, car spawn height,
 -- sector registry state, job lock, and baseline lap completion.
@@ -22,7 +24,9 @@ function TestPhase1.run()
 		local sectors = track:GetChildren()
 		T.expect("track_sector_count", #sectors == 10, "expected 10 sectors, got " .. #sectors)
 
-		local straights, corners, badSectors = 0, 0, {}
+		local straights = 0
+		local corners = 0
+		local badSectors: { string } = {}
 		for _, folder in ipairs(sectors) do
 			local kind = folder:GetAttribute("SectorKind")
 			if kind == "Straight" then
@@ -62,8 +66,8 @@ function TestPhase1.run()
 
 	-- Car
 	local car = workspace:FindFirstChild("VerifierCar")
-	T.expect("car_spawned", car ~= nil, "VerifierCar not in workspace")
-	if car then
+	T.expect("car_spawned", car ~= nil and car:IsA("BasePart"), "VerifierCar not in workspace")
+	if car and car:IsA("BasePart") then
 		local y = car.Position.Y
 		T.expect(
 			"car_height",
@@ -106,11 +110,12 @@ function TestPhase1.run()
 	-- Baseline lap result (written by Main.server.luau)
 	local lapDone = workspace:GetAttribute("AutoTrack_BaselineLapDone")
 	local lapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime")
+	local lapTimeNumber = if type(lapTime) == "number" then lapTime else -1
 	T.expect("baseline_lap_done", lapDone == true, "AutoTrack_BaselineLapDone not true (main not ready?)")
 	T.expect(
 		"baseline_lap_time",
-		type(lapTime) == "number" and lapTime > 0 and lapTime < Constants.LAP_TIMEOUT,
-		string.format("lap time %.2f out of range", lapTime or -1)
+		lapTimeNumber > 0 and lapTimeNumber < Constants.LAP_TIMEOUT,
+		string.format("lap time %.2f out of range", lapTimeNumber)
 	)
 end
 
