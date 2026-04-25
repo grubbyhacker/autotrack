@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,10 +18,19 @@ local UIState = require(script.Parent.UIState)
 local T = require(script.Parent.TestUtils)
 
 type OrchestratorContext = Types.OrchestratorContext
+type OrchestratorAttempt = Types.OrchestratorAttempt
+type OrchestratorDecision = Types.OrchestratorDecision
+type OrchestratorSectorSnapshot = Types.OrchestratorSectorSnapshot
+type DesignIntent = Types.DesignIntent
+type FailurePacket = Types.FailurePacket
+type JsonObject = Types.JsonObject
+type Request = Types.Request
+type RunResult = Types.RunResult
+type SectorState = Types.SectorState
 
 local TestPhase23 = {}
 
-local function waitUntil(predicate, timeoutSeconds: number): boolean
+local function waitUntil(predicate: () -> boolean, timeoutSeconds: number): boolean
 	local deadline = os.clock() + timeoutSeconds
 	while os.clock() < deadline do
 		if predicate() then
@@ -49,24 +60,109 @@ local function cleanup()
 	UIState.publishReady()
 end
 
-local function decodeJson(value: string)
+local function decodeJsonObject(value: string): JsonObject?
 	if type(value) ~= "string" or value == "" then
 		return nil
 	end
 	local ok, decoded = pcall(function()
 		return HttpService:JSONDecode(value)
 	end)
-	if ok then
-		return decoded
+	if ok and type(decoded) == "table" then
+		return decoded :: JsonObject
 	end
 	return nil
 end
 
-local function summaryText(state): string
+local function objectField(object: JsonObject, name: string): JsonObject?
+	local value = object[name]
+	if type(value) == "table" then
+		return value :: JsonObject
+	end
+	return nil
+end
+
+local function numberField(object: JsonObject, name: string): number?
+	local value = object[name]
+	if type(value) == "number" then
+		return value
+	end
+	return nil
+end
+
+local function stringField(object: JsonObject, name: string): string?
+	local value = object[name]
+	if type(value) == "string" then
+		return value
+	end
+	return nil
+end
+
+local function getStringAttribute(instance: Instance, name: string): string
+	local value = instance:GetAttribute(name)
+	if type(value) == "string" then
+		return value
+	end
+	return ""
+end
+
+local function getNumberAttribute(instance: Instance, name: string): number
+	local value = instance:GetAttribute(name)
+	if type(value) == "number" then
+		return value
+	end
+	return 0
+end
+
+local function decodeTuneBaselineSnapshot(value: string): (number?, number?, string?, string?)
+	local decoded = decodeJsonObject(value)
+	if decoded == nil then
+		return nil, nil, nil, nil
+	end
+	local params = objectField(decoded, "params")
+	local pads = objectField(decoded, "pads")
+	if params == nil or pads == nil then
+		return nil, nil, nil, nil
+	end
+	return numberField(params, "ramp_angle"),
+		numberField(params, "gap_length"),
+		stringField(pads, "ingress"),
+		stringField(pads, "egress")
+end
+
+local function comparePayloadHasExpectedShape(value: string): boolean
+	local decoded = decodeJsonObject(value)
+	if decoded == nil then
+		return false
+	end
+	local baseline = objectField(decoded, "baseline")
+	local candidate = objectField(decoded, "candidate")
+	local summary = objectField(decoded, "summary")
+	local candidateAggregate = candidate and objectField(candidate, "aggregate") or nil
+	return baseline ~= nil
+		and candidate ~= nil
+		and summary ~= nil
+		and stringField(baseline, "label") == "production_baseline"
+		and string.find(tostring(stringField(candidate, "label") or ""), "candidate_v", 1, true) ~= nil
+		and candidateAggregate ~= nil
+		and numberField(candidateAggregate, "average_challenge_total") ~= nil
+end
+
+local function promotionSnapshotHasExpectedShape(value: string, expectedCandidateVersion: number): boolean
+	local decoded = decodeJsonObject(value)
+	if decoded == nil then
+		return false
+	end
+	return objectField(decoded, "compare") ~= nil
+		and objectField(decoded, "state") ~= nil
+		and objectField(decoded, "attrs") ~= nil
+		and numberField(decoded, "candidate_version") == expectedCandidateVersion
+end
+
+local function summaryText(state: SectorState?): string
 	if state == nil or state.mechanic == nil then
 		return "flat"
 	end
-	local parts = {}
+	local parts: { string } = {}
 	for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic] or {}) do
 		local value = state.params[lever]
 		if type(value) == "number" then
@@ -79,33 +175,35 @@ local function summaryText(state): string
 end
 
 local function makeContext(): OrchestratorContext
-	return TestFactories.orchestratorContext({
-		sector_states = {
-			[2] = { mechanic = "RampJump", params = {}, score = 24 },
-			[3] = { mechanic = nil, params = {}, score = 0 },
-			[4] = { mechanic = nil, params = {}, score = 0 },
-			[7] = { mechanic = "Chicane", params = {}, score = 18 },
-			[8] = { mechanic = "CrestDip", params = {}, score = 20 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
+	local sectorStates: { [number]: OrchestratorSectorSnapshot } = {
+		[2] = { mechanic = "RampJump", params = {}, score = 24 },
+		[3] = { mechanic = nil, params = {}, score = 0 },
+		[4] = { mechanic = nil, params = {}, score = 0 },
+		[7] = { mechanic = "Chicane", params = {}, score = 18 },
+		[8] = { mechanic = "CrestDip", params = {}, score = 20 },
+		[9] = { mechanic = nil, params = {}, score = 0 },
+	}
+	local attemptHistory: { OrchestratorAttempt } = {
+		{
+			sector_id = 2,
+			mechanic = "RampJump",
+			params_hint = "safe long",
+			normalized_signature = "s2|RampJump|safe long",
+			outcome = "reverted",
+			score = 0,
+			slowdown_ratio = 1.05,
+			failure_signature = "no_progress@s2|RampJump|safe long",
+			repair_iterations = 3,
+			decision_index = 1,
+			timestamp = 1,
 		},
+	}
+	return TestFactories.orchestratorContext({
+		sector_states = sectorStates,
 		budget = { used = 0.32, over_budget = false },
 		attempt_budget = { used = 2, total = Constants.ENDURANCE_ATTEMPT_BUDGET },
 		last_result = nil,
-		attempt_history = {
-			{
-				sector_id = 2,
-				mechanic = "RampJump",
-				params_hint = "safe long",
-				normalized_signature = "s2|RampJump|safe long",
-				outcome = "reverted",
-				score = 0,
-				slowdown_ratio = 1.05,
-				failure_signature = "no_progress@s2|RampJump|safe long",
-				repair_iterations = 3,
-				decision_index = 1,
-				timestamp = 1,
-			},
-		},
+		attempt_history = attemptHistory,
 		sector_attempt_counts = { [2] = 2 },
 		mechanic_repeat_pressure = {
 			["s2|RampJump|safe long"] = 2,
@@ -132,21 +230,22 @@ local function testProductionBaselineReset()
 	T.expect("phase23_tune_rampjump_starts", startOk == true and startErr == nil and started, tostring(startErr))
 
 	local expectedBaseline, baselineErr = MinimalProposer.productionBaseline(3, "RampJump", {})
-	local baselineSnapshot = decodeJson(stateFolder:GetAttribute("tune_baseline_snapshot") or "")
+	local baselineSnapshotText = getStringAttribute(stateFolder, "tune_baseline_snapshot")
+	local baselineRampAngle, baselineGapLength, baselineIngress, baselineEgress =
+		decodeTuneBaselineSnapshot(baselineSnapshotText)
 	T.expect(
 		"phase23_production_baseline_snapshot_matches_proposer_baseline",
 		expectedBaseline ~= nil
 			and baselineErr == nil
-			and baselineSnapshot ~= nil
-			and baselineSnapshot.params.ramp_angle == expectedBaseline.params.ramp_angle
-			and baselineSnapshot.params.gap_length == expectedBaseline.params.gap_length
-			and baselineSnapshot.pads.ingress == expectedBaseline.pads.ingress
-			and baselineSnapshot.pads.egress == expectedBaseline.pads.egress
+			and baselineRampAngle == expectedBaseline.params.ramp_angle
+			and baselineGapLength == expectedBaseline.params.gap_length
+			and baselineIngress == expectedBaseline.pads.ingress
+			and baselineEgress == expectedBaseline.pads.egress
 			and expectedBaseline.pads.ingress == "None"
 			and expectedBaseline.pads.egress == "None",
 		HttpService:JSONEncode({
 			expected = expectedBaseline,
-			baseline = baselineSnapshot,
+			baseline = baselineSnapshotText,
 		})
 	)
 
@@ -162,9 +261,9 @@ local function testProductionBaselineReset()
 	T.expect(
 		"phase23_tune_reset_restores_production_baseline",
 		expectedBaseline ~= nil
-			and (stateFolder:GetAttribute("tune_param_summary") or "") == summaryText(expectedBaseline)
-			and (stateFolder:GetAttribute("tune_attr_summary") or "") == ""
-			and (stateFolder:GetAttribute("tune_active_target_speed") or 0) == 0
+			and getStringAttribute(stateFolder, "tune_param_summary") == summaryText(expectedBaseline)
+			and getStringAttribute(stateFolder, "tune_attr_summary") == ""
+			and getNumberAttribute(stateFolder, "tune_active_target_speed") == 0
 			and workspace:GetAttribute("AutoTrack_CarTargetSpeed") == nil,
 		HttpService:JSONEncode({
 			summary = stateFolder:GetAttribute("tune_param_summary"),
@@ -216,34 +315,25 @@ local function testCompareAndPromote()
 	T.expect("phase23_tune_compare_accepted", compareOk == true and compareErr == nil, tostring(compareErr))
 	local compareDone = waitUntil(function()
 		return stateFolder:GetAttribute("tune_run_in_flight") == false
-			and (stateFolder:GetAttribute("tune_last_compare_json") or "") ~= ""
+			and getStringAttribute(stateFolder, "tune_last_compare_json") ~= ""
 	end, 20)
-	local comparePayload = decodeJson(stateFolder:GetAttribute("tune_last_compare_json") or "")
+	local comparePayloadText = getStringAttribute(stateFolder, "tune_last_compare_json")
 	T.expect(
 		"phase23_tune_compare_publishes_baseline_and_candidate_summary",
-		compareDone
-			and comparePayload ~= nil
-			and comparePayload.baseline ~= nil
-			and comparePayload.candidate ~= nil
-			and comparePayload.summary ~= nil
-			and comparePayload.baseline.label == "production_baseline"
-			and string.find(tostring(comparePayload.candidate.label or ""), "candidate_v", 1, true) ~= nil
-			and comparePayload.candidate.aggregate ~= nil
-			and comparePayload.candidate.aggregate.average_challenge_total ~= nil,
-		HttpService:JSONEncode(comparePayload or {})
+		compareDone and comparePayloadHasExpectedShape(comparePayloadText),
+		comparePayloadText
 	)
 
 	local promoteOk, promoteErr = JobRunner.submit("/tune promote")
 	T.expect("phase23_tune_promote_accepted", promoteOk == true and promoteErr == nil, tostring(promoteErr))
-	local promotionSnapshot = decodeJson(stateFolder:GetAttribute("tune_promotion_snapshot") or "")
+	local promotionSnapshotText = getStringAttribute(stateFolder, "tune_promotion_snapshot")
 	T.expect(
 		"phase23_tune_promote_publishes_explicit_snapshot",
-		promotionSnapshot ~= nil
-			and promotionSnapshot.compare ~= nil
-			and promotionSnapshot.state ~= nil
-			and promotionSnapshot.attrs ~= nil
-			and promotionSnapshot.candidate_version == stateFolder:GetAttribute("tune_candidate_version"),
-		HttpService:JSONEncode(promotionSnapshot or {})
+		promotionSnapshotHasExpectedShape(
+			promotionSnapshotText,
+			getNumberAttribute(stateFolder, "tune_candidate_version")
+		),
+		promotionSnapshotText
 	)
 
 	local stopOk, stopErr = JobRunner.submit("/tune stop")
@@ -254,7 +344,7 @@ local function testCompareAndPromote()
 end
 
 local function testPromptAndObjectiveShift()
-	local designIntent = {
+	local designIntent: DesignIntent = {
 		sector_id = 3,
 		mechanic = "RampJump",
 		params_hint = "tight fast",
@@ -268,7 +358,7 @@ local function testPromptAndObjectiveShift()
 		desired_feel = "scoreable but recoverable",
 		constraints = { "stay within endurance budget" },
 	}
-	local request = {
+	local request: Request = {
 		request_id = "phase23-proposal",
 		raw_text = "add a jump in sector 3",
 		parsed = {
@@ -299,7 +389,7 @@ local function testPromptAndObjectiveShift()
 		proposalUser
 	)
 
-	local challengeMessages = PromptBuilder.challengeUpMessages(request, {
+	local challengeContext: Types.ChallengeUpContext = {
 		baseline_state = {
 			sector_id = 3,
 			mechanic = "RampJump",
@@ -355,7 +445,8 @@ local function testPromptAndObjectiveShift()
 		target_score_floor = 8.5,
 		reason = "clean pass scored 5.2 with 82% budget headroom, below the high target floor of 8.5",
 		max_additional_repairs = 2,
-	}, designIntent)
+	}
+	local challengeMessages = PromptBuilder.challengeUpMessages(request, challengeContext, designIntent)
 	local challengeUser = challengeMessages[2].content
 	T.expect(
 		"phase23_challenge_up_prompt_uses_hard_telemetry_and_do_over_language",
@@ -366,7 +457,7 @@ local function testPromptAndObjectiveShift()
 		challengeUser
 	)
 
-	local repairMessages = PromptBuilder.repairMessages(request, {}, {
+	local repairPacket: FailurePacket = {
 		request = request,
 		sector_state = {
 			sector_id = 3,
@@ -416,7 +507,8 @@ local function testPromptAndObjectiveShift()
 		},
 		design_intent = nil,
 		memory_context = TestFactories.emptyMemory(),
-	}, nil)
+	}
+	local repairMessages = PromptBuilder.repairMessages(request, {}, repairPacket, nil)
 	local repairSystem = repairMessages[1].content
 	T.expect(
 		"phase23_repair_prompt_preserves_challenge_language",
@@ -435,7 +527,7 @@ local function testPromptAndObjectiveShift()
 		orchestratorSystem
 	)
 
-	local conservativeRequest = {
+	local conservativeRequest: Request = {
 		request_id = "phase23-conservative",
 		raw_text = "add a chicane in sector 3",
 		parsed = {
@@ -464,7 +556,7 @@ local function testPromptAndObjectiveShift()
 		memory_context = TestFactories.emptyMemory(),
 		timestamp = 0,
 	}
-	local riskyRequest = {
+	local riskyRequest: Request = {
 		request_id = "phase23-risky",
 		raw_text = "add a chicane in sector 3",
 		parsed = {
@@ -509,7 +601,7 @@ local function testPromptAndObjectiveShift()
 	)
 
 	local context = makeContext()
-	local repeatedDecision = {
+	local repeatedDecision: OrchestratorDecision = {
 		action = "submit_request",
 		sector_id = 2,
 		mechanic = "RampJump",
@@ -524,7 +616,7 @@ local function testPromptAndObjectiveShift()
 		desired_feel = "safe repeat",
 		constraints = { "stay stable" },
 	}
-	local upsideDecision = {
+	local upsideDecision: OrchestratorDecision = {
 		action = "submit_request",
 		sector_id = 3,
 		mechanic = "Chicane",
@@ -552,7 +644,7 @@ local function testPromptAndObjectiveShift()
 	)
 
 	local repairedSuccessContext = makeContext()
-	repairedSuccessContext.attempt_history = {
+	local repairedSuccessAttempts: { OrchestratorAttempt } = {
 		{
 			sector_id = 3,
 			mechanic = "Chicane",
@@ -567,11 +659,12 @@ local function testPromptAndObjectiveShift()
 			timestamp = 1,
 		},
 	}
+	repairedSuccessContext.attempt_history = repairedSuccessAttempts
 	repairedSuccessContext.sector_attempt_counts = { [3] = 1 }
 	repairedSuccessContext.mechanic_repeat_pressure = {}
 
 	local cleanSuccessContext = makeContext()
-	cleanSuccessContext.attempt_history = {
+	local cleanSuccessAttempts: { OrchestratorAttempt } = {
 		{
 			sector_id = 3,
 			mechanic = "Chicane",
@@ -586,6 +679,7 @@ local function testPromptAndObjectiveShift()
 			timestamp = 1,
 		},
 	}
+	cleanSuccessContext.attempt_history = cleanSuccessAttempts
 	cleanSuccessContext.sector_attempt_counts = { [3] = 1 }
 	cleanSuccessContext.mechanic_repeat_pressure = {}
 
@@ -603,7 +697,7 @@ local function testPromptAndObjectiveShift()
 	)
 
 	local failureHeavyContext = makeContext()
-	failureHeavyContext.attempt_history = {
+	local failureHeavyAttempts: { OrchestratorAttempt } = {
 		{
 			sector_id = 3,
 			mechanic = "Chicane",
@@ -618,6 +712,7 @@ local function testPromptAndObjectiveShift()
 			timestamp = 1,
 		},
 	}
+	failureHeavyContext.attempt_history = failureHeavyAttempts
 	failureHeavyContext.sector_attempt_counts = { [3] = 1 }
 	failureHeavyContext.mechanic_repeat_pressure = {}
 
@@ -638,7 +733,7 @@ local function testPromptAndObjectiveShift()
 		})
 	)
 
-	local enduranceChallengeResult = {
+	local enduranceChallengeResult: RunResult = {
 		success = true,
 		metrics = {
 			entry_speed = 88,
