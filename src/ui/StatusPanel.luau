@@ -1,19 +1,29 @@
+--!strict
+
 local TweenService = game:GetService("TweenService")
 
 local HUDRegistry = require(script.Parent.HUDRegistry)
 
+type HUDRefs = HUDRegistry.HUDRefs
+type TweenPropertyValue = number | Color3 | UDim | UDim2 | Vector2
+type TweenPropertyTable = { [string]: TweenPropertyValue }
+type DetailState = {
+	explanation: string,
+	action: string,
+}
+
 local StatusPanel = {}
-local _detailState = {
+local _detailState: DetailState = {
 	explanation = "",
 	action = "",
 }
 local _repairCalloutRevision = 0
 
-local function refs()
+local function refs(): HUDRefs
 	return HUDRegistry.get()
 end
 
-local function tween(instance: Instance, duration: number, propertyTable)
+local function tween(instance: Instance, duration: number, propertyTable: TweenPropertyTable): Tween
 	local animation = TweenService:Create(
 		instance,
 		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
