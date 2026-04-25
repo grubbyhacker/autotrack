@@ -1,3 +1,4 @@
+--!strict
 -- VerifierCar.luau
 -- Owns the single verifier car BasePart in the Workspace.
 -- prd_plan.md §6.2, Phase 1 baseline slice
@@ -12,7 +13,16 @@ pcall(function()
 	PhysicsService:RegisterCollisionGroup("VerifierCar")
 end)
 
-local VerifierCar = {}
+type VerifierCarModule = {
+	spawn: (startCFrame: CFrame) -> BasePart,
+	reset: (startCFrame: CFrame) -> (),
+	freeze: () -> (),
+	thaw: () -> (),
+	destroy: () -> (),
+	getPart: () -> BasePart,
+}
+
+local VerifierCar: VerifierCarModule = {} :: VerifierCarModule
 
 local _part: BasePart? = nil
 
@@ -57,7 +67,7 @@ local function weldVisual(
 	return part
 end
 
-local function buildVisualShell(root: BasePart)
+local function buildVisualShell(root: BasePart): ()
 	local floor = weldVisual(root, "BodyFloor", Vector3.new(2.8, 0.5, 6.2), CFrame.new(0, -0.2, 0), BODY_RED)
 	weldVisual(root, "Nose", Vector3.new(1.2, 0.45, 2.8), CFrame.new(0, -0.1, -2.7), BODY_RED)
 	weldVisual(root, "NoseTip", Vector3.new(0.55, 0.35, 1.2), CFrame.new(0, -0.08, -4.2), ACCENT)
@@ -120,7 +130,7 @@ function VerifierCar.spawn(startCFrame: CFrame): BasePart
 	return part
 end
 
-function VerifierCar.reset(startCFrame: CFrame)
+function VerifierCar.reset(startCFrame: CFrame): ()
 	local part = VerifierCar.getPart()
 	part.Anchored = false
 	part.CFrame = startCFrame
@@ -128,19 +138,19 @@ function VerifierCar.reset(startCFrame: CFrame)
 	part.AssemblyAngularVelocity = Vector3.zero
 end
 
-function VerifierCar.freeze()
+function VerifierCar.freeze(): ()
 	local part = VerifierCar.getPart()
 	part.AssemblyLinearVelocity = Vector3.zero
 	part.AssemblyAngularVelocity = Vector3.zero
 	part.Anchored = true
 end
 
-function VerifierCar.thaw()
+function VerifierCar.thaw(): ()
 	local part = VerifierCar.getPart()
 	part.Anchored = false
 end
 
-function VerifierCar.destroy()
+function VerifierCar.destroy(): ()
 	if _part then
 		_part:Destroy()
 		_part = nil
@@ -148,8 +158,9 @@ function VerifierCar.destroy()
 end
 
 function VerifierCar.getPart(): BasePart
-	assert(_part, "VerifierCar not spawned")
-	return _part
+	local part = _part
+	assert(part, "VerifierCar not spawned")
+	return part
 end
 
 return VerifierCar
