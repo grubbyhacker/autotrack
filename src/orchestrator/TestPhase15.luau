@@ -1,3 +1,5 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
@@ -79,18 +81,17 @@ end
 
 function TestPhase15.run()
 	local sector = getSectorMeta(TARGET_SECTOR_ID)
+	local rampAngle = 60
+	local rampLength = 36
+	local gapLength = 8
+	local landingLength = 18
 	local state = makeState({
-		ramp_angle = 60,
-		ramp_length = 36,
-		gap_length = 8,
-		landing_length = 18,
+		ramp_angle = rampAngle,
+		ramp_length = rampLength,
+		gap_length = gapLength,
+		landing_length = landingLength,
 	})
-	local profile = RampJumpPath.buildProfile(
-		state.params.ramp_angle,
-		state.params.ramp_length,
-		state.params.gap_length,
-		state.params.landing_length
-	)
+	local profile = RampJumpPath.buildProfile(rampAngle, rampLength, gapLength, landingLength)
 
 	SectorApplier.apply(state, sector.entry, sector.exit)
 
@@ -169,18 +170,13 @@ function TestPhase15.run()
 			firstSlopedAngle > 1
 				and maxSlopedAngle > firstSlopedAngle + 20
 				and firstSlopedAngle < maxSlopedAngle * 0.35
-				and maxSlopedAngle >= state.params.ramp_angle - 4
-				and maxSlopedAngle <= state.params.ramp_angle + 10,
-			string.format(
-				"firstSloped=%.2f maxSloped=%.2f target=%d",
-				firstSlopedAngle,
-				maxSlopedAngle,
-				state.params.ramp_angle
-			)
+				and maxSlopedAngle >= rampAngle - 4
+				and maxSlopedAngle <= rampAngle + 10,
+			string.format("firstSloped=%.2f maxSloped=%.2f target=%d", firstSlopedAngle, maxSlopedAngle, rampAngle)
 		)
 		T.expect(
 			"phase15_rampjump_preserves_only_designed_gap",
-			largestGap >= state.params.gap_length - 1.0 and continuityOk,
+			largestGap >= gapLength - 1.0 and continuityOk,
 			string.format(
 				"largestGap=%.2f continuity=%s %s",
 				largestGap,
@@ -216,7 +212,7 @@ function TestPhase15.run()
 		end
 		local firstWaypoint = sectorWaypoints[1]
 		local lastWaypoint = sectorWaypoints[#sectorWaypoints]
-		local lastLocal = nil
+		local lastLocal: Vector3? = nil
 		if lastWaypoint ~= nil then
 			local rawLastLocal = sector.entry:PointToObjectSpace(lastWaypoint.Position)
 			lastLocal = Vector3.new(rawLastLocal.X, rawLastLocal.Y, -rawLastLocal.Z)
