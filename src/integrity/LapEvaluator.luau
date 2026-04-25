@@ -1,3 +1,5 @@
+--!strict
+
 -- LapEvaluator.luau
 -- Combines mechanic integrity and full-lap run outcome into a RunResult.
 -- prd_plan.md §7.5, §11.1, Phase 5
@@ -15,6 +17,9 @@ type SectorState = Types.SectorState
 type RunMetrics = Types.RunMetrics
 type RunResult = Types.RunResult
 type FailureInfo = Types.FailureInfo
+type ExtraDiagnostics = {
+	downstream_sector_state: SectorState?,
+}
 
 local LapEvaluator = {}
 
@@ -198,10 +203,10 @@ function LapEvaluator.buildFailurePacket(
 	result: RunResult,
 	failureSector: number,
 	hints: { string },
-	extraDiagnostics
+	extraDiagnostics: ExtraDiagnostics?
 ): Types.FailurePacket
 	local legalLevers = if state.mechanic ~= nil then LevelMappings.NUMERIC_LEVERS[state.mechanic] else {}
-	local diagnosticHints = {}
+	local diagnosticHints: { string } = {}
 	for _, hint in ipairs(hints) do
 		table.insert(diagnosticHints, hint)
 	end
@@ -231,7 +236,7 @@ function LapEvaluator.buildFailurePacket(
 		end
 	end
 
-	local diagnostics = {
+	local diagnostics: Types.Diagnostics = {
 		failure_sector = failureSector,
 		hints = diagnosticHints,
 		failure_type = result.failure and result.failure.type or nil,
@@ -242,10 +247,8 @@ function LapEvaluator.buildFailurePacket(
 		target_airtime_distance = result.metrics.target_airtime_distance,
 		target_apex_min_speed = result.metrics.target_apex_min_speed,
 	}
-	if type(extraDiagnostics) == "table" then
-		for key, value in pairs(extraDiagnostics) do
-			diagnostics[key] = value
-		end
+	if extraDiagnostics ~= nil then
+		diagnostics.downstream_sector_state = extraDiagnostics.downstream_sector_state
 	end
 
 	return {
