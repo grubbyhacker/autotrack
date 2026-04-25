@@ -1,3 +1,5 @@
+--!strict
+
 -- FailureDetector.luau
 -- Watches for definitive run failures and terminates the run immediately.
 -- prd_plan.md §6.5, §12, Phase 3
