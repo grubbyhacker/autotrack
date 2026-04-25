@@ -1,9 +1,138 @@
+--!strict
+
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
 
 local HUDRegistry = {}
 
-local _refs = nil
+type TweenPropertyValue = number | Color3 | UDim | UDim2 | Vector2
+type TweenPropertyTable = { [string]: TweenPropertyValue }
+
+type FrameProps = {
+	Size: UDim2,
+	Position: UDim2,
+	AnchorPoint: Vector2?,
+	BackgroundColor3: Color3?,
+	BackgroundTransparency: number?,
+	ZIndex: number?,
+}
+
+type LabelProps = {
+	Size: UDim2,
+	Position: UDim2,
+	AnchorPoint: Vector2?,
+	Text: string?,
+	TextColor3: Color3?,
+	TextTransparency: number?,
+	TextSize: number?,
+	Font: Enum.Font?,
+	TextXAlignment: Enum.TextXAlignment?,
+	TextYAlignment: Enum.TextYAlignment?,
+	RichText: boolean?,
+	TextWrapped: boolean?,
+	TextTruncate: Enum.TextTruncate?,
+	ClipsDescendants: boolean?,
+	Visible: boolean?,
+	ZIndex: number?,
+}
+
+type ButtonProps = {
+	Size: UDim2,
+	Position: UDim2,
+	AnchorPoint: Vector2?,
+	Text: string?,
+	TextColor3: Color3?,
+	TextSize: number?,
+	Font: Enum.Font?,
+	BackgroundColor3: Color3?,
+	BackgroundTransparency: number?,
+	ZIndex: number?,
+}
+
+type TextBoxProps = {
+	Size: UDim2,
+	Position: UDim2,
+	AnchorPoint: Vector2?,
+	PlaceholderText: string?,
+	Text: string?,
+	TextColor3: Color3?,
+	TextSize: number?,
+	Font: Enum.Font?,
+	TextXAlignment: Enum.TextXAlignment?,
+	TextYAlignment: Enum.TextYAlignment?,
+	TextWrapped: boolean?,
+	TextTruncate: Enum.TextTruncate?,
+	MultiLine: boolean?,
+	ClearTextOnFocus: boolean?,
+	TextEditable: boolean?,
+	BackgroundColor3: Color3?,
+	BackgroundTransparency: number?,
+	AutomaticSize: Enum.AutomaticSize?,
+	ZIndex: number?,
+}
+
+export type HUDRefs = {
+	gui: ScreenGui,
+	overlayGui: ScreenGui,
+	llmWarning: Frame,
+	llmWarningLabel: TextLabel,
+	llmDock: Frame,
+	llmModelLabel: TextLabel,
+	llmPrevButton: TextButton,
+	llmNextButton: TextButton,
+	phaseLabel: TextLabel,
+	requestLabel: TextLabel,
+	repairCallout: Frame,
+	repairCalloutLabel: TextLabel,
+	repairBanner: Frame,
+	repairLabel: TextLabel,
+	enduranceBadge: Frame,
+	enduranceBadgeLabel: TextLabel,
+	hotfixBadge: Frame,
+	hotfixBadgeLabel: TextLabel,
+	reasoningLabel: TextLabel,
+	reasoningActionLabel: TextLabel,
+	inputBox: TextBox,
+	submitButton: TextButton,
+	baselineLabel: TextLabel,
+	lastLapLabel: TextLabel,
+	slowdownLabel: TextLabel,
+	scoreLabel: TextLabel,
+	memoryPanel: Frame,
+	memoryLabel: TextLabel,
+	speedLabel: TextLabel,
+	speedValueLabel: TextLabel,
+	headingLabel: TextLabel,
+	headingValueLabel: TextLabel,
+	pitchLabel: TextLabel,
+	pitchValueLabel: TextLabel,
+	logContainer: Frame,
+	logButton: TextButton,
+	logOverlay: Frame,
+	logCloseButton: TextButton,
+	logScroll: ScrollingFrame,
+	logTextBox: TextBox,
+	overviewButton: TextButton,
+	setBaselineButton: TextButton,
+	topLeftStroke: UIStroke,
+	failureBanner: Frame,
+	failureBannerLabel: TextLabel,
+	hotfixBanner: Frame,
+	hotfixBannerLabel: TextLabel,
+	colors: {
+		amber: Color3,
+		amberSoft: Color3,
+		steel: Color3,
+		steelLight: Color3,
+		danger: Color3,
+		success: Color3,
+		text: Color3,
+		muted: Color3,
+	},
+	tweenFlash: (Instance, TweenPropertyTable) -> (),
+}
+
+local _refs: HUDRefs? = nil
 
 local AMBER = Color3.fromRGB(255, 191, 94)
 local AMBER_SOFT = Color3.fromRGB(255, 219, 158)
@@ -38,7 +167,7 @@ local function addStroke(parent: Instance, color: Color3, transparency: number)
 	stroke.Parent = parent
 end
 
-local function createFrame(parent: Instance, props)
+local function createFrame(parent: Instance, props: FrameProps): Frame
 	local frame = Instance.new("Frame")
 	frame.BackgroundColor3 = props.BackgroundColor3 or PANEL
 	frame.BackgroundTransparency = props.BackgroundTransparency or 0
@@ -53,7 +182,7 @@ local function createFrame(parent: Instance, props)
 	return frame
 end
 
-local function createLabel(parent: Instance, props)
+local function createLabel(parent: Instance, props: LabelProps): TextLabel
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.Size = props.Size
@@ -77,7 +206,7 @@ local function createLabel(parent: Instance, props)
 	return label
 end
 
-local function createButton(parent: Instance, props)
+local function createButton(parent: Instance, props: ButtonProps): TextButton
 	local button = Instance.new("TextButton")
 	button.BackgroundColor3 = props.BackgroundColor3 or PANEL_SOFT
 	button.BackgroundTransparency = props.BackgroundTransparency or 0
@@ -97,7 +226,7 @@ local function createButton(parent: Instance, props)
 	return button
 end
 
-local function createTextBox(parent: Instance, props)
+local function createTextBox(parent: Instance, props: TextBoxProps): TextBox
 	local box = Instance.new("TextBox")
 	box.BackgroundColor3 = props.BackgroundColor3 or PANEL
 	box.BorderSizePixel = 0
@@ -127,7 +256,7 @@ local function createTextBox(parent: Instance, props)
 	return box
 end
 
-local function tweenFlash(instance: Instance, propertyTable)
+local function tweenFlash(instance: Instance, propertyTable: TweenPropertyTable)
 	local tween = TweenService:Create(
 		instance,
 		TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -820,7 +949,7 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		end
 	end)
 
-	_refs = {
+	local refs: HUDRefs = {
 		gui = gui,
 		overlayGui = overlayGui,
 		llmWarning = llmWarning,
@@ -881,12 +1010,14 @@ function HUDRegistry.mount(playerGui: PlayerGui, onSubmit: (string) -> ())
 		tweenFlash = tweenFlash,
 	}
 
-	return _refs
+	_refs = refs
+	return refs
 end
 
 function HUDRegistry.get()
-	assert(_refs ~= nil, "HUDRegistry not mounted")
-	return _refs
+	local refs = _refs
+	assert(refs ~= nil, "HUDRegistry not mounted")
+	return refs
 end
 
 return HUDRegistry
