@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 
 local T = require(script.Parent.TestUtils)
@@ -12,6 +14,13 @@ local TuneMode = require(script.Parent.TuneMode)
 local UIState = require(script.Parent.UIState)
 
 local TestPhase22 = {}
+
+type CapturedEnduranceArgs = {
+	submit: unknown,
+	submitDesignIntent: unknown,
+	getLastJob: unknown,
+	isCameraDemoActive: unknown,
+}
 
 local function waitUntil(predicate, timeoutSeconds: number): boolean
 	local deadline = os.clock() + timeoutSeconds
@@ -347,9 +356,9 @@ local function runEnduranceEntry()
 	local originalRun = OrchestratorAgent.run
 	local captured = {
 		called = false,
-		args = nil,
+		args = nil :: CapturedEnduranceArgs?,
 	}
-	OrchestratorAgent.run = function(args)
+	OrchestratorAgent.run = function(args: CapturedEnduranceArgs)
 		captured.called = true
 		captured.args = args
 		return true, nil
@@ -359,14 +368,16 @@ local function runEnduranceEntry()
 	local started = waitUntil(function()
 		return captured.called
 	end, 3)
+	local capturedArgs = captured.args
 	T.expect(
 		"phase22_start_endurance_uses_internal_seam",
 		startOk == true
 			and started
-			and type(captured.args.submit) == "function"
-			and type(captured.args.submitDesignIntent) == "function"
-			and type(captured.args.getLastJob) == "function"
-			and type(captured.args.isCameraDemoActive) == "function",
+			and capturedArgs ~= nil
+			and type(capturedArgs.submit) == "function"
+			and type(capturedArgs.submitDesignIntent) == "function"
+			and type(capturedArgs.getLastJob) == "function"
+			and type(capturedArgs.isCameraDemoActive) == "function",
 		HttpService:JSONEncode({
 			start_err = startErr,
 			called = captured.called,
