@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase9.luau
 -- Verifies Phase 9 deliverables: CrestDipPath, airtime tracking, curvature gate,
 -- and the multi-step repair story that ends in commit (or revert for impossible qualifiers).
@@ -7,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local T = require(script.Parent.TestUtils)
 local CrestDipPath = require(
 	game.ServerScriptService:WaitForChild("AutoTrackCore"):WaitForChild("Mechanics"):WaitForChild("CrestDipPath")
@@ -23,23 +26,53 @@ local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 
 local TestPhase9 = {}
 
-local function makeRequest(rawText)
-	return {
-		request_id = "phase9-request",
-		raw_text = rawText,
-		parsed = {
-			sector_id = 3,
-			mechanic = "CrestDip",
-			request_kind = "Mechanic",
-			pad_side = nil,
-			pad_value = nil,
-		},
-		qualifiers = {},
-		timestamp = os.time(),
-	}
+type AgentAction = Types.AgentAction
+type FailurePacket = Types.FailurePacket
+type FailureType = Types.FailureType
+type Request = Types.Request
+type RunResult = Types.RunResult
+type RunMetrics = Types.RunMetrics
+type SectorParams = Types.SectorParams
+type SectorState = Types.SectorState
+
+type MetricsOverrides = {
+	entry_speed: number?,
+	exit_speed: number?,
+	airborne: boolean?,
+	air_distance: number?,
+	lateral_error: number?,
+	vertical_displacement: number?,
+	reacquired: boolean?,
+	airtime_distance: number?,
+	target_airborne: boolean?,
+	target_air_distance: number?,
+	target_vertical_displacement: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_left_offset: number?,
+	target_right_offset: number?,
+	target_lateral_band_changes: number?,
+	target_entered: boolean?,
+	target_exited: boolean?,
+	target_progress: number?,
+	target_reacquire_distance: number?,
+	target_reacquire_lateral_offset: number?,
+	target_peak_body_distance: number?,
+	target_exit_angular_speed: number?,
+	target_exit_vertical_speed: number?,
+	target_touchdown_up_dot: number?,
+	target_touchdown_down_speed: number?,
+	target_min_speed: number?,
+	target_apex_min_speed: number?,
+	lap_time: number?,
+	slowdown_ratio: number?,
+}
+
+local function makeRequest(rawText: string): Request
+	return ContractBuilders.playerMechanicRequest("phase9-request", rawText, 3, "CrestDip", {}, os.time())
 end
 
-local function makeState(params)
+local function makeState(params: SectorParams): SectorState
 	return {
 		sector_id = 3,
 		mechanic = "CrestDip",
@@ -49,52 +82,105 @@ local function makeState(params)
 	}
 end
 
-local function makeMetrics(overrides)
-	local m = {
-		entry_speed = 40,
-		exit_speed = 35,
-		airborne = false,
-		air_distance = 0,
-		lateral_error = 0,
-		vertical_displacement = 10,
-		reacquired = true,
-		airtime_distance = 0,
-		target_apex_min_speed = 0,
-		lap_time = 25,
-		slowdown_ratio = 1,
+local function makeMetrics(overrides: MetricsOverrides?): RunMetrics
+	local source: MetricsOverrides = if overrides ~= nil then overrides else {}
+	return {
+		entry_speed = source.entry_speed or 40,
+		exit_speed = source.exit_speed or 35,
+		airborne = if source.airborne ~= nil then source.airborne else false,
+		air_distance = source.air_distance or 0,
+		lateral_error = source.lateral_error or 0,
+		vertical_displacement = source.vertical_displacement or 10,
+		reacquired = if source.reacquired ~= nil then source.reacquired else true,
+		airtime_distance = source.airtime_distance or 0,
+		target_airborne = source.target_airborne,
+		target_air_distance = source.target_air_distance,
+		target_vertical_displacement = source.target_vertical_displacement,
+		target_reacquired = source.target_reacquired,
+		target_airtime_distance = source.target_airtime_distance,
+		target_left_offset = source.target_left_offset,
+		target_right_offset = source.target_right_offset,
+		target_lateral_band_changes = source.target_lateral_band_changes,
+		target_entered = source.target_entered,
+		target_exited = source.target_exited,
+		target_progress = source.target_progress,
+		target_reacquire_distance = source.target_reacquire_distance,
+		target_reacquire_lateral_offset = source.target_reacquire_lateral_offset,
+		target_peak_body_distance = source.target_peak_body_distance,
+		target_exit_angular_speed = source.target_exit_angular_speed,
+		target_exit_vertical_speed = source.target_exit_vertical_speed,
+		target_touchdown_up_dot = source.target_touchdown_up_dot,
+		target_touchdown_down_speed = source.target_touchdown_down_speed,
+		target_min_speed = source.target_min_speed,
+		target_apex_min_speed = source.target_apex_min_speed or 0,
+		lap_time = source.lap_time or 25,
+		slowdown_ratio = source.slowdown_ratio or 1,
 	}
-	for key, value in pairs(overrides or {}) do
-		m[key] = value
-	end
-	return m
 end
 
-local function makePacket(params, hints, failureType, lastAction, metricsOverrides)
+local function makePacket(
+	params: SectorParams,
+	hints: { string }?,
+	failureType: FailureType?,
+	lastAction: AgentAction?,
+	metricsOverrides: MetricsOverrides?,
+	failureDetail: string?
+): FailurePacket
+	local metrics = makeMetrics(metricsOverrides)
+	local effectiveFailureType: FailureType = failureType or "mechanic_integrity_failure"
+	local runResult: RunResult = {
+		success = false,
+		failure = { type = effectiveFailureType, sector_id = 3, detail = failureDetail },
+		metrics = metrics,
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = nil,
+	}
 	return {
 		request = makeRequest("phase9"),
 		sector_state = makeState(params),
 		attempt_index = 0,
 		last_action = lastAction,
-		run_result = {
-			success = false,
-			failure = { type = failureType or "mechanic_integrity_failure", sector_id = 3 },
-			metrics = makeMetrics(metricsOverrides),
+		run_result = runResult,
+		diagnostics = {
+			failure_sector = 3,
+			hints = hints or {},
+			failure_type = effectiveFailureType,
+			failure_detail = failureDetail,
+			target_entry_speed = metrics.entry_speed,
+			target_exit_speed = metrics.exit_speed,
+			target_reacquired = metrics.target_reacquired,
+			target_airtime_distance = metrics.target_airtime_distance,
+			target_apex_min_speed = metrics.target_apex_min_speed,
+			downstream_sector_state = nil,
 		},
-		diagnostics = { failure_sector = 3, hints = hints or {} },
 		legal_actions = {
 			numeric_levers = LevelMappings.NUMERIC_LEVERS.CrestDip,
 			pads = { "ingress", "egress" },
 		},
+		design_intent = nil,
+		memory_context = nil,
 	}
 end
 
-local function hintsContain(hints, needle)
+local function hintsContain(hints: { string }, needle: string): boolean
 	for _, hint in ipairs(hints) do
 		if string.find(hint, needle, 1, true) then
 			return true
 		end
 	end
 	return false
+end
+
+local function actionSummary(action: AgentAction?): string
+	if action == nil then
+		return "nil"
+	end
+	if action.type == "SetNumericLever" then
+		return action.lever .. "=" .. tostring(action.value)
+	end
+	return action.pad .. "=" .. action.value
 end
 
 local function waitForBaseline(): boolean
@@ -265,7 +351,7 @@ function TestPhase9.runUnit()
 			and airtimeAction.type == "SetNumericLever"
 			and airtimeAction.lever == "height_or_depth"
 			and airtimeAction.value < 8,
-		tostring(airtimeAction and airtimeAction.lever) .. "=" .. tostring(airtimeAction and airtimeAction.value)
+		actionSummary(airtimeAction)
 	)
 
 	local curvaturePacket = makePacket(
@@ -281,9 +367,7 @@ function TestPhase9.runUnit()
 				(curvatureAction.lever == "height_or_depth" and curvatureAction.value > 6)
 				or (curvatureAction.lever == "sector_length" and curvatureAction.value < 40)
 			),
-		tostring(curvatureAction and curvatureAction.lever)
-			.. "="
-			.. tostring(curvatureAction and curvatureAction.value)
+		actionSummary(curvatureAction)
 	)
 
 	local dedupPacket = makePacket(
@@ -301,7 +385,7 @@ function TestPhase9.runUnit()
 				and dedupAction.lever == "height_or_depth"
 				and dedupAction.value == 8
 			),
-		tostring(dedupAction and dedupAction.lever) .. "=" .. tostring(dedupAction and dedupAction.value)
+		actionSummary(dedupAction)
 	)
 
 	local crestRequest, crestRequestErr = RequestParser.parse("add a crest in sector 3", "phase9-crest-initial")
@@ -319,9 +403,11 @@ function TestPhase9.runUnit()
 	local crestPadPacket = makePacket(
 		{ height_or_depth = 10, radius = 20, sector_length = 24 },
 		{},
-		"local_execution_failure"
+		"local_execution_failure",
+		nil,
+		nil,
+		"no_progress"
 	)
-	crestPadPacket.run_result.failure.detail = "no_progress"
 	local crestPadAction = MinimalProposer.repair(crestPadPacket)
 	T.expect(
 		"phase9_proposer_crestdip_local_failure_boosts_first",
@@ -340,9 +426,9 @@ function TestPhase9.runUnit()
 		{},
 		"local_execution_failure",
 		nil,
-		{ target_progress = 0.2 }
+		{ target_progress = 0.2 },
+		"spinout"
 	)
-	crestCrashPacket.run_result.failure.detail = "spinout"
 	local crestCrashAction = MinimalProposer.repair(crestCrashPacket)
 	T.expect(
 		"phase9_proposer_crestdip_spinout_brakes_first",
@@ -361,9 +447,9 @@ function TestPhase9.runUnit()
 		{},
 		"local_execution_failure",
 		nil,
-		{ target_progress = 0.2 }
+		{ target_progress = 0.2 },
+		"off_track"
 	)
-	crestOffTrackPacket.run_result.failure.detail = "off_track"
 	local crestOffTrackAction = MinimalProposer.repair(crestOffTrackPacket)
 	T.expect(
 		"phase9_proposer_crestdip_off_track_brakes_first",
