@@ -38,6 +38,11 @@ export type MemoryScope = "shared" | "orchestrator" | "proposal" | "repair"
 export type MemorySourceType = "observed_result" | "inferred_pattern" | "downstream_warning" | "explicit_policy"
 export type MemoryConfidence = "low" | "medium" | "high"
 
+export type JsonPrimitive = nil | boolean | number | string
+export type JsonValue = JsonPrimitive | JsonArray | JsonObject
+export type JsonArray = { JsonValue }
+export type JsonObject = { [string]: JsonValue }
+
 export type DesignIntent = {
 	sector_id: number,
 	mechanic: Mechanic,
@@ -400,7 +405,7 @@ export type LLMTraceEvent = {
 	provider: string?,
 	model: string?,
 	kind: LLMTraceKind,
-	payload: { [string]: any },
+	payload: JsonObject,
 }
 
 export type LLMTraceRun = {
@@ -412,8 +417,8 @@ export type LLMTraceRun = {
 	mode: string?,
 	job_id: string?,
 	request_id: string?,
-	meta: { [string]: any }?,
-	summary: { [string]: any }?,
+	meta: JsonObject?,
+	summary: JsonObject?,
 	events: { LLMTraceEvent },
 }
 

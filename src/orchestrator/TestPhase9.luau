@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local CrestDipPath = require(
@@ -289,7 +290,7 @@ function TestPhase9.runUnit()
 		{ height_or_depth = 6, radius = 20, sector_length = 40 },
 		{ "crest curvature too gentle" },
 		"mechanic_integrity_failure",
-		{ type = "SetNumericLever", lever = "height_or_depth", value = 8 }
+		ContractBuilders.setNumericLever("height_or_depth", 8)
 	)
 	local dedupAction = MinimalProposer.repair(dedupPacket)
 	T.expect(

@@ -1,11 +1,16 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local TestFactories = require(script.Parent.TestFactories)
 local T = require(script.Parent.TestUtils)
 
 local TestPhase36 = {}
+
+type OrchestratorSectorSnapshot = Types.OrchestratorSectorSnapshot
 
 function TestPhase36.run()
 	local mechanicRequest = ContractBuilders.playerMechanicRequest(
@@ -87,11 +92,12 @@ function TestPhase36.run()
 		HttpService:JSONEncode({ numeric = numericAction, pad = padAction })
 	)
 
+	local sectorStates: { [number]: OrchestratorSectorSnapshot } = {
+		[2] = { mechanic = "RampJump", params = {}, score = 20 },
+	}
 	local context = TestFactories.orchestratorContext({
 		budget = { used = 0.42, over_budget = false },
-		sector_states = {
-			[2] = { mechanic = "RampJump", params = {}, score = 20 },
-		},
+		sector_states = sectorStates,
 	})
 	T.expect(
 		"phase36_test_factory_context_is_complete_by_default",

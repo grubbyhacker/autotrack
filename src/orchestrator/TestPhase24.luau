@@ -1,10 +1,21 @@
+--!strict
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local JobRunner = require(script.Parent.JobRunner)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local T = require(script.Parent.TestUtils)
 
 local TestPhase24 = {}
 
-local function cloneState(state)
+type AgentAction = Types.AgentAction
+type FailureType = Types.FailureType
+type RunResult = Types.RunResult
+type SectorState = Types.SectorState
+
+local function cloneState(state: SectorState): SectorState
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
@@ -17,7 +28,7 @@ local function cloneState(state)
 	}
 end
 
-local function baseState()
+local function baseState(): SectorState
 	return {
 		sector_id = 3,
 		mechanic = "RampJump",
@@ -35,7 +46,7 @@ local function baseState()
 	}
 end
 
-local function result(success: boolean, failureType: string?, failureSector: number?, detail: string?)
+local function result(success: boolean, failureType: FailureType?, failureSector: number?, detail: string?): RunResult
 	return {
 		success = success,
 		failure = if success
@@ -76,24 +87,24 @@ local function result(success: boolean, failureType: string?, failureSector: num
 end
 
 local function testIsolatedThenCommitLap()
-	local calls = {}
+	local calls: { string } = {}
 	local actionApplyCount = 0
-	local action = {
-		type = "SetNumericLever",
-		lever = "ramp_angle",
-		value = 14,
-	}
+	local action = ContractBuilders.setNumericLever("ramp_angle", 14)
 
 	local summary = JobRunner._runVerificationProfile({
 		use_isolated_profile = true,
 		working_state = baseState(),
 		action = action,
-		runAttempt = function(mode, state, actionForRun)
+		runAttempt = function(mode: string, state: SectorState, actionForRun: AgentAction?)
 			table.insert(calls, mode)
 			local updated = cloneState(state)
-			if actionForRun ~= nil then
+			if
+				actionForRun ~= nil
+				and actionForRun.type == "SetNumericLever"
+				and actionForRun.lever == "ramp_angle"
+			then
 				actionApplyCount += 1
-				updated.params[actionForRun.lever] = actionForRun.value
+				updated.params.ramp_angle = actionForRun.value
 			end
 			if mode == "full_lap" then
 				return result(true), {}, updated
@@ -132,12 +143,12 @@ local function testIsolatedThenCommitLap()
 end
 
 local function testIsolatedFailureSkipsCommitLap()
-	local calls = {}
+	local calls: { string } = {}
 	local summary = JobRunner._runVerificationProfile({
 		use_isolated_profile = true,
 		working_state = baseState(),
 		action = nil,
-		runAttempt = function(mode, state, _actionForRun)
+		runAttempt = function(mode: string, state: SectorState, _actionForRun: AgentAction?)
 			table.insert(calls, mode)
 			local updated = cloneState(state)
 			if mode == "isolated_sector" then
@@ -165,12 +176,12 @@ local function testIsolatedFailureSkipsCommitLap()
 end
 
 local function testCommitLapFailureSurfacesAsCommitStage()
-	local calls = {}
+	local calls: { string } = {}
 	local summary = JobRunner._runVerificationProfile({
 		use_isolated_profile = true,
 		working_state = baseState(),
 		action = nil,
-		runAttempt = function(mode, state, _actionForRun)
+		runAttempt = function(mode: string, state: SectorState, _actionForRun: AgentAction?)
 			table.insert(calls, mode)
 			local updated = cloneState(state)
 			if mode == "full_lap" then
@@ -198,24 +209,22 @@ local function testCommitLapFailureSurfacesAsCommitStage()
 end
 
 local function testNonEnduranceStaysSingleLap()
-	local calls = {}
-	local action = {
-		type = "SetPad",
-		pad = "ingress",
-		value = "Boost10",
-	}
+	local calls: { string } = {}
+	local action = ContractBuilders.setPad("ingress", "Boost10")
 	local sawAction = false
 
 	local summary = JobRunner._runVerificationProfile({
 		use_isolated_profile = false,
 		working_state = baseState(),
 		action = action,
-		runAttempt = function(mode, state, actionForRun)
+		runAttempt = function(mode: string, state: SectorState, actionForRun: AgentAction?)
 			table.insert(calls, mode)
 			local updated = cloneState(state)
-			sawAction = actionForRun ~= nil and actionForRun.type == "SetPad"
-			if sawAction then
+			if actionForRun ~= nil and actionForRun.type == "SetPad" then
+				sawAction = true
 				updated.pads[actionForRun.pad] = actionForRun.value
+			else
+				sawAction = false
 			end
 			return result(true), {}, updated
 		end,

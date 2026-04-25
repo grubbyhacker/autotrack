@@ -631,217 +631,201 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				local ingressPad = if PadValueUtils.kind(state.pads.ingress) == "Brake"
 					then weakerBrake(state.pads.ingress)
 					else strongerBoost(state.pads.ingress)
-				table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressPad })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_length",
-					value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "gap_length",
-					value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "landing_length",
-					value = math.max(landingLengthFloor(), (params.landing_length or 0) - 2),
-				})
+				table.insert(candidates, padAction("ingress", ingressPad))
+				table.insert(
+					candidates,
+					numericAction("ramp_length", math.max(rampLengthFloor(), (params.ramp_length or 0) - 2))
+				)
+				table.insert(
+					candidates,
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+				)
+				table.insert(
+					candidates,
+					numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+				)
+				table.insert(
+					candidates,
+					numericAction("landing_length", math.max(landingLengthFloor(), (params.landing_length or 0) - 2))
+				)
 				explanation = "speed bled off climbing the ramp; boosting entry first, then shortening the climb"
 			elseif unstableOnTakeoff and progress < 0.35 then
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2))
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 2),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_length",
-					value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 2),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "gap_length",
-					value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "landing_length",
-					value = math.min(
-						LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-						(params.landing_length or 0) + 4
-					),
-				})
+				table.insert(
+					candidates,
+					numericAction("ramp_length", math.max(rampLengthFloor(), (params.ramp_length or 0) - 2))
+				)
+				table.insert(
+					candidates,
+					numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+				)
+				table.insert(
+					candidates,
+					numericAction(
+						"landing_length",
+						math.min(
+							LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
+							(params.landing_length or 0) + 4
+						)
+					)
+				)
 				explanation = "entry attitude was unstable; softening launch while keeping visible challenge"
 			elseif reacquireIssue or landingInstability or progress >= 0.35 then
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "landing_length",
-					value = math.min(
-						LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-						(params.landing_length or 0) + 4
-					),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "gap_length",
-					value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-				})
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-				})
-				explanation = "landing and rejoin were unstable; widening the recovery before flattening"
-			else
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_length",
-					value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 1),
-				})
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction(
+						"landing_length",
+						math.min(
+							LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
+							(params.landing_length or 0) + 4
+						)
+					)
 				)
+				table.insert(
+					candidates,
+					numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+				)
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
+				table.insert(
+					candidates,
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+				)
+				explanation = "landing and rejoin were unstable; widening the recovery before flattening"
+			else
+				table.insert(
+					candidates,
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+				)
+				table.insert(
+					candidates,
+					numericAction("ramp_length", math.max(rampLengthFloor(), (params.ramp_length or 0) - 1))
+				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				explanation = "ramp approach was unstable; softening entry state"
 			end
 		elseif string.find(hintsText, "vertical displacement too small", 1, true) then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "ramp_angle",
-				value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 2),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "ramp_length",
-				value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "gap_length",
-				value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max, (params.gap_length or 0) + 1),
-			})
+			table.insert(
+				candidates,
+				numericAction(
+					"ramp_angle",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 2)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"ramp_length",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_length.max, (params.ramp_length or 0) + 2)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"gap_length",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max, (params.gap_length or 0) + 1)
+				)
+			)
 			explanation = "jump was too flat to score; increasing lift while keeping it recoverable"
 		elseif reacquireIssue or landingInstability then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "landing_length",
-				value = math.min(
-					LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-					(params.landing_length or 0) + 4
-				),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "gap_length",
-				value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-			})
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "ramp_angle",
-				value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-			})
+			table.insert(
+				candidates,
+				numericAction(
+					"landing_length",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+			)
+			table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+			)
 			explanation = "reacquisition was unstable; widening the landing window"
 		else
 			if progress >= 0.30 then
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "landing_length",
-					value = math.min(
-						LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-						(params.landing_length or 0) + 3
-					),
-				})
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-				})
-				explanation = "jump remained rough through the landing; smoothing the rejoin"
-			else
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_angle",
-					value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "ramp_length",
-					value = math.max(rampLengthFloor(), (params.ramp_length or 0) - 1),
-				})
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction(
+						"landing_length",
+						math.min(
+							LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
+							(params.landing_length or 0) + 3
+						)
+					)
 				)
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
+				table.insert(
+					candidates,
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+				)
+				explanation = "jump remained rough through the landing; smoothing the rejoin"
+			else
+				table.insert(
+					candidates,
+					numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+				)
+				table.insert(
+					candidates,
+					numericAction("ramp_length", math.max(rampLengthFloor(), (params.ramp_length or 0) - 1))
+				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				explanation = "entry stayed unstable; trimming launch severity"
 			end
 		end
 	elseif state.mechanic == "Chicane" then
 		if string.find(hintsText, "lateral displacement", 1, true) then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "amplitude",
-				value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "corridor_width",
-				value = math.clamp((params.corridor_width or 0) - 2, 1, Constants.TRACK_WIDTH),
-			})
+			table.insert(
+				candidates,
+				numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2))
+			)
+			table.insert(
+				candidates,
+				numericAction("corridor_width", math.clamp((params.corridor_width or 0) - 2, 1, Constants.TRACK_WIDTH))
+			)
 			explanation = "chicane is too shallow; increased amplitude"
 		elseif string.find(hintsText, "curvature", 1, true) then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "amplitude",
-				value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "transition_length",
-				value = math.clamp((params.transition_length or 0) - 2, 1, MAX_CHICANE_TRANSITION_LENGTH),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "corridor_width",
-				value = math.clamp((params.corridor_width or 0) - 1, 1, Constants.TRACK_WIDTH),
-			})
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+			table.insert(
+				candidates,
+				numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 2))
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"transition_length",
+					math.clamp((params.transition_length or 0) - 2, 1, MAX_CHICANE_TRANSITION_LENGTH)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction("corridor_width", math.clamp((params.corridor_width or 0) - 1, 1, Constants.TRACK_WIDTH))
+			)
+			table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+			table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 			explanation = "chicane needs more turn severity; sharpened the S"
 		elseif string.find(hintsText, "alternation", 1, true) then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "amplitude",
-				value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 1),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "transition_length",
-				value = math.clamp((params.transition_length or 0) - 2, 1, MAX_CHICANE_TRANSITION_LENGTH),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "corridor_width",
-				value = math.clamp((params.corridor_width or 0) - 1, 1, Constants.TRACK_WIDTH),
-			})
+			table.insert(
+				candidates,
+				numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) + 1))
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"transition_length",
+					math.clamp((params.transition_length or 0) - 2, 1, MAX_CHICANE_TRANSITION_LENGTH)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction("corridor_width", math.clamp((params.corridor_width or 0) - 1, 1, Constants.TRACK_WIDTH))
+			)
 			explanation = "chicane did not switch sides strongly enough; tightened the S"
 		else
 			local progress = (packet.run_result.metrics.target_progress or 0)
@@ -849,72 +833,72 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 				or string.find(hintsText, "stall", 1, true) ~= nil
 			if progress < 0.30 then
 				-- Early entry failure: open the line before we sacrifice speed.
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "transition_length",
-					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "corridor_width",
-					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "amplitude",
-					value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2),
-				})
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction(
+						"transition_length",
+						math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH)
+					)
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				table.insert(
+					candidates,
+					numericAction(
+						"corridor_width",
+						math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH)
+					)
+				)
+				table.insert(
+					candidates,
+					numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2))
+				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 				explanation = "chicane too sharp for entry; relaxed geometry first"
 			elseif stalledInChicane then
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction(
+						"corridor_width",
+						math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH)
+					)
 				)
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "corridor_width",
-					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "transition_length",
-					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "amplitude",
-					value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2),
-				})
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+				table.insert(
+					candidates,
+					numericAction(
+						"transition_length",
+						math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH)
+					)
+				)
+				table.insert(
+					candidates,
+					numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2))
+				)
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 				explanation = "chicane overloaded the car; slowed entry and opened the line"
 			else
 				-- Car made real progress into the chicane but failed mid-traverse:
 				-- entry speed is the issue. Brake pads come before geometry.
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+				table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 				table.insert(
 					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
+					numericAction(
+						"transition_length",
+						math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH)
+					)
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "transition_length",
-					value = math.clamp((params.transition_length or 0) + 6, 1, MAX_CHICANE_TRANSITION_LENGTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "corridor_width",
-					value = math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH),
-				})
-				table.insert(candidates, {
-					type = "SetNumericLever",
-					lever = "amplitude",
-					value = math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2),
-				})
+				table.insert(
+					candidates,
+					numericAction(
+						"corridor_width",
+						math.clamp((params.corridor_width or 0) + 4, 1, Constants.TRACK_WIDTH)
+					)
+				)
+				table.insert(
+					candidates,
+					numericAction("amplitude", math.max(chicaneAmplitudeFloor(), (params.amplitude or 0) - 2))
+				)
 				explanation = "entry was unstable; adding brake pad before relaxing shape"
 			end
 		end
@@ -946,7 +930,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 					minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
 				}
 			)
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
+			table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 			explanation = "car flew too far; softened the crest"
 		elseif string.find(hintsText, "curvature", 1, true) then
 			appendCrestTuneCandidates(
@@ -972,11 +956,11 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 					minHeight = params.height_or_depth or LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth.min,
 				}
 			)
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) })
+			table.insert(candidates, padAction("ingress", strongerBoost(state.pads.ingress)))
 			explanation = "crest or dip is too subtle; raised the peak"
 		elseif string.find(hintsText, "reacquire", 1, true) or string.find(hintsText, "reacquisition", 1, true) then
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+			table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+			table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
 			appendCrestTuneCandidates(
 				candidates,
 				params,
@@ -992,10 +976,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 		elseif failure.type == "local_execution_failure" then
 			local progress = (packet.run_result.metrics.target_progress or 0)
 			if unstableCrash then
-				table.insert(
-					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
-				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				appendCrestTuneCandidates(
 					candidates,
 					params,
@@ -1007,13 +988,10 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
 					}
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
 				explanation = "crest entry was unstable; braking earlier and flattening the feature"
 			elseif stalledOnCrest then
-				table.insert(
-					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBoost(state.pads.ingress) }
-				)
+				table.insert(candidates, padAction("ingress", strongerBoost(state.pads.ingress)))
 				appendCrestTuneCandidates(
 					candidates,
 					params,
@@ -1025,13 +1003,10 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
 					}
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
 				explanation = "crest climb bled off too much speed; boosted entry and lowered the peak"
 			elseif progress < 0.30 then
-				table.insert(
-					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
-				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				appendCrestTuneCandidates(
 					candidates,
 					params,
@@ -1043,13 +1018,10 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
 					}
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
 				explanation = "crest entry was overloaded; braking earlier and softening geometry first"
 			else
-				table.insert(
-					candidates,
-					{ type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) }
-				)
+				table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
 				appendCrestTuneCandidates(
 					candidates,
 					params,
@@ -1061,7 +1033,7 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 						minLength = params.sector_length or LevelMappings.LEVER_BOUNDS.CrestDip.sector_length.min,
 					}
 				)
-				table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
+				table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
 				explanation = "the crest remained unstable through the feature; slowed entry and softened it"
 			end
 		else

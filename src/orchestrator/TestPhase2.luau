@@ -2,6 +2,9 @@
 -- Verifies Phase 2 deliverables: SectorSerializer, SectorApplier, SectorRollback,
 -- and sector entry/exit trace output.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local SectorSerializer = require(script.Parent.Parent.Track.SectorSerializer)
 local SectorApplier = require(script.Parent.Parent.Track.SectorApplier)
 local SectorRollback = require(script.Parent.Parent.Track.SectorRollback)
@@ -12,12 +15,14 @@ local T = require(script.Parent.TestUtils)
 
 local TestPhase2 = {}
 
-local function makeFlatState(sector_id: number)
+type SectorState = Types.SectorState
+
+local function makeFlatState(sector_id: number): SectorState
 	return {
 		sector_id = sector_id,
 		mechanic = nil,
 		params = {},
-		pads = { ingress = "None" :: any, egress = "None" :: any },
+		pads = { ingress = "None", egress = "None" },
 		version = 0,
 	}
 end
@@ -34,11 +39,11 @@ end
 
 function TestPhase2.run()
 	-- serializer_clone_independent
-	local orig = {
+	local orig: SectorState = {
 		sector_id = 2,
 		mechanic = nil,
 		params = { ramp_angle = 30 },
-		pads = { ingress = "None" :: any, egress = "None" :: any },
+		pads = { ingress = "None", egress = "None" },
 		version = 1,
 	}
 	local cloned = SectorSerializer.clone(orig)

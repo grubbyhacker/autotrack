@@ -52,7 +52,6 @@ type VerificationProfileResult = {
 	isolated_passes_required: number?,
 	isolated_passes_completed: number?,
 }
-
 local JobRunner = {}
 local _lastJob: CIJob? = nil
 local _idCounter = 0
@@ -655,7 +654,7 @@ local function downstreamDiagnostics(targetSectorId: number, failureSector: numb
 	}
 end
 
-local function runProposalChallengeUp(args): (any?, any?, string?)
+local function runProposalChallengeUp(args): (SectorState?, RunResult?, string?)
 	local request = args.request
 	local job = args.job
 	local targetSectorId = args.targetSectorId

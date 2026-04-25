@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local T = require(script.Parent.TestUtils)
 local TestSession = require(script.Parent.TestSession)
@@ -447,7 +448,7 @@ function TestPhase14.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetPad", pad = "ingress", value = "Brake50" },
+				action = ContractBuilders.setPad("ingress", "Brake50"),
 				explanation = "stub",
 			})
 		end,
@@ -512,7 +513,7 @@ function TestPhase14.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetPad", pad = "ingress", value = "Brake10" },
+				action = ContractBuilders.setPad("ingress", "Brake10"),
 				explanation = "stub",
 			})
 		end,

@@ -182,7 +182,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 10 },
+				action = ContractBuilders.setNumericLever("amplitude", 10),
 				explanation = "x",
 			})
 		end,
@@ -208,7 +208,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 10 },
+				action = ContractBuilders.setNumericLever("amplitude", 10),
 				explanation = "x",
 			})
 		end,
@@ -229,7 +229,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "ramp_angle", value = 10 },
+				action = ContractBuilders.setNumericLever("ramp_angle", 10),
 				explanation = "wrong lever",
 			})
 		end,
@@ -255,7 +255,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 11 },
+				action = ContractBuilders.setNumericLever("amplitude", 11),
 				explanation = "x",
 			})
 		end,
@@ -281,7 +281,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 11 },
+				action = ContractBuilders.setNumericLever("amplitude", 11),
 				explanation = "x",
 			})
 		end,
@@ -360,7 +360,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 9 },
+				action = ContractBuilders.setNumericLever("amplitude", 9),
 				explanation = "widen path",
 			})
 		end,
@@ -386,7 +386,7 @@ function TestPhase13.runUnit()
 		end,
 		repair = function()
 			return HttpService:JSONEncode({
-				action = { type = "SetNumericLever", lever = "amplitude", value = 8 },
+				action = ContractBuilders.setNumericLever("amplitude", 8),
 				explanation = "noop",
 			})
 		end,
