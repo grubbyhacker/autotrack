@@ -1,3 +1,5 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local T = require(script.Parent.TestUtils)
@@ -5,7 +7,7 @@ local RuntimeContext = require(script.Parent.RuntimeContext)
 
 local TestBootSmoke = {}
 
-function TestBootSmoke.run()
+function TestBootSmoke.run(): ()
 	local stateFolder = ReplicatedStorage:FindFirstChild("AutoTrackUIState")
 	local submitEvent = ReplicatedStorage:FindFirstChild("AutoTrack_SubmitRequest")
 	local track = workspace:FindFirstChild("Track")
