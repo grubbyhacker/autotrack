@@ -50,7 +50,7 @@
 
 ## Hard-won invariants
 
-- Phase execution is strict: `plans/phaseN.md` is canonical unless the human explicitly names a different plan file; `agent-handoff.md` is context only, and competing plan files require clarification instead of a synthesized replacement.
+- Phase execution is strict: `plans/phaseN.md` is canonical unless the human explicitly names a different plan file; `agent-handoff.md` is context only, and competing plan files require clarification instead of a synthesized replacement. Unusual but intentional exception already taken: `plans/phase32.md` served as the roadmap slice for Milestones `32` through `35`, so continue with `plans/phase36.md` instead of backfilling separate `phase33.md` / `phase34.md` / `phase35.md`.
 - The local Studio bridge is sequential. Do not start multiple `make test ...` runs at once.
 - The bridge CLI now has a queue lock (`tools/.autotrack_bridge.lock`) so accidental concurrent bridge commands serialize; keep runs intentionally sequential for fastest feedback.
 - The bridge boot-readiness gate is authoritative. Missing `runtime_context`, `ui_state`, `submit_event`, `track`, or `verifier_car` is a startup regression first.
