@@ -1,5 +1,7 @@
 PYTHON ?= python3
 TEST_CLI := tools/autotrack_test_cli.py
+TEST_BRIDGE_PLUGIN := studio/AutoTrackTestBridge.server.lua
+ROBLOX_PLUGIN_DIR ?= /mnt/c/Users/roger/AppData/Local/Roblox/Plugins
 ROKIT_BIN ?= $(HOME)/.rokit/bin
 ROJO := $(ROKIT_BIN)/rojo
 STYLUA := $(ROKIT_BIN)/stylua
@@ -13,6 +15,7 @@ TYPECHECK_FILES := $(HYGIENE_SOURCE_FILES)
 
 .PHONY: test test-list \
 	test-contracts \
+	install-test-bridge-plugin \
 	fmt fmt-check typecheck typecheck-report lint hygiene \
 	boot_smoke \
 	phase1 phase2 phase3 phase4 phase4_pads phase4_rampjump phase4_crestdip phase4_chicane phase4_chicane_capture \
@@ -36,6 +39,12 @@ test-list:
 
 test-contracts:
 	@$(PYTHON) tools/check_test_contract.py
+
+install-test-bridge-plugin:
+	@mkdir -p "$(ROBLOX_PLUGIN_DIR)"
+	@cp "$(TEST_BRIDGE_PLUGIN)" "$(ROBLOX_PLUGIN_DIR)/AutoTrackTestBridge.server.lua"
+	@echo "Installed $(TEST_BRIDGE_PLUGIN) to $(ROBLOX_PLUGIN_DIR)/AutoTrackTestBridge.server.lua"
+	@echo "Restart Studio for plugin changes to load."
 
 fmt:
 	@$(STYLUA) $(HYGIENE_SOURCE_FILES)

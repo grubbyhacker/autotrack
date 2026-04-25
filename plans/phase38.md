@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned.
+Complete.
 
 ## Goal
 
@@ -34,3 +34,11 @@ This is a tooling sidequest only. It should not change gameplay, simulation beha
 - Re-enable the bridge, run `make boot_smoke`, and confirm the suite passes.
 - Run `make export-llm-trace` outside Play and confirm the error names the live-session precondition.
 - Run `make test-contracts`, `make fmt-check`, `make typecheck`, and `make lint`.
+
+## Final implementation notes
+
+- The toolbar button opens the diagnostics panel; enable/disable is owned by the panel toggle.
+- `Copy Diagnostics` populates and selects a read-only diagnostics text box instead of requiring OS clipboard access.
+- `/poll` carries enabled/busy/context metadata; disabled plugins heartbeat but never claim commands.
+- `llm_trace_export` is sent as a live-session export command by the CLI, matching the existing Studio-side behavior.
+- The diagnostics UI was manually verified working in Studio, and `make install-test-bridge-plugin` copies the bridge script to the WSL-translated Roblox plugin folder before Studio restart.

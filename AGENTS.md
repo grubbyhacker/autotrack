@@ -161,6 +161,7 @@ make test TEST=phase6_integration
 ```
 
 This requires the local Studio bridge plugin from `studio/AutoTrackTestBridge.server.lua` to be installed and enabled in Studio, with localhost HTTP access allowed.
+Use `make install-test-bridge-plugin` from WSL to copy the checked-in bridge plugin to the default Windows Roblox plugin folder (`/mnt/c/Users/roger/AppData/Local/Roblox/Plugins`). Override `ROBLOX_PLUGIN_DIR` for a different local install path. Restart Studio after copying so plugin code changes load.
 
 The suite/boot-mode mapping lives in `tools/test_bridge_config.json`.
 

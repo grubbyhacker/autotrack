@@ -43,7 +43,7 @@
 | 35 | Complete — nilability cleanup, typed orchestrator test fixtures, and a fully green `make typecheck-report` |
 | 36 | Complete — full-repo `make typecheck` gate promotion, shared contract builders/test factories, and selective `--!strict` ratchet |
 | 37 | Complete — shared JSON contracts, trace/export serializer strictness, builder/factory tightening, and `13 / 106` strict Luau files |
-| 38 Sidequest | Planned — bridge status UI, disabled-heartbeat protocol, and clearer live-session export diagnostics |
+| 38 Sidequest | Complete — bridge status UI, disabled-heartbeat protocol, and clearer live-session export diagnostics |
 ## Current state
 
 - Public slash-command surface remains intentionally narrow: `/demo endurance|camera|rampitup|repair|llmerror|ui-hotfix`, `/test <suite>`, `/tune ...`; tune mode remains the Phase 21 lab with staged-by-default runs, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
@@ -86,7 +86,7 @@
 - Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
 - `phase21_experiment_harness_distinguishes_better_candidate` should assert the comparison contract (winner labels and differing heuristic/challenge aggregates), not a hard-coded winner. Live experiment telemetry can legitimately change which candidate wins.
 - Standalone `luau-lsp analyze` for this repo needs both inputs: vendored Roblox definitions and a Rojo sourcemap. `--platform=roblox` alone is not enough for the maintained full-repo `make typecheck` gate.
-- `studio/AutoTrackTestBridge.server.lua` should only execute commands from Studio/edit or server-side Play contexts. Client-side Play polling is noise and should stay suppressed; idle `ConnectFail` is normal when no local `make/test` bridge process is running. Phase 38 should make installed-but-disabled state visible instead of letting the CLI time out as if the plugin were missing.
+- `studio/AutoTrackTestBridge.server.lua` should only execute commands from Studio/edit or server-side Play contexts. Client-side Play polling is noise and should stay suppressed; idle `ConnectFail` is normal when no local `make/test` bridge process is running. Disabled bridge plugins still heartbeat with `enabled=false` so the CLI can fail fast instead of timing out as if the plugin were missing. Use `make install-test-bridge-plugin` from WSL to copy the checked-in plugin to `/mnt/c/Users/roger/AppData/Local/Roblox/Plugins`; Studio still needs a restart after plugin code changes. The Phase 38 bridge status UI has been manually verified working in Studio.
 - Trace/export payloads should cross the `LLMTraceJournal` sanitizer and use `Types.JsonObject`; do not reopen broad `{ [string]: any }` JSON surfaces. The `llm_trace_export` bridge path is live-session-only and reports `no active Play session` after sequential `make` suites stop Play.
 
 ## Maintained verification snapshot

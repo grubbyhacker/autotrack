@@ -17,6 +17,7 @@ NON_SUITE_TARGETS = {
     "test",
     "test-list",
     "test-contracts",
+    "install-test-bridge-plugin",
     "fmt",
     "fmt-check",
     "typecheck",

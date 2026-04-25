@@ -4,6 +4,8 @@ local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
 local PLUGIN_NAME = "AutoTrackTestBridge"
+local PLUGIN_VERSION = "phase38.1"
+local WIDGET_ID = "AutoTrackTestBridgeStatus"
 local SETTINGS_KEY_ENABLED = "bridge_enabled"
 local DEFAULT_BASE_URL = "http://127.0.0.1:8765"
 local DEFAULT_POLL_SECONDS = 1
@@ -18,7 +20,7 @@ local TEST_STATUS_PAYLOAD_CHUNKS_FOLDER_NAME = "PayloadChunks"
 local toolbar = plugin:CreateToolbar("AutoTrack")
 local toggleButton = toolbar:CreateButton(
 	PLUGIN_NAME,
-	"Toggle the AutoTrack localhost test bridge",
+	"Open the AutoTrack localhost test bridge status panel",
 	"rbxasset://textures/DeveloperFramework/checkbox_checked.png"
 )
 
@@ -28,11 +30,29 @@ if enabled == nil then
 end
 
 local lastPollErrorLogAt = 0
+local lastWarnPollErrorText = ""
+local lastPollAtText = "never"
+local lastPollResultText = "not polled"
 local lastPollErrorText = ""
-local hasSeenBridgeThisSession = false
+local currentCommand = nil
+local statusRows = {}
+local diagnosticsTextBox: TextBox? = nil
+local bridgeToggleButton: TextButton? = nil
+
+local widgetInfo = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 360, 420, 280, 300)
+local widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
+widget.Title = PLUGIN_NAME
+
+local busy = false
 
 local function syncButton()
 	toggleButton:SetActive(enabled)
+	if bridgeToggleButton ~= nil then
+		bridgeToggleButton.Text = if enabled then "Bridge Enabled: ON" else "Bridge Enabled: OFF"
+		bridgeToggleButton.BackgroundColor3 = if enabled
+			then Color3.fromRGB(36, 116, 72)
+			else Color3.fromRGB(120, 64, 64)
+	end
 end
 
 local function warnPollFailure(err)
@@ -55,14 +75,14 @@ local function warnPollFailure(err)
 		return
 	end
 
-	local sameAsLast = errText == lastPollErrorText
+	local sameAsLast = errText == lastWarnPollErrorText
 	local withinInterval = (now - lastPollErrorLogAt) < POLL_ERROR_LOG_INTERVAL_SECONDS
 	if sameAsLast and withinInterval then
 		return
 	end
 
 	lastPollErrorLogAt = now
-	lastPollErrorText = errText
+	lastWarnPollErrorText = errText
 
 	local hint = "Ensure the plugin is enabled and localhost HTTP permissions are allowed in Studio."
 	if isConnectFail then
@@ -72,6 +92,17 @@ local function warnPollFailure(err)
 	end
 
 	warn(string.format("[%s] bridge poll failed: %s | %s", PLUGIN_NAME, errText, hint))
+end
+
+local function getContextText(): string
+	if RunService:IsRunning() then
+		if RunService:IsClient() then
+			return "play_client"
+		end
+		return "play_server"
+	end
+
+	return "edit"
 end
 
 local function shouldPollBridge(): boolean
@@ -106,6 +137,230 @@ local function request(method: string, path: string, body)
 	end
 
 	return HttpService:JSONDecode(response.Body)
+end
+
+local function commandField(fieldName: string): string
+	if type(currentCommand) ~= "table" then
+		return ""
+	end
+
+	local value = currentCommand[fieldName]
+	if value == nil then
+		return ""
+	end
+	return tostring(value)
+end
+
+local function pollPath(): string
+	local query = {
+		"plugin_name=" .. HttpService:UrlEncode(PLUGIN_NAME),
+		"version=" .. HttpService:UrlEncode(PLUGIN_VERSION),
+		"enabled=" .. tostring(enabled),
+		"busy=" .. tostring(busy),
+		"context=" .. HttpService:UrlEncode(getContextText()),
+	}
+
+	local currentId = commandField("id")
+	if currentId ~= "" then
+		table.insert(query, "current_command_id=" .. HttpService:UrlEncode(currentId))
+	end
+
+	local currentSuite = commandField("suite")
+	if currentSuite ~= "" then
+		table.insert(query, "current_suite=" .. HttpService:UrlEncode(currentSuite))
+	end
+
+	return "/poll?" .. table.concat(query, "&")
+end
+
+local function diagnosticsText(): string
+	local lines = {
+		PLUGIN_NAME .. " diagnostics",
+		"version=" .. PLUGIN_VERSION,
+		"enabled=" .. tostring(enabled),
+		"base_url=" .. DEFAULT_BASE_URL,
+		"poll_seconds=" .. tostring(DEFAULT_POLL_SECONDS),
+		"context=" .. getContextText(),
+		"last_poll_at=" .. lastPollAtText,
+		"last_poll_result=" .. lastPollResultText,
+		"last_error=" .. lastPollErrorText,
+		"busy=" .. tostring(busy),
+		"current_command_id=" .. commandField("id"),
+		"current_suite=" .. commandField("suite"),
+	}
+
+	return table.concat(lines, "\n")
+end
+
+local function setRow(name: string, value: string)
+	local row = statusRows[name]
+	if row ~= nil then
+		row.Text = value
+	end
+end
+
+local function refreshStatusPanel()
+	setRow("enabled", tostring(enabled))
+	setRow("url", DEFAULT_BASE_URL)
+	setRow("lastPoll", lastPollAtText .. " | " .. lastPollResultText)
+	setRow("lastError", if lastPollErrorText ~= "" then lastPollErrorText else "none")
+	setRow("busy", tostring(busy))
+	setRow("command", commandField("id"))
+	setRow("suite", commandField("suite"))
+	setRow("context", getContextText())
+	if diagnosticsTextBox ~= nil then
+		diagnosticsTextBox.Text = diagnosticsText()
+	end
+	syncButton()
+end
+
+local function setEnabled(nextEnabled: boolean)
+	enabled = nextEnabled
+	plugin:SetSetting(SETTINGS_KEY_ENABLED, enabled)
+	refreshStatusPanel()
+end
+
+local function addCorner(parent: Instance, radius: number)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = parent
+end
+
+local function makeTextLabel(parent: Instance, text: string, size: UDim2, position: UDim2, color: Color3)
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.SourceSans
+	label.TextSize = 14
+	label.TextColor3 = color
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextWrapped = true
+	label.Text = text
+	label.Size = size
+	label.Position = position
+	label.Parent = parent
+	return label
+end
+
+local function createStatusRow(parent: Instance, rowIndex: number, labelText: string, rowKey: string)
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.new(1, 0, 0, 22)
+	row.LayoutOrder = rowIndex
+	row.Parent = parent
+
+	makeTextLabel(row, labelText, UDim2.new(0, 118, 1, 0), UDim2.fromOffset(0, 0), Color3.fromRGB(190, 198, 210))
+	local valueLabel =
+		makeTextLabel(row, "", UDim2.new(1, -124, 1, 0), UDim2.fromOffset(124, 0), Color3.fromRGB(238, 242, 247))
+	statusRows[rowKey] = valueLabel
+end
+
+local function createStatusPanel()
+	local root = Instance.new("Frame")
+	root.BackgroundColor3 = Color3.fromRGB(34, 37, 43)
+	root.BorderSizePixel = 0
+	root.Size = UDim2.fromScale(1, 1)
+	root.Parent = widget
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0, 12)
+	padding.PaddingBottom = UDim.new(0, 12)
+	padding.PaddingLeft = UDim.new(0, 12)
+	padding.PaddingRight = UDim.new(0, 12)
+	padding.Parent = root
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 8)
+	layout.Parent = root
+
+	local title = makeTextLabel(
+		root,
+		"AutoTrack Bridge",
+		UDim2.new(1, 0, 0, 24),
+		UDim2.fromOffset(0, 0),
+		Color3.fromRGB(255, 255, 255)
+	)
+	title.Font = Enum.Font.SourceSansBold
+	title.TextSize = 18
+	title.LayoutOrder = 1
+
+	local toggle = Instance.new("TextButton")
+	toggle.Font = Enum.Font.SourceSansBold
+	toggle.TextSize = 14
+	toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	toggle.BorderSizePixel = 0
+	toggle.Size = UDim2.new(1, 0, 0, 32)
+	toggle.LayoutOrder = 2
+	toggle.Parent = root
+	addCorner(toggle, 6)
+	bridgeToggleButton = toggle
+	toggle.MouseButton1Click:Connect(function()
+		setEnabled(not enabled)
+	end)
+
+	local rows = Instance.new("Frame")
+	rows.BackgroundTransparency = 1
+	rows.Size = UDim2.new(1, 0, 0, 190)
+	rows.LayoutOrder = 3
+	rows.Parent = root
+
+	local rowsLayout = Instance.new("UIListLayout")
+	rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	rowsLayout.Padding = UDim.new(0, 2)
+	rowsLayout.Parent = rows
+
+	createStatusRow(rows, 1, "Enabled", "enabled")
+	createStatusRow(rows, 2, "Poll URL", "url")
+	createStatusRow(rows, 3, "Last poll", "lastPoll")
+	createStatusRow(rows, 4, "Last error", "lastError")
+	createStatusRow(rows, 5, "Busy", "busy")
+	createStatusRow(rows, 6, "Command", "command")
+	createStatusRow(rows, 7, "Suite", "suite")
+	createStatusRow(rows, 8, "Context", "context")
+
+	local copyButton = Instance.new("TextButton")
+	copyButton.Font = Enum.Font.SourceSansBold
+	copyButton.TextSize = 14
+	copyButton.Text = "Copy Diagnostics"
+	copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	copyButton.BackgroundColor3 = Color3.fromRGB(54, 91, 153)
+	copyButton.BorderSizePixel = 0
+	copyButton.Size = UDim2.new(1, 0, 0, 30)
+	copyButton.LayoutOrder = 4
+	copyButton.Parent = root
+	addCorner(copyButton, 6)
+
+	local diagnosticsBox = Instance.new("TextBox")
+	diagnosticsBox.BackgroundColor3 = Color3.fromRGB(24, 26, 31)
+	diagnosticsBox.BorderSizePixel = 0
+	diagnosticsBox.ClearTextOnFocus = false
+	diagnosticsBox.Font = Enum.Font.Code
+	diagnosticsBox.MultiLine = true
+	diagnosticsBox.PlaceholderText = ""
+	diagnosticsBox.Size = UDim2.new(1, 0, 0, 88)
+	diagnosticsBox.Text = diagnosticsText()
+	diagnosticsBox.TextColor3 = Color3.fromRGB(232, 236, 244)
+	diagnosticsBox.TextEditable = false
+	diagnosticsBox.TextSize = 13
+	diagnosticsBox.TextWrapped = false
+	diagnosticsBox.TextXAlignment = Enum.TextXAlignment.Left
+	diagnosticsBox.TextYAlignment = Enum.TextYAlignment.Top
+	diagnosticsBox.LayoutOrder = 5
+	diagnosticsBox.Parent = root
+	addCorner(diagnosticsBox, 4)
+	diagnosticsTextBox = diagnosticsBox
+
+	copyButton.MouseButton1Click:Connect(function()
+		diagnosticsBox.Text = diagnosticsText()
+		pcall(function()
+			diagnosticsBox:CaptureFocus()
+			diagnosticsBox.CursorPosition = 1
+			diagnosticsBox.SelectionStart = #diagnosticsBox.Text + 1
+		end)
+	end)
+
+	refreshStatusPanel()
 end
 
 local function buildFallbackResult(command, errText: string)
@@ -298,10 +553,10 @@ local function isLiveTraceExportCommand(command): boolean
 		or command.boot_mode == "live_session"
 end
 
-local busy = false
-
 local function executeCommand(command)
 	busy = true
+	currentCommand = command
+	refreshStatusPanel()
 	local ok, result
 	if isLiveTraceExportCommand(command) then
 		ok, result = pcall(function()
@@ -336,36 +591,53 @@ local function executeCommand(command)
 	end
 
 	busy = false
+	currentCommand = nil
+	refreshStatusPanel()
 end
 
 toggleButton.Click:Connect(function()
-	enabled = not enabled
-	plugin:SetSetting(SETTINGS_KEY_ENABLED, enabled)
-	syncButton()
+	widget.Enabled = true
+	refreshStatusPanel()
 end)
 
+createStatusPanel()
 syncButton()
 
 task.spawn(function()
-	print(string.format("[%s] polling %s every %.1fs (enabled=%s)", PLUGIN_NAME, DEFAULT_BASE_URL, DEFAULT_POLL_SECONDS, tostring(enabled)))
+	print(
+		string.format(
+			"[%s] polling %s every %.1fs (enabled=%s)",
+			PLUGIN_NAME,
+			DEFAULT_BASE_URL,
+			DEFAULT_POLL_SECONDS,
+			tostring(enabled)
+		)
+	)
 	while true do
-		if enabled and not busy and shouldPollBridge() then
+		if shouldPollBridge() then
 			local ok, response = pcall(function()
-				return request("GET", "/poll?plugin_name=" .. PLUGIN_NAME, nil)
+				return request("GET", pollPath(), nil)
 			end)
 
-				if ok and response.command ~= nil then
-					hasSeenBridgeThisSession = true
-					lastPollErrorText = ""
+			lastPollAtText = string.format("%.1fs", os.clock())
+			if ok then
+				lastPollResultText = if response.command ~= nil then "command received" else "idle"
+				lastPollErrorText = ""
+				lastWarnPollErrorText = ""
+				if response.command ~= nil and enabled and not busy then
 					task.spawn(executeCommand, response.command)
-				elseif not ok then
-					warnPollFailure(response)
-				else
-					hasSeenBridgeThisSession = true
-					lastPollErrorText = ""
 				end
+			else
+				lastPollResultText = "error"
+				lastPollErrorText = tostring(response)
+				warnPollFailure(response)
 			end
+		else
+			lastPollResultText = "skipped"
+			lastPollErrorText = "client Play context cannot execute plugin HTTP requests"
+		end
 
+		refreshStatusPanel()
 		task.wait(DEFAULT_POLL_SECONDS)
 	end
 end)

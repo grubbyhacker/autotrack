@@ -39,6 +39,12 @@ class BridgeState:
     result: dict[str, Any] | None = None
     plugin_seen_at: float | None = None
     plugin_name: str | None = None
+    plugin_version: str | None = None
+    plugin_enabled: bool | None = None
+    plugin_busy: bool | None = None
+    plugin_context: str | None = None
+    plugin_current_command_id: str | None = None
+    plugin_current_suite: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -127,6 +133,17 @@ def load_config() -> dict[str, Any]:
 
 
 def build_handler(state: BridgeState):
+    def _query_bool(query: dict[str, list[str]], key: str, default: bool | None = None) -> bool | None:
+        values = query.get(key)
+        if not values:
+            return default
+        value = values[0].strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        return default
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "AutoTrackBridge/1.0"
 
@@ -153,6 +170,12 @@ def build_handler(state: BridgeState):
                         "ok": True,
                         "plugin_seen": state.plugin_seen_at is not None,
                         "plugin_name": state.plugin_name,
+                        "plugin_version": state.plugin_version,
+                        "plugin_enabled": state.plugin_enabled,
+                        "plugin_busy": state.plugin_busy,
+                        "plugin_context": state.plugin_context,
+                        "plugin_current_command_id": state.plugin_current_command_id,
+                        "plugin_current_suite": state.plugin_current_suite,
                         "command_pending": state.command is not None and not state.command_claimed,
                         "result_ready": state.result is not None,
                     }
@@ -162,10 +185,23 @@ def build_handler(state: BridgeState):
             if parsed.path == "/poll":
                 query = parse_qs(parsed.query)
                 plugin_name = query.get("plugin_name", ["unknown"])[0]
+                plugin_enabled = _query_bool(query, "enabled", True)
+                plugin_busy = _query_bool(query, "busy", False)
                 with state.lock:
                     state.plugin_seen_at = time.time()
                     state.plugin_name = plugin_name
-                    if state.command is not None and not state.command_claimed:
+                    state.plugin_version = query.get("version", [None])[0]
+                    state.plugin_enabled = plugin_enabled
+                    state.plugin_busy = plugin_busy
+                    state.plugin_context = query.get("context", [None])[0]
+                    state.plugin_current_command_id = query.get("current_command_id", [None])[0]
+                    state.plugin_current_suite = query.get("current_suite", [None])[0]
+                    if (
+                        plugin_enabled is not False
+                        and plugin_busy is not True
+                        and state.command is not None
+                        and not state.command_claimed
+                    ):
                         state.command_claimed = True
                         payload = {"ok": True, "command": state.command}
                     else:
@@ -228,6 +264,27 @@ def get_existing_bridge_health(config: dict[str, Any]) -> dict[str, Any] | None:
     return payload
 
 
+def existing_bridge_descriptor(health: dict[str, Any]) -> str:
+    parts = [str(health.get("plugin_name") or "unknown")]
+    version = health.get("plugin_version")
+    if version:
+        parts.append(f"version={version}")
+    if health.get("plugin_enabled") is not None:
+        parts.append(f"enabled={str(health['plugin_enabled']).lower()}")
+    if health.get("plugin_busy") is not None:
+        parts.append(f"busy={str(health['plugin_busy']).lower()}")
+    context = health.get("plugin_context")
+    if context:
+        parts.append(f"context={context}")
+    current_command = health.get("plugin_current_command_id")
+    if current_command:
+        parts.append(f"current_command={current_command}")
+    current_suite = health.get("plugin_current_suite")
+    if current_suite:
+        parts.append(f"suite={current_suite}")
+    return ", ".join(parts)
+
+
 def print_suite_list(config: dict[str, Any]) -> int:
     for suite_name in sorted(config["suites"].keys()):
         boot_mode = config["suites"][suite_name]["boot_mode"]
@@ -256,6 +313,35 @@ def print_summary(result: dict[str, Any]) -> None:
 
 def eprint(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+def plugin_descriptor(state: BridgeState) -> str:
+    parts = [state.plugin_name or "unknown"]
+    if state.plugin_version:
+        parts.append(f"version={state.plugin_version}")
+    if state.plugin_enabled is not None:
+        parts.append(f"enabled={str(state.plugin_enabled).lower()}")
+    if state.plugin_context:
+        parts.append(f"context={state.plugin_context}")
+    if state.plugin_busy is not None:
+        parts.append(f"busy={str(state.plugin_busy).lower()}")
+    if state.plugin_current_command_id:
+        parts.append(f"current_command={state.plugin_current_command_id}")
+    if state.plugin_current_suite:
+        parts.append(f"suite={state.plugin_current_suite}")
+    return ", ".join(parts)
+
+
+def disabled_bridge_message(state: BridgeState) -> str:
+    return (
+        "AutoTrack test bridge plugin is installed but disabled. "
+        "Open the AutoTrackTestBridge status panel in Studio and turn Bridge Enabled on. "
+        f"Plugin: {plugin_descriptor(state)}"
+    )
+
+
+def is_live_trace_export_suite(suite_name: str) -> bool:
+    return suite_name == "llm_trace_export"
 
 
 def _trim_text(value: Any, max_chars: int = 160) -> str:
@@ -480,14 +566,25 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
         return 2
 
     defaults = config["timeouts"]
+    boot_mode = suites[suite_name]["boot_mode"]
+    baseline_ready_seconds = defaults["baseline_ready_seconds"]
+    suite_seconds = defaults["suite_seconds"]
+    command_type = "run_suite"
+    if is_live_trace_export_suite(suite_name):
+        boot_mode = "live_session"
+        baseline_ready_seconds = 0
+        suite_seconds = 30
+        command_type = "export_llm_trace"
+
     command = {
         "id": f"{suite_name}-{uuid.uuid4().hex[:10]}",
+        "command_type": command_type,
         "suite": suite_name,
-        "boot_mode": suites[suite_name]["boot_mode"],
+        "boot_mode": boot_mode,
         "runner_ready_seconds": defaults["runner_ready_seconds"],
         "boot_ready_seconds": defaults.get("boot_ready_seconds", 30),
-        "baseline_ready_seconds": defaults["baseline_ready_seconds"],
-        "suite_seconds": defaults["suite_seconds"],
+        "baseline_ready_seconds": baseline_ready_seconds,
+        "suite_seconds": suite_seconds,
     }
 
     state = BridgeState(command=command)
@@ -496,7 +593,7 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
     except OSError as exc:
         existing_bridge = get_existing_bridge_health(config)
         if existing_bridge is not None:
-            plugin_name = existing_bridge.get("plugin_name") or "unknown"
+            plugin_detail = existing_bridge_descriptor(existing_bridge)
             result_ready = existing_bridge.get("result_ready") is True
             command_pending = existing_bridge.get("command_pending") is True
             if result_ready:
@@ -508,7 +605,7 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
             eprint(
                 "AutoTrack test bridge already in use on "
                 f"http://{config['listen_host']}:{config['listen_port']} "
-                f"({status_detail}; plugin={plugin_name}). "
+                f"({status_detail}; plugin={plugin_detail}). "
                 "Wait for the active suite to finish before starting another."
             )
             return 2
@@ -518,7 +615,8 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
 
     print(
         f"Waiting for Studio plugin on "
-        f"http://{config['listen_host']}:{config['listen_port']} for {suite_name}..."
+        f"http://{config['listen_host']}:{config['listen_port']} for {suite_name}"
+        f"{' live-session export' if is_live_trace_export_suite(suite_name) else ''}..."
     )
 
     start = time.time()
@@ -540,14 +638,30 @@ def run_suite(config: dict[str, Any], suite_name: str) -> int:
             with state.lock:
                 if state.plugin_seen_at is not None and not plugin_connected:
                     plugin_connected = True
-                    print(f"Plugin connected: {state.plugin_name or 'unknown'}")
+                    print(f"Plugin connected: {plugin_descriptor(state)}")
+
+                if state.plugin_enabled is False:
+                    eprint(disabled_bridge_message(state))
+                    exit_code = 3
+                    break
 
                 if state.command_claimed and plugin_connected and not state.command_logged:
-                    print(f"Running {suite_name} in {command['boot_mode']} mode...")
+                    if is_live_trace_export_suite(suite_name):
+                        print("Requesting latest LLM trace from active Studio Play session...")
+                    else:
+                        print(f"Running {suite_name} in {command['boot_mode']} mode...")
                     state.command_logged = True
 
                 if state.result is not None:
                     result = state.result
+                    if is_live_trace_export_suite(suite_name):
+                        message = result.get("message")
+                        if isinstance(message, str) and "no active Play session" in message:
+                            result = dict(result)
+                            result["message"] = (
+                                message
+                                + ". This suite is a live-session export path; start Play with an existing trace first."
+                            )
                     print_summary(result)
                     status = result.get("status")
                     if status == "passed":
@@ -598,11 +712,11 @@ def export_llm_trace(config: dict[str, Any]) -> int:
     except OSError as exc:
         existing_bridge = get_existing_bridge_health(config)
         if existing_bridge is not None:
-            plugin_name = existing_bridge.get("plugin_name") or "unknown"
+            plugin_detail = existing_bridge_descriptor(existing_bridge)
             eprint(
                 "AutoTrack test bridge already in use on "
                 f"http://{config['listen_host']}:{config['listen_port']} "
-                f"(plugin={plugin_name}). Wait for the active command to finish before exporting."
+                f"(plugin={plugin_detail}). Wait for the active command to finish before exporting."
             )
             return 2
 
@@ -611,7 +725,7 @@ def export_llm_trace(config: dict[str, Any]) -> int:
 
     eprint(
         f"Waiting for Studio plugin on "
-        f"http://{config['listen_host']}:{config['listen_port']} for export-llm-trace..."
+        f"http://{config['listen_host']}:{config['listen_port']} for export-llm-trace live-session export..."
     )
 
     start = time.time()
@@ -627,16 +741,25 @@ def export_llm_trace(config: dict[str, Any]) -> int:
             with state.lock:
                 if state.plugin_seen_at is not None and not plugin_connected:
                     plugin_connected = True
-                    eprint(f"Plugin connected: {state.plugin_name or 'unknown'}")
+                    eprint(f"Plugin connected: {plugin_descriptor(state)}")
+
+                if state.plugin_enabled is False:
+                    eprint(disabled_bridge_message(state))
+                    exit_code = 3
+                    break
 
                 if state.command_claimed and plugin_connected and not state.command_logged:
-                    eprint("Requesting latest LLM trace from active Studio session...")
+                    eprint("Requesting latest LLM trace from active Studio Play session...")
                     state.command_logged = True
 
                 if state.result is not None:
                     result = state.result
                     if result.get("status") != "passed":
-                        eprint(result.get("message") or "LLM trace export failed")
+                        message = result.get("message") or "LLM trace export failed"
+                        if "no active Play session" in message:
+                            eprint(f"{message}. Start Play with an existing trace before running export-llm-trace.")
+                        else:
+                            eprint(message)
                         exit_code = 2
                         break
 
@@ -693,11 +816,11 @@ def endurance_trace(config: dict[str, Any], model: str, duration: int, out_path:
     except OSError as exc:
         existing_bridge = get_existing_bridge_health(config)
         if existing_bridge is not None:
-            plugin_name = existing_bridge.get("plugin_name") or "unknown"
+            plugin_detail = existing_bridge_descriptor(existing_bridge)
             eprint(
                 "AutoTrack test bridge already in use on "
                 f"http://{config['listen_host']}:{config['listen_port']} "
-                f"(plugin={plugin_name}). Wait for the active command to finish before starting endurance-trace."
+                f"(plugin={plugin_detail}). Wait for the active command to finish before starting endurance-trace."
             )
             return 2
 
@@ -722,7 +845,12 @@ def endurance_trace(config: dict[str, Any], model: str, duration: int, out_path:
             with state.lock:
                 if state.plugin_seen_at is not None and not plugin_connected:
                     plugin_connected = True
-                    eprint(f"Plugin connected: {state.plugin_name or 'unknown'}")
+                    eprint(f"Plugin connected: {plugin_descriptor(state)}")
+
+                if state.plugin_enabled is False:
+                    eprint(disabled_bridge_message(state))
+                    exit_code = 3
+                    break
 
                 if state.command_claimed and plugin_connected and not state.command_logged:
                     eprint(f"Running endurance trace with model {model} for {duration}s...")
