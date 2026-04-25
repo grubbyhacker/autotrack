@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -8,7 +10,7 @@ local PAYLOAD_CHUNKS_FOLDER_NAME = "PayloadChunks"
 local MAX_STRING_VALUE_CHARS = 180000
 
 local TestSession = {}
-local _payload = nil
+local _payload: any = nil
 
 local function ensureFolder(name: string, parent: Instance): Folder
 	local existing = parent:FindFirstChild(name)
@@ -78,6 +80,12 @@ local function appendLineValue(line: string)
 	value.Parent = linesFolder
 end
 
+local function incrementStatusCount(folder: Folder, attributeName: string)
+	local current = folder:GetAttribute(attributeName)
+	local currentCount = if type(current) == "number" then current else 0
+	folder:SetAttribute(attributeName, currentCount + 1)
+end
+
 function TestSession.beginSuite(suiteName: string)
 	local folder = getStatusFolder()
 	clearLines()
@@ -102,11 +110,11 @@ function TestSession.appendLine(line: string)
 	appendLineValue(line)
 
 	if string.find(line, "[TEST PASS:", 1, true) ~= nil then
-		folder:SetAttribute("pass_count", (folder:GetAttribute("pass_count") or 0) + 1)
+		incrementStatusCount(folder, "pass_count")
 	elseif string.find(line, "[TEST FAIL:", 1, true) ~= nil then
-		folder:SetAttribute("fail_count", (folder:GetAttribute("fail_count") or 0) + 1)
+		incrementStatusCount(folder, "fail_count")
 	elseif string.find(line, "[TEST ERROR]", 1, true) ~= nil then
-		folder:SetAttribute("error_count", (folder:GetAttribute("error_count") or 0) + 1)
+		incrementStatusCount(folder, "error_count")
 	end
 end
 
@@ -118,7 +126,7 @@ function TestSession.finishSuite(status: string, message: string?)
 	folder:SetAttribute("finished_at", DateTime.now().UnixTimestampMillis)
 end
 
-function TestSession.setPayload(payload)
+function TestSession.setPayload(payload: any)
 	_payload = payload
 	local encoded = ""
 	if payload ~= nil then
