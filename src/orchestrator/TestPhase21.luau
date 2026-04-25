@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -26,15 +28,27 @@ local SectorRegistry = require(script.Parent.Parent.Track.SectorRegistry)
 local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 
 type SectorState = Types.SectorState
+type SectorParams = Types.SectorParams
+type Mechanic = Types.Mechanic
+type PadValue = Types.PadValue
 
 local TestPhase21 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 
-local function cloneParams(params)
-	return table.clone(params or {})
+local function cloneParams(params: SectorParams?): SectorParams
+	if params ~= nil then
+		return table.clone(params)
+	end
+	return {}
 end
 
-local function makeState(sectorId: number, mechanic, params, ingress, egress): SectorState
+local function makeState(
+	sectorId: number,
+	mechanic: Mechanic?,
+	params: SectorParams?,
+	ingress: PadValue?,
+	egress: PadValue?
+): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -56,6 +70,14 @@ local function waitUntil(predicate, timeoutSeconds: number): boolean
 		task.wait(0.1)
 	end
 	return predicate()
+end
+
+local function getStringAttribute(instance: Instance, name: string): string
+	local value = instance:GetAttribute(name)
+	if type(value) == "string" then
+		return value
+	end
+	return ""
 end
 
 local function resetEditableSectors()
@@ -426,7 +448,7 @@ local function testTuneLifecycle()
 	T.expect("phase21_tune_set_updates_working_state", setOk == true and setErr == nil, tostring(setErr))
 	T.expect(
 		"phase21_tune_set_uses_experimental_bounds",
-		string.find(stateFolder:GetAttribute("tune_param_summary") or "", "gap_length=24", 1, true) ~= nil
+		string.find(getStringAttribute(stateFolder, "tune_param_summary"), "gap_length=24", 1, true) ~= nil
 			and TuneMode.experimentalBounds("RampJump").gap_length.max > LevelMappings.LEVER_BOUNDS.RampJump.gap_length.max
 			and stateFolder:GetAttribute("tune_candidate_version") == 2,
 		HttpService:JSONEncode({
@@ -441,7 +463,7 @@ local function testTuneLifecycle()
 	T.expect("phase21_tune_set_clamped_command_accepted", setClipOk == true and setClipErr == nil, tostring(setClipErr))
 	T.expect(
 		"phase21_tune_set_clamps_to_experimental_bounds",
-		string.find(stateFolder:GetAttribute("tune_param_summary") or "", "gap_length=24", 1, true) ~= nil,
+		string.find(getStringAttribute(stateFolder, "tune_param_summary"), "gap_length=24", 1, true) ~= nil,
 		tostring(stateFolder:GetAttribute("tune_param_summary"))
 	)
 
@@ -449,7 +471,7 @@ local function testTuneLifecycle()
 	T.expect("phase21_tune_pad_updates_working_state", padOk == true and padErr == nil, tostring(padErr))
 	T.expect(
 		"phase21_tune_pad_updates_summary",
-		string.find(stateFolder:GetAttribute("tune_param_summary") or "", "ingress=Boost25", 1, true) ~= nil,
+		string.find(getStringAttribute(stateFolder, "tune_param_summary"), "ingress=Boost25", 1, true) ~= nil,
 		tostring(stateFolder:GetAttribute("tune_param_summary"))
 	)
 
@@ -459,7 +481,7 @@ local function testTuneLifecycle()
 		"phase21_tune_attr_summary_updates",
 		workspace:GetAttribute("AutoTrack_StraightPinYawDamping") == 55
 			and string.find(
-					stateFolder:GetAttribute("tune_attr_summary") or "",
+					getStringAttribute(stateFolder, "tune_attr_summary"),
 					"straight_pin_yaw_damping=55",
 					1,
 					true
@@ -481,7 +503,7 @@ local function testTuneLifecycle()
 		"phase21_tune_speed_attr_updates_summary_and_telemetry",
 		workspace:GetAttribute("AutoTrack_CarTargetSpeed") == 130
 			and stateFolder:GetAttribute("tune_active_target_speed") == 130
-			and string.find(stateFolder:GetAttribute("tune_attr_summary") or "", "car_target_speed=130", 1, true)
+			and string.find(getStringAttribute(stateFolder, "tune_attr_summary"), "car_target_speed=130", 1, true)
 				~= nil,
 		HttpService:JSONEncode({
 			workspace = workspace:GetAttribute("AutoTrack_CarTargetSpeed"),
@@ -500,7 +522,7 @@ local function testTuneLifecycle()
 		"phase21_tune_integrity_attr_updates_summary",
 		workspace:GetAttribute("AutoTrack_FrontBodyContainmentDistance") == 18
 			and string.find(
-					stateFolder:GetAttribute("tune_attr_summary") or "",
+					getStringAttribute(stateFolder, "tune_attr_summary"),
 					"front_body_containment_distance=18",
 					1,
 					true
@@ -639,7 +661,7 @@ local function testTuneLifecycle()
 	T.expect("phase21_tune_revert_accepted", revertOk == true and revertErr == nil, tostring(revertErr))
 	T.expect(
 		"phase21_tune_revert_restores_committed_state",
-		string.find(stateFolder:GetAttribute("tune_param_summary") or "", "gap_length=24", 1, true) ~= nil
+		string.find(getStringAttribute(stateFolder, "tune_param_summary"), "gap_length=24", 1, true) ~= nil
 			and workspace:GetAttribute("AutoTrack_CarTargetSpeed") == nil,
 		HttpService:JSONEncode({
 			summary = stateFolder:GetAttribute("tune_param_summary"),
