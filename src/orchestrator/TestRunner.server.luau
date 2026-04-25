@@ -1,3 +1,4 @@
+--!strict
 -- TestRunner.server.luau
 -- Triggered by a client-fired RemoteEvent (execute_luau runs client-side).
 -- Usage from MCP execute_luau:
