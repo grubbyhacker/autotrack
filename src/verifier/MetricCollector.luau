@@ -1,3 +1,4 @@
+--!strict
 -- MetricCollector.luau
 -- Accumulates per-run telemetry and produces a RunMetrics table.
 -- prd_plan.md §15.4, Phase 5; airtime_distance added in Phase 9
