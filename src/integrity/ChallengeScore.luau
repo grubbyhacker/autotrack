@@ -1,3 +1,5 @@
+--!strict
+
 -- ChallengeScore.luau
 -- Pure-function fitness signal for a successfully verified sector.
 -- prd_plan.md extension; plans/phase11.md §3.1, §10
@@ -119,7 +121,7 @@ local function nearMissMargin(state: SectorState, metrics: RunMetrics): number
 		local leftOffset = metrics.target_left_offset or 0
 		local rightOffset = metrics.target_right_offset or 0
 		local amplitude = state.params.amplitude or 0
-		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length
+		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length or 1
 		local transitionBounds = LevelMappings.LEVER_BOUNDS.Chicane.transition_length
 		-- Use absolute track half-width as denominator so amplitude drives the score,
 		-- not corridor_width. amplitude=TRACK_WIDTH/2 (max swing) → occupancy=1.
@@ -287,7 +289,7 @@ function ChallengeScore.suggestEscalation(state: SectorState, score: Types.Chall
 		return "height_or_depth", "raise peak"
 	elseif mechanic == "Chicane" then
 		local amplitude = state.params.amplitude or 0
-		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length
+		local transitionLength = state.params.transition_length or LevelMappings.DEFAULTS.Chicane.transition_length or 1
 		local amplitudeCeiling = Constants.TRACK_WIDTH * 0.5
 		local transitionFloor = LevelMappings.LEVER_BOUNDS.Chicane.transition_length.min
 		local amplitudeCanGrow = amplitude < amplitudeCeiling
