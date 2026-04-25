@@ -1,6 +1,14 @@
+--!strict
+
+type PadKind = "None" | "Boost" | "Brake"
+type PadInfo = {
+	kind: PadKind,
+	amount: number,
+}
+
 local PadValueUtils = {}
 
-local VALUES = {
+local VALUES: { [string]: PadInfo } = {
 	None = { kind = "None", amount = 0 },
 	Boost5 = { kind = "Boost", amount = 5 },
 	Boost10 = { kind = "Boost", amount = 10 },
@@ -15,8 +23,8 @@ local VALUES = {
 	Brake = { kind = "Brake", amount = 10 },
 }
 
-local BOOST_STEPS = { "Boost5", "Boost10", "Boost25", "Boost50" }
-local BRAKE_STEPS = { "Brake5", "Brake10", "Brake25", "Brake50" }
+local BOOST_STEPS: { string } = { "Boost5", "Boost10", "Boost25", "Boost50" }
+local BRAKE_STEPS: { string } = { "Brake5", "Brake10", "Brake25", "Brake50" }
 
 function PadValueUtils.isValid(value: string): boolean
 	return VALUES[value] ~= nil
@@ -103,7 +111,7 @@ function PadValueUtils.fromKindAmount(kind: string, amount: number?): string
 	return "None"
 end
 
-local function nextStep(list, current: string): string?
+local function nextStep(list: { string }, current: string): string?
 	for index, value in ipairs(list) do
 		if value == current then
 			return list[math.min(index + 1, #list)]
@@ -112,7 +120,7 @@ local function nextStep(list, current: string): string?
 	return list[1]
 end
 
-local function previousStep(list, current: string): string?
+local function previousStep(list: { string }, current: string): string?
 	for index, value in ipairs(list) do
 		if value == current then
 			if index <= 1 then
