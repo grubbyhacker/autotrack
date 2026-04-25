@@ -1,3 +1,4 @@
+--!strict
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,11 +19,18 @@ local CrestDipIntegrity = require(script.Parent.Parent.Integrity.CrestDipIntegri
 local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 
 type SectorState = Types.SectorState
+type SectorMeta = Types.SectorMeta
 
 local TestPhase18 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 
-local function makeState(sectorId: number, mechanic, params, ingress, egress): SectorState
+local function makeState(
+	sectorId: number,
+	mechanic: Types.Mechanic?,
+	params: Types.SectorParams?,
+	ingress: Types.PadValue?,
+	egress: Types.PadValue?
+): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -35,7 +43,7 @@ local function makeState(sectorId: number, mechanic, params, ingress, egress): S
 	}
 end
 
-local function getSectorMeta(sectorId: number)
+local function getSectorMeta(sectorId: number): SectorMeta
 	local sectors = TrackGenerator.generate()
 	for _, sector in ipairs(sectors) do
 		if sector.id == sectorId then
