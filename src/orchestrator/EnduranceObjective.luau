@@ -1,3 +1,5 @@
+--!strict
+
 -- EnduranceObjective.luau
 -- Shared scoring policy for phase-14.5 endurance orchestration decisions.
 
@@ -13,7 +15,7 @@ type CandidateScore = Types.CandidateScore
 local EnduranceObjective = {}
 
 local REPEAT_SKIP_THRESHOLD = 3
-local SUPPORTED_MECHANICS = {
+local SUPPORTED_MECHANICS: { [string]: boolean } = {
 	RampJump = true,
 	Chicane = true,
 	CrestDip = true,
@@ -28,8 +30,8 @@ local function normalizeHint(paramsHint: string?): string
 		return ""
 	end
 
-	local words = {}
-	local seen = {}
+	local words: { string } = {}
+	local seen: { [string]: boolean } = {}
 	for word in string.gmatch(string.lower(paramsHint), "[%w%-]+") do
 		if #word >= 3 and not seen[word] then
 			seen[word] = true
@@ -64,7 +66,7 @@ local function signatureCount(context: OrchestratorContext, signature: string): 
 	return context.mechanic_repeat_pressure[signature] or 0
 end
 
-local function attemptsForSector(context: OrchestratorContext, sectorId: number)
+local function attemptsForSector(context: OrchestratorContext, sectorId: number): (number, number)
 	if context.attempt_history == nil then
 		return 0, 0
 	end
