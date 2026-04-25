@@ -1,3 +1,5 @@
+--!strict
+
 local HUDRegistry = require(script.Parent.HUDRegistry)
 
 local StatsPanel = {}
@@ -9,7 +11,7 @@ local function refs()
 end
 
 local function formatSeconds(seconds: number): string
-	if seconds == nil or seconds < 0 then
+	if seconds < 0 then
 		return "--"
 	end
 	return ("%.2fs"):format(seconds)
@@ -33,7 +35,7 @@ function StatsPanel.setLastLapTime(seconds: number)
 end
 
 function StatsPanel.setSlowdown(ratio: number)
-	if ratio == nil or ratio <= 0 then
+	if ratio <= 0 then
 		refs().slowdownLabel.Text = "% --"
 		return
 	end
@@ -42,15 +44,15 @@ function StatsPanel.setSlowdown(ratio: number)
 end
 
 function StatsPanel.setCurrentSpeed(speed: number, _commandedSpeed: number?, _targetSpeed: number?)
-	refs().speedValueLabel.Text = string.format("%5.1f", speed or 0)
+	refs().speedValueLabel.Text = string.format("%5.1f", speed)
 end
 
 function StatsPanel.setHeading(deg: number)
-	refs().headingValueLabel.Text = string.format("%2s %3d°", compassPoint(deg or 0), math.floor(deg or 0))
+	refs().headingValueLabel.Text = string.format("%2s %3d°", compassPoint(deg), math.floor(deg))
 end
 
 function StatsPanel.setPitch(deg: number)
-	refs().pitchValueLabel.Text = string.format("%+4.0f°", deg or 0)
+	refs().pitchValueLabel.Text = string.format("%+4.0f°", deg)
 end
 
 function StatsPanel.setScore(
@@ -69,7 +71,7 @@ function StatsPanel.setScore(
 )
 	local label = refs().scoreLabel
 
-	if not trackCount or trackCount <= 0 then
+	if trackCount <= 0 then
 		label.Text = table.concat({
 			alignMetric("Track", "--"),
 			alignMetric("Budget", "--"),
@@ -78,10 +80,10 @@ function StatsPanel.setScore(
 		return
 	end
 
-	local usedPercent = math.floor((trackBudgetUsed or 0) * 100 + 0.5)
+	local usedPercent = math.floor(trackBudgetUsed * 100 + 0.5)
 	local budgetState = if trackOverBudget then "OVER" else "OK"
 	label.Text = table.concat({
-		alignMetric("Track", string.format("%4.1f (%d)", trackTotal or 0, trackCount)),
+		alignMetric("Track", string.format("%4.1f (%d)", trackTotal, trackCount)),
 		alignMetric("Budget", string.format("%3d%% · %s", usedPercent, budgetState)),
 	}, "\n")
 	label.TextColor3 = if trackOverBudget then refs().colors.danger else refs().colors.text
