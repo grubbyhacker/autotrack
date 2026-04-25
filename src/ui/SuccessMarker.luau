@@ -1,3 +1,4 @@
+--!strict
 -- SuccessMarker.luau
 -- Brief highlight on the committed sector after a successful job.
 -- prd_plan.md §13.4, Phase 8
@@ -10,22 +11,27 @@ local SuccessMarker = {}
 local ROOT_NAME = "AutoTrackUIWorld"
 local MARKER_NAME = "SuccessMarker"
 
+local function ensureRoot(): Folder
+	local root = workspace:FindFirstChild(ROOT_NAME)
+	if root and root:IsA("Folder") then
+		return root
+	end
+	root = Instance.new("Folder")
+	root.Name = ROOT_NAME
+	root.Parent = workspace
+	return root
+end
+
 -- Briefly highlight the committed sector, then fade out after UI_SUCCESS_DWELL seconds.
 -- sectorParts: the Instances making up the sector geometry
-function SuccessMarker.flash(sectorParts: { Instance })
+function SuccessMarker.flash(sectorParts: { Instance }): ()
 	if #sectorParts == 0 then
 		return
 	end
 
 	SuccessMarker.clear()
 
-	local root = workspace:FindFirstChild(ROOT_NAME)
-	if not root then
-		root = Instance.new("Folder")
-		root.Name = ROOT_NAME
-		root.Parent = workspace
-	end
-
+	local root = ensureRoot()
 	local container = Instance.new("Folder")
 	container.Name = MARKER_NAME
 	container.Parent = root
@@ -51,7 +57,7 @@ function SuccessMarker.flash(sectorParts: { Instance })
 	end)
 end
 
-function SuccessMarker.clear()
+function SuccessMarker.clear(): ()
 	local root = workspace:FindFirstChild(ROOT_NAME)
 	if not root then
 		return
