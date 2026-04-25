@@ -1,3 +1,4 @@
+--!strict
 -- RampJumpPath.luau
 -- Shared centerline/profile helper for RampJump geometry and verifier guidance.
 
