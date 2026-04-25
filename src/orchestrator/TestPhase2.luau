@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase2.luau
 -- Verifies Phase 2 deliverables: SectorSerializer, SectorApplier, SectorRollback,
 -- and sector entry/exit trace output.
