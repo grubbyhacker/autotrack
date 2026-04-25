@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,6 +13,35 @@ local TestFactories = require(script.Parent.TestFactories)
 local UIState = require(script.Parent.UIState)
 
 type OrchestratorContext = Types.OrchestratorContext
+type OrchestratorAttempt = Types.OrchestratorAttempt
+type OrchestratorDecision = Types.OrchestratorDecision
+type OrchestratorSubmitDecision = Types.OrchestratorSubmitDecision
+
+type OrchestratorSubmitCapture = {
+	raw_text: string,
+	intent: OrchestratorSubmitDecision?,
+}
+
+type OrchestratorTelemetry = {
+	objective_total: number?,
+	budget_target: number?,
+	budget_headroom: number?,
+	decision_index: number?,
+	last_decision: string?,
+	last_rationale: string?,
+	memory_depth: number?,
+	repeat_penalties: string?,
+	failure_signature: string?,
+	reliability_index: number?,
+	ledger_lines: { string }?,
+	track_intent: string?,
+	shared_memory_depth: number?,
+	proposal_memory_depth: number?,
+	repair_memory_depth: number?,
+	shared_memory_lines: { string }?,
+	proposal_memory_lines: { string }?,
+	repair_memory_lines: { string }?,
+}
 
 local T = TestUtils
 local TestPhase14_5 = {}
@@ -36,7 +67,7 @@ function TestPhase14_5.runUnit()
 	})
 
 	local objectiveContext = makeContext()
-	objectiveContext.attempt_history = {
+	local attemptHistory: { OrchestratorAttempt } = {
 		{
 			sector_id = 2,
 			mechanic = "RampJump",
@@ -77,11 +108,14 @@ function TestPhase14_5.runUnit()
 			timestamp = 3,
 		},
 	}
+	objectiveContext.attempt_history = attemptHistory
 	objectiveContext.sector_attempt_counts = { [2] = 3 }
 	objectiveContext.mechanic_repeat_pressure = {
 		[EnduranceObjective.signature(repeatedDecision)] = 3,
 	}
-	objectiveContext.track_intent.diversity_pressure = {
+	local trackIntent = objectiveContext.track_intent
+	assert(trackIntent ~= nil, "test context should include track intent")
+	trackIntent.diversity_pressure = {
 		[EnduranceObjective.signature(repeatedDecision)] = 3,
 	}
 
@@ -117,9 +151,9 @@ function TestPhase14_5.runUnit()
 		"missing orchestrator default attrs"
 	)
 
-	local orchestratorContexts = {}
-	local telemetryPayloads = {}
-	local orchestratorSubmits = {}
+	local orchestratorContexts: { OrchestratorContext } = {}
+	local telemetryPayloads: { OrchestratorTelemetry } = {}
+	local orchestratorSubmits: { OrchestratorSubmitCapture } = {}
 	local loopStarted = false
 
 	local jobs = {
@@ -168,7 +202,7 @@ function TestPhase14_5.runUnit()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function(context)
+			orchestrate = function(context: OrchestratorContext): (OrchestratorDecision, string?)
 				table.insert(orchestratorContexts, context)
 				if #orchestratorContexts == 1 then
 					return repeatedDecision, nil
@@ -179,7 +213,7 @@ function TestPhase14_5.runUnit()
 			setAttemptBudget = function() end,
 			appendLog = function() end,
 			trace = function() end,
-			setOrchestratorTelemetry = function(payload)
+			setOrchestratorTelemetry = function(payload: OrchestratorTelemetry)
 				table.insert(telemetryPayloads, payload)
 			end,
 			startContinuousLoop = function()
@@ -189,41 +223,56 @@ function TestPhase14_5.runUnit()
 		},
 	})
 
+	local firstSubmit = orchestratorSubmits[1]
+	local firstIntent = if firstSubmit ~= nil then firstSubmit.intent else nil
 	T.expect(
 		"phase14_5_orchestrator_runs_until_begin_loop_with_history",
 		runOk == true
 			and runErr == nil
 			and loopStarted == true
-			and type(orchestratorSubmits[1]) == "table"
-			and orchestratorSubmits[1].raw_text == "add an extreme tall jump in sector 2"
-			and orchestratorSubmits[1].intent ~= nil
-			and orchestratorSubmits[1].intent.desired_feel == repeatedDecision.desired_feel,
+			and firstSubmit ~= nil
+			and firstSubmit.raw_text == "add an extreme tall jump in sector 2"
+			and firstIntent ~= nil
+			and firstIntent.desired_feel == repeatedDecision.desired_feel,
 		tostring(runErr)
 	)
+	local secondContext = orchestratorContexts[2]
+	local secondHistory = if secondContext ~= nil then secondContext.attempt_history else nil
+	local secondCounts = if secondContext ~= nil then secondContext.sector_attempt_counts else nil
+	local secondRepeat = if secondContext ~= nil then secondContext.mechanic_repeat_pressure else nil
+	local secondTrackIntent = if secondContext ~= nil then secondContext.track_intent else nil
+	local secondBudgetUsed = if secondContext ~= nil then secondContext.budget.used else 999
+	local secondTargetBudgetUsed = if secondTrackIntent ~= nil then secondTrackIntent.target_budget_used else 999
 	T.expect(
 		"phase14_5_orchestrator_buildContext_includes_history",
-		#orchestratorContexts >= 2
-			and #orchestratorContexts[2].attempt_history >= 1
-			and (orchestratorContexts[2].sector_attempt_counts[2] or 0) == 1
-			and (orchestratorContexts[2].mechanic_repeat_pressure[EnduranceObjective.signature(repeatedDecision)] or 0) == 1
-			and orchestratorContexts[2].track_intent ~= nil
+		secondContext ~= nil
+			and secondHistory ~= nil
+			and #secondHistory >= 1
+			and secondCounts ~= nil
+			and (secondCounts[2] or 0) == 1
+			and secondRepeat ~= nil
+			and (secondRepeat[EnduranceObjective.signature(repeatedDecision)] or 0) == 1
+			and secondTrackIntent ~= nil
 			-- Phase 24 contract: endurance budget refresh comes from committed full-lap
 			-- results only, so a reverted attempt keeps budget used unchanged.
-			and math.abs(orchestratorContexts[2].budget.used or 0) < 0.001
-			and math.abs(orchestratorContexts[2].track_intent.target_budget_used or 0) < 0.001,
+			and math.abs(secondBudgetUsed) < 0.001
+			and math.abs(secondTargetBudgetUsed) < 0.001,
 		HttpService:JSONEncode(orchestratorContexts[2] or {})
 	)
+	local lastTelemetry = telemetryPayloads[#telemetryPayloads]
+	local lastFailureSignature = if lastTelemetry ~= nil then lastTelemetry.failure_signature else nil
 	T.expect(
 		"phase14_5_orchestrator_telemetry_captures_failure_signature",
 		#telemetryPayloads >= 2
-			and type(telemetryPayloads[#telemetryPayloads].failure_signature) == "string"
-			and string.find(telemetryPayloads[#telemetryPayloads].failure_signature, "no_progress", 1, true) ~= nil,
-		HttpService:JSONEncode(telemetryPayloads[#telemetryPayloads] or {})
+			and lastFailureSignature ~= nil
+			and string.find(lastFailureSignature, "no_progress", 1, true) ~= nil,
+		HttpService:JSONEncode(lastTelemetry or {})
 	)
+	local lastDecision = if lastTelemetry ~= nil then lastTelemetry.last_decision else nil
 	T.expect(
 		"phase14_5_begin_loop_telemetry_uses_player_facing_copy",
-		#telemetryPayloads >= 1 and telemetryPayloads[#telemetryPayloads].last_decision == "TRACK READY",
-		HttpService:JSONEncode(telemetryPayloads[#telemetryPayloads] or {})
+		#telemetryPayloads >= 1 and lastDecision == "TRACK READY",
+		HttpService:JSONEncode(lastTelemetry or {})
 	)
 end
 
