@@ -196,7 +196,7 @@ This workflow is now a maintained project contract, not an optional convenience.
   - sourcemap generation
   - lint/format validation
   - listing available suites or config
-- Hygiene tooling is now pinned via `rokit.toml`. `make fmt`, `make fmt-check`, and `make lint` run repo-wide across tracked `.luau` source under `src/` and `studio/`; `make typecheck` remains a conservative documented green subset; `make typecheck-report` is the non-gating full-repo analyzer report. Keep this workflow non-interactive and `make`-driven.
+- Hygiene tooling is now pinned via `rokit.toml`. `make fmt`, `make fmt-check`, `make lint`, and `make typecheck` run repo-wide across tracked `.luau` source under `src/` and `studio/`; `make typecheck-report` is only a compatibility alias for the same full analyzer gate. Keep this workflow non-interactive and `make`-driven.
 - Formatting is non-negotiable inside the repo-wide source hygiene set. Broad formatting is allowed when the human explicitly asks for a repo-wide hygiene migration.
 - Do not perform bulk `--!strict` upgrades as part of routine hygiene; ratchet strictness module-by-module with explicit scope.
 - Do not route trivial non-Studio checks through the Studio bridge just for consistency.

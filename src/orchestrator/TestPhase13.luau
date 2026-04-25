@@ -7,6 +7,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local T = require(script.Parent.TestUtils)
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LLMConfig = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LLMConfig"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
@@ -14,6 +15,7 @@ local ActionValidator = require(script.Parent.Parent.Agent.ActionValidator)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local JobRunner = require(script.Parent.JobRunner)
+local TestFactories = require(script.Parent.TestFactories)
 local TestSession = require(script.Parent.TestSession)
 local TestPhase17 = require(script.Parent.TestPhase17)
 local UIState = require(script.Parent.UIState)
@@ -64,32 +66,19 @@ local function fakePacket(request, state, attemptIndex)
 end
 
 local function makeOrchestratorContext()
-	return {
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
-		sector_states = {
-			[2] = { mechanic = nil, params = {}, score = 0 },
-			[3] = { mechanic = nil, params = {}, score = 0 },
-			[4] = { mechanic = nil, params = {}, score = 0 },
-			[7] = { mechanic = nil, params = {}, score = 0 },
-			[8] = { mechanic = nil, params = {}, score = 0 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
-		},
+	return TestFactories.orchestratorContext({
 		budget = { used = 0.1, over_budget = false },
 		attempt_budget = { used = 0, total = 8 },
-		last_result = nil,
-		attempt_history = {},
-		sector_attempt_counts = {},
-		mechanic_repeat_pressure = {},
 		track_intent = {
 			target_total_score = 0,
 			target_budget_used = 0.1,
 			diversity_pressure = {},
 		},
-	}
+	})
 end
 
 local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: string)
-	return {
+	return TestFactories.designIntent({
 		sector_id = sectorId,
 		mechanic = mechanic,
 		params_hint = paramsHint,
@@ -105,7 +94,7 @@ local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: 
 			"preserve downstream stability",
 			"avoid budget blowout",
 		},
-	}
+	})
 end
 
 -- ── unit tests ───────────────────────────────────────────────────────────────
@@ -322,7 +311,7 @@ function TestPhase13.runUnit()
 			"expected Boost50 and Brake50 to be valid pad values"
 		)
 
-		local boost50Action = { type = "SetPad", pad = "ingress", value = "Boost50" }
+		local boost50Action = ContractBuilders.setPad("ingress", "Boost50")
 		local actionOk, actionErr = ActionValidator.validateAction(boost50Action, "RampJump")
 		T.expect(
 			"boost50_passes_action_validator",

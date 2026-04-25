@@ -4,11 +4,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local TestUtils = require(script.Parent.TestUtils)
-local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
-local EnduranceMemory = require(script.Parent.EnduranceMemory)
 local EnduranceObjective = require(script.Parent.EnduranceObjective)
 local MinimalOrchestrator = require(script.Parent.MinimalOrchestrator)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
+local TestFactories = require(script.Parent.TestFactories)
 local UIState = require(script.Parent.UIState)
 
 type OrchestratorContext = Types.OrchestratorContext
@@ -17,47 +16,11 @@ local T = TestUtils
 local TestPhase14_5 = {}
 
 local function makeContext(): OrchestratorContext
-	return {
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
-		sector_states = {
-			[2] = { mechanic = nil, params = {}, score = 0 },
-			[3] = { mechanic = nil, params = {}, score = 0 },
-			[4] = { mechanic = nil, params = {}, score = 0 },
-			[7] = { mechanic = nil, params = {}, score = 0 },
-			[8] = { mechanic = nil, params = {}, score = 0 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
-		},
-		budget = { used = 0.2, over_budget = false },
-		attempt_budget = { used = 0, total = Constants.ENDURANCE_ATTEMPT_BUDGET },
-		last_result = nil,
-		attempt_history = {},
-		sector_attempt_counts = {},
-		mechanic_repeat_pressure = {},
-		track_intent = {
-			target_total_score = 0,
-			target_budget_used = 0.2,
-			diversity_pressure = {},
-		},
-		memory = EnduranceMemory.new(),
-	}
+	return TestFactories.orchestratorContext()
 end
 
 local function withIntent(decision)
-	decision.action = decision.action or "submit_request"
-	decision.rationale = decision.rationale or "advance variety without repeating stale failures"
-	decision.target_score_band = decision.target_score_band or "high"
-	decision.target_budget_tolerance = decision.target_budget_tolerance or "medium"
-	decision.target_reliability = decision.target_reliability or "balanced"
-	decision.spectacle_priority = decision.spectacle_priority or "high"
-	decision.novelty_priority = decision.novelty_priority or "medium"
-	decision.replacement_intent = decision.replacement_intent or "open_slot_preferred"
-	decision.desired_feel = decision.desired_feel or "memorable but recoverable"
-	decision.constraints = decision.constraints
-		or {
-			"preserve downstream stability",
-			"stay within endurance budget",
-		}
-	return decision
+	return TestFactories.submitDecision(decision)
 end
 
 function TestPhase14_5.runUnit()

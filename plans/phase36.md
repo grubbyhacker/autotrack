@@ -2,9 +2,17 @@
 
 ## Status
 
-Planned.
+Complete.
 
 Phase numbering resumes at `36` because `plans/phase32.md` was used as a roadmap slice that covered Milestones `32` through `35`. Do not backfill separate `phase33.md`, `phase34.md`, or `phase35.md` files.
+
+Final implementation notes:
+
+- `make typecheck` is now the authoritative full-repo analyzer gate for tracked Luau source under `src/` and `studio/`; `make typecheck-report` delegates to it as a compatibility alias.
+- `src/common/ContractBuilders.luau` centralizes small typed constructors for parsed requests, endurance/orchestrator intent decisions, and `AgentAction` values.
+- `src/orchestrator/TestFactories.luau` centralizes complete orchestration test fixtures, including default `OrchestratorContext` memory.
+- `RequestParser`, `MinimalOrchestrator`, and `EnduranceMemory` were promoted to `--!strict`.
+- `phase36` is wired through the maintained Makefile/config/dispatcher suite contract.
 
 ## Goal
 

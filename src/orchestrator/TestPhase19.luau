@@ -6,11 +6,12 @@ local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
 local OrchestratorPromptBuilder = require(script.Parent.Parent.Agent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.Parent.Agent.PromptBuilder)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
+local TestFactories = require(script.Parent.TestFactories)
 
 local TestPhase19 = {}
 
 local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: string)
-	return {
+	return TestFactories.designIntent({
 		sector_id = sectorId,
 		mechanic = mechanic,
 		params_hint = paramsHint,
@@ -26,18 +27,15 @@ local function makeDesignIntent(sectorId: number, mechanic: string, paramsHint: 
 			"preserve downstream stability",
 			"prefer ingress braking over egress braking",
 		},
-	}
+	})
 end
 
 local function makeSubmitDecision(sectorId: number, mechanic: string, paramsHint: string)
-	local decision = makeDesignIntent(sectorId, mechanic, paramsHint)
-	decision.action = "submit_request"
-	return decision
+	return TestFactories.submitDecision(makeDesignIntent(sectorId, mechanic, paramsHint))
 end
 
 local function makeOrchestratorContext()
-	return {
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+	return TestFactories.orchestratorContext({
 		sector_states = {
 			[2] = { mechanic = nil, params = {}, score = 0 },
 			[3] = { mechanic = "Chicane", params = { amplitude = 8 }, score = 12 },
@@ -57,7 +55,7 @@ local function makeOrchestratorContext()
 			target_budget_used = 0.2,
 			diversity_pressure = {},
 		},
-	}
+	})
 end
 
 local function makeRequest(designIntent)

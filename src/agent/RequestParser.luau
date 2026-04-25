@@ -1,3 +1,4 @@
+--!strict
 -- RequestParser.luau
 -- Parses a plain-text user request into a typed Request.
 -- prd_plan.md §3.2–3.4, Phase 6
@@ -11,12 +12,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Request = Types.Request
-type MechanicParsedRequest = Types.MechanicParsedRequest
-type PadParsedRequest = Types.PadParsedRequest
 type PadSide = Types.PadSide
 type PadValue = Types.PadValue
 
@@ -55,14 +55,14 @@ local PAD_VALUE_TOKENS = {
 	clear = "None",
 	remove = "None",
 	none = "None",
-}
+} :: { [string]: "Boost" | "Brake" | "None" }
 
 local PAD_SIDE_PATTERNS = {
 	{ pattern = "ingress", side = "ingress" },
 	{ pattern = "entry", side = "ingress" },
 	{ pattern = "egress", side = "egress" },
 	{ pattern = "exit", side = "egress" },
-}
+} :: { { pattern: string, side: PadSide } }
 
 local function trim(text: string): string
 	return string.match(text, "^%s*(.-)%s*$") or ""
@@ -162,24 +162,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		if padSide == nil then
 			return nil, "pad side missing"
 		end
-		local parsed: PadParsedRequest = {
-			sector_id = sectorId,
-			mechanic = nil,
-			request_kind = "Pad",
-			pad_side = padSide,
-			pad_value = padValue,
-		}
-		return {
-			request_id = requestId,
-			raw_text = cleaned,
-			parsed = parsed,
-			qualifiers = {},
-			origin = "player",
-			design_intent = nil,
-			memory_context = nil,
-			timestamp = os.time(),
-		},
-			nil
+		return ContractBuilders.playerPadRequest(requestId, cleaned, sectorId, padSide, padValue), nil
 	end
 
 	if #mechanicsFound == 0 then
@@ -198,25 +181,7 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		end
 	end
 
-	local parsed: MechanicParsedRequest = {
-		sector_id = sectorId,
-		mechanic = mechanicsFound[1],
-		request_kind = "Mechanic",
-		pad_side = nil,
-		pad_value = nil,
-	}
-
-	return {
-		request_id = requestId,
-		raw_text = cleaned,
-		parsed = parsed,
-		qualifiers = qualifiers,
-		origin = "player",
-		design_intent = nil,
-		memory_context = nil,
-		timestamp = os.time(),
-	},
-		nil
+	return ContractBuilders.playerMechanicRequest(requestId, cleaned, sectorId, mechanicsFound[1], qualifiers), nil
 end
 
 return RequestParser

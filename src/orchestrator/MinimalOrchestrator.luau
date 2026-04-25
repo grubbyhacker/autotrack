@@ -1,6 +1,9 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local EnduranceObjective = require(script.Parent.EnduranceObjective)
 
 type OrchestratorContext = Types.OrchestratorContext
@@ -10,7 +13,7 @@ type Mechanic = Types.Mechanic
 
 local MinimalOrchestrator = {}
 
-local PLAN = {
+local PLAN: { [number]: { mechanic: Mechanic, params_hint: string } } = {
 	[2] = { mechanic = "RampJump", params_hint = "extreme tall" },
 	[3] = { mechanic = "CrestDip", params_hint = "extreme deep" },
 	[4] = { mechanic = "Chicane", params_hint = "extreme tight" },
@@ -25,8 +28,7 @@ local function sectorIsFilled(context: OrchestratorContext, sectorId: number): b
 end
 
 local function buildIntent(sectorId: number, mechanic: Mechanic, paramsHint: string): OrchestratorSubmitDecision
-	return {
-		action = "submit_request",
+	return ContractBuilders.submitDecision({
 		sector_id = sectorId,
 		mechanic = mechanic,
 		params_hint = paramsHint,
@@ -42,16 +44,16 @@ local function buildIntent(sectorId: number, mechanic: Mechanic, paramsHint: str
 			"preserve downstream stability",
 			"stay within endurance budget",
 		},
-	}
+	})
 end
 
 function MinimalOrchestrator.decide(context: OrchestratorContext): OrchestratorDecision
 	if context.attempt_budget.used >= context.attempt_budget.total then
-		return { action = "begin_loop" }
+		return ContractBuilders.beginLoopDecision()
 	end
 
 	if context.budget.over_budget then
-		return { action = "begin_loop" }
+		return ContractBuilders.beginLoopDecision()
 	end
 
 	local fallbackDecision = nil
@@ -72,7 +74,7 @@ function MinimalOrchestrator.decide(context: OrchestratorContext): OrchestratorD
 		return fallbackDecision
 	end
 
-	return { action = "begin_loop" }
+	return ContractBuilders.beginLoopDecision()
 end
 
 return MinimalOrchestrator

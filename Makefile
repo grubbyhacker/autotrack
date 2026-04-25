@@ -9,16 +9,7 @@ HYGIENE_SOURCE_FILES := $(shell find src studio -type f \( -name '*.luau' -o -na
 ROJO_PROJECT := default.project.json
 TYPECHECK_SOURCEMAP := sourcemap.json
 ROBLOX_GLOBAL_TYPES := tools/luau/globalTypes.None.d.luau
-TYPECHECK_GREEN_FILES := \
-	src/common/Constants.luau \
-	src/common/LLMConfig.luau \
-	src/common/LaunchOutlier.luau \
-	src/common/LevelMappings.luau \
-	src/common/PadValueUtils.luau \
-	src/common/RuntimeTuning.luau \
-	src/common/Types.luau \
-	src/agent/ActionValidator.luau \
-	src/client/TrackCamera.client.luau
+TYPECHECK_FILES := $(HYGIENE_SOURCE_FILES)
 
 .PHONY: test test-list \
 	test-contracts \
@@ -33,7 +24,7 @@ TYPECHECK_GREEN_FILES := \
 	phase14 phase14_unit phase14_integration phase14_crestdip_pair phase14_crestdip_search phase14_sector2_debug \
 	phase14_5 phase15 phase16 phase18 phase19 phase20 phase21 phase21_unit phase21_integration phase21_experiment \
 	phase21_rampjump_torture \
-	phase22 phase22_command_surface phase22_endurance_entry phase23 phase24 phase26 phase27 phase30 \
+	phase22 phase22_command_surface phase22_endurance_entry phase23 phase24 phase26 phase27 phase30 phase36 \
 	refactor_fast mechanics_regression llm_trace_export export-llm-trace endurance-trace inspect-llm-trace
 
 test:
@@ -54,22 +45,18 @@ fmt-check:
 
 typecheck:
 	@$(ROJO) sourcemap $(ROJO_PROJECT) --output $(TYPECHECK_SOURCEMAP) --absolute >/dev/null
-	@$(LUAU_LSP) analyze --platform=roblox --definitions @roblox=$(ROBLOX_GLOBAL_TYPES) --sourcemap $(TYPECHECK_SOURCEMAP) $(TYPECHECK_GREEN_FILES)
+	@$(LUAU_LSP) analyze --platform=roblox --definitions @roblox=$(ROBLOX_GLOBAL_TYPES) --sourcemap $(TYPECHECK_SOURCEMAP) $(TYPECHECK_FILES)
 
 typecheck-report:
-	@$(ROJO) sourcemap $(ROJO_PROJECT) --output $(TYPECHECK_SOURCEMAP) --absolute >/dev/null
-	@set +e; \
-	$(LUAU_LSP) analyze --platform=roblox --definitions @roblox=$(ROBLOX_GLOBAL_TYPES) --sourcemap $(TYPECHECK_SOURCEMAP) $(HYGIENE_SOURCE_FILES); \
-	rc=$$?; \
-	echo "[typecheck-report] luau-lsp exit=$$rc"; \
-	exit 0
+	@$(MAKE) --no-print-directory typecheck
+	@echo "[typecheck-report] typecheck is the authoritative full analyzer gate"
 
 lint:
 	@$(SELENE) --config selene.toml $(HYGIENE_SOURCE_FILES)
 
 hygiene: fmt-check typecheck lint
 
-boot_smoke phase1 phase2 phase3 phase4 phase4_pads phase4_rampjump phase4_crestdip phase4_chicane phase4_chicane_capture phase4_5 phase4_5_geometry phase4_5_lap phase4_5_speed phase5 phase5_unit phase6 phase6_unit phase6_integration phase9 phase9_unit phase9_integration phase11 phase11_unit phase11_integration phase13 phase13_unit phase13_integration phase14 phase14_unit phase14_integration phase14_crestdip_pair phase14_crestdip_search phase14_sector2_debug phase14_5 phase15 phase16 phase18 phase19 phase20 phase21 phase21_unit phase21_integration phase21_experiment phase21_rampjump_torture phase22 phase22_command_surface phase22_endurance_entry phase23 phase24 phase26 phase27 phase30 refactor_fast mechanics_regression llm_trace_export:
+boot_smoke phase1 phase2 phase3 phase4 phase4_pads phase4_rampjump phase4_crestdip phase4_chicane phase4_chicane_capture phase4_5 phase4_5_geometry phase4_5_lap phase4_5_speed phase5 phase5_unit phase6 phase6_unit phase6_integration phase9 phase9_unit phase9_integration phase11 phase11_unit phase11_integration phase13 phase13_unit phase13_integration phase14 phase14_unit phase14_integration phase14_crestdip_pair phase14_crestdip_search phase14_sector2_debug phase14_5 phase15 phase16 phase18 phase19 phase20 phase21 phase21_unit phase21_integration phase21_experiment phase21_rampjump_torture phase22 phase22_command_surface phase22_endurance_entry phase23 phase24 phase26 phase27 phase30 phase36 refactor_fast mechanics_regression llm_trace_export:
 	@$(PYTHON) $(TEST_CLI) run "$@"
 
 export-llm-trace:

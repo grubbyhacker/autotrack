@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local CrestDipTuner = require(script.Parent.Parent.Mechanics.CrestDipTuner)
@@ -178,11 +179,11 @@ local function choose(packet: FailurePacket, candidates: { AgentAction }): (Agen
 end
 
 local function numericAction(lever: string, value: number): AgentAction
-	return {
-		type = "SetNumericLever",
-		lever = lever,
-		value = value,
-	}
+	return ContractBuilders.setNumericLever(lever, value)
+end
+
+local function padAction(side: PadSide, value: PadValue): AgentAction
+	return ContractBuilders.setPad(side, value)
 end
 
 local function normalizePadValue(value: string): PadValue
@@ -483,55 +484,51 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			then weakerBrake(state.pads.ingress)
 			else strongerBoost(state.pads.ingress)
 		if downstreamNeedsSpeed then
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressPad })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "landing_length",
-				value = math.max(landingLengthFloor(), (params.landing_length or 0) - 2),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "ramp_angle",
-				value = math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 1),
-			})
+			table.insert(candidates, padAction("ingress", ingressPad))
+			table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction("landing_length", math.max(landingLengthFloor(), (params.landing_length or 0) - 2))
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"ramp_angle",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.ramp_angle.max, (params.ramp_angle or 0) + 1)
+				)
+			)
 			explanation = "downstream lost too much speed after the jump; carrying more momentum out"
 		elseif downstreamUnstable then
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "landing_length",
-				value = math.min(
-					LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-					(params.landing_length or 0) + 4
-				),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "gap_length",
-				value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-			})
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "ramp_angle",
-				value = math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1),
-			})
+			table.insert(
+				candidates,
+				numericAction(
+					"landing_length",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 4)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+			)
+			table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction("ramp_angle", math.max(rampAngleFloor(), (params.ramp_angle or 0) - 1))
+			)
 			explanation = "downstream exit attitude was unstable; widening the rejoin before flattening"
 		else
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "landing_length",
-				value = math.min(
-					LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max,
-					(params.landing_length or 0) + 2
-				),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "gap_length",
-				value = math.max(gapLengthFloor(), (params.gap_length or 0) - 1),
-			})
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
+			table.insert(
+				candidates,
+				numericAction(
+					"landing_length",
+					math.min(LevelMappings.LEVER_BOUNDS.RampJump.landing_length.max, (params.landing_length or 0) + 2)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction("gap_length", math.max(gapLengthFloor(), (params.gap_length or 0) - 1))
+			)
+			table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
 			explanation = "post-jump downstream instability detected; stabilizing the rejoin"
 		end
 	elseif state.mechanic == "CrestDip" and failure.type == "downstream_failure" then
@@ -551,51 +548,63 @@ function MinimalProposer.repair(packet: FailurePacket): (AgentAction?, string?, 
 			if PadValueUtils.kind(state.pads.ingress) == "Brake" then
 				ingressCarrySpeed = weakerBrake(state.pads.ingress)
 			end
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = ingressCarrySpeed })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "height_or_depth",
-				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "sector_length",
-				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-			})
+			table.insert(candidates, padAction("ingress", ingressCarrySpeed))
+			table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction(
+					"height_or_depth",
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"sector_length",
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta)
+				)
+			)
 			explanation = "downstream sector lost too much speed after the crest; carrying more speed out"
 		elseif unstableExit then
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "height_or_depth",
-				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "sector_length",
-				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-			})
+			table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+			table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction(
+					"height_or_depth",
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"sector_length",
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta)
+				)
+			)
 			explanation = "crest exited unstable into the next sector; slowing entry and calming the rejoin"
 		else
-			table.insert(candidates, { type = "SetPad", pad = "ingress", value = strongerBrake(state.pads.ingress) })
-			table.insert(candidates, { type = "SetPad", pad = "egress", value = weakerBrake(state.pads.egress) })
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "height_or_depth",
-				value = math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta),
-			})
-			table.insert(candidates, {
-				type = "SetNumericLever",
-				lever = "sector_length",
-				value = math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta),
-			})
+			table.insert(candidates, padAction("ingress", strongerBrake(state.pads.ingress)))
+			table.insert(candidates, padAction("egress", weakerBrake(state.pads.egress)))
+			table.insert(
+				candidates,
+				numericAction(
+					"height_or_depth",
+					math.max(crestHeightFloor(), (params.height_or_depth or 0) - softenHeightDelta)
+				)
+			)
+			table.insert(
+				candidates,
+				numericAction(
+					"sector_length",
+					math.min(sectorLengthCap, (params.sector_length or 0) + softenLengthDelta)
+				)
+			)
 			explanation = "downstream sector destabilized after the crest; slowed entry and softened the feature"
 		end
 	elseif failure.type == "downstream_failure" then
-		table.insert(candidates, { type = "SetPad", pad = "egress", value = strongerBrake(state.pads.egress) })
-		table.insert(candidates, { type = "SetPad", pad = "ingress", value = weakerBoost(state.pads.ingress) })
+		table.insert(candidates, padAction("egress", strongerBrake(state.pads.egress)))
+		table.insert(candidates, padAction("ingress", weakerBoost(state.pads.ingress)))
 		explanation = "downstream instability detected; added egress brake"
 	elseif state.mechanic == "RampJump" then
 		local progress = targetProgress(packet)

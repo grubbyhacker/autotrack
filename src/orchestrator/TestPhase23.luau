@@ -10,6 +10,7 @@ local EnduranceObjective = require(script.Parent.EnduranceObjective)
 local JobRunner = require(script.Parent.JobRunner)
 local MinimalProposer = require(script.Parent.MinimalProposer)
 local RuntimeContext = require(script.Parent.RuntimeContext)
+local TestFactories = require(script.Parent.TestFactories)
 local TuneMode = require(script.Parent.TuneMode)
 local UIState = require(script.Parent.UIState)
 local T = require(script.Parent.TestUtils)
@@ -77,18 +78,8 @@ local function summaryText(state): string
 	return table.concat(parts, " | ")
 end
 
-local function emptyMemory()
-	return {
-		shared = {},
-		orchestrator = {},
-		proposal = {},
-		repair = {},
-	}
-end
-
 local function makeContext(): OrchestratorContext
-	return {
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+	return TestFactories.orchestratorContext({
 		sector_states = {
 			[2] = { mechanic = "RampJump", params = {}, score = 24 },
 			[3] = { mechanic = nil, params = {}, score = 0 },
@@ -126,8 +117,8 @@ local function makeContext(): OrchestratorContext
 				["s2|RampJump|safe long"] = 2,
 			},
 		},
-		memory = emptyMemory(),
-	}
+		memory = TestFactories.emptyMemory(),
+	})
 end
 
 local function testProductionBaselineReset()
@@ -290,7 +281,7 @@ local function testPromptAndObjectiveShift()
 		qualifiers = {},
 		origin = "endurance",
 		design_intent = designIntent,
-		memory_context = emptyMemory(),
+		memory_context = TestFactories.emptyMemory(),
 		timestamp = 0,
 	}
 	local proposalMessages = PromptBuilder.proposeMessages(request, nil)
@@ -424,7 +415,7 @@ local function testPromptAndObjectiveShift()
 			pads = { "ingress", "egress" },
 		},
 		design_intent = nil,
-		memory_context = emptyMemory(),
+		memory_context = TestFactories.emptyMemory(),
 	}, nil)
 	local repairSystem = repairMessages[1].content
 	T.expect(
@@ -470,7 +461,7 @@ local function testPromptAndObjectiveShift()
 			desired_feel = "stable opener",
 			constraints = { "stay within endurance budget" },
 		},
-		memory_context = emptyMemory(),
+		memory_context = TestFactories.emptyMemory(),
 		timestamp = 0,
 	}
 	local riskyRequest = {
@@ -499,7 +490,7 @@ local function testPromptAndObjectiveShift()
 			desired_feel = "scoreable but repairable",
 			constraints = { "stay within endurance budget" },
 		},
-		memory_context = emptyMemory(),
+		memory_context = TestFactories.emptyMemory(),
 		timestamp = 0,
 	}
 	local conservativeState = select(1, MinimalProposer.initial(conservativeRequest))

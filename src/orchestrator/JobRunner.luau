@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local ContractBuilders = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("ContractBuilders"))
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 local LLMTraceJournal = require(script.Parent.Parent.Agent.LLMTraceJournal)
@@ -36,7 +37,6 @@ local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 type CIJob = Types.CIJob
 type Request = Types.Request
 type DesignIntent = Types.DesignIntent
-type MechanicParsedRequest = Types.MechanicParsedRequest
 type ChallengeUpContext = Types.ChallengeUpContext
 type MemoryEntry = Types.MemoryEntry
 type RunMemory = Types.RunMemory
@@ -151,27 +151,6 @@ local function runVerificationProfile(args): VerificationProfileResult
 		run_scope = "lap",
 		isolated_passes_required = if useIsolatedProfile then isolatedPassesRequired else nil,
 		isolated_passes_completed = if useIsolatedProfile then isolatedPassesRequired else nil,
-	}
-end
-
-local function cloneDesignIntent(intent: DesignIntent): DesignIntent
-	local constraints = {}
-	for _, constraint in ipairs(intent.constraints or {}) do
-		table.insert(constraints, constraint)
-	end
-	return {
-		sector_id = intent.sector_id,
-		mechanic = intent.mechanic,
-		params_hint = intent.params_hint,
-		rationale = intent.rationale,
-		target_score_band = intent.target_score_band,
-		target_budget_tolerance = intent.target_budget_tolerance,
-		target_reliability = intent.target_reliability,
-		spectacle_priority = intent.spectacle_priority,
-		novelty_priority = intent.novelty_priority,
-		replacement_intent = intent.replacement_intent,
-		desired_feel = intent.desired_feel,
-		constraints = constraints,
 	}
 end
 
@@ -322,23 +301,14 @@ local function buildEnduranceRequest(
 	designIntent: DesignIntent,
 	memoryContext: RunMemory?
 ): Request
-	local parsed: MechanicParsedRequest = {
-		sector_id = designIntent.sector_id,
-		mechanic = designIntent.mechanic,
-		request_kind = "Mechanic",
-		pad_side = nil,
-		pad_value = nil,
-	}
-	return {
+	return ContractBuilders.enduranceMechanicRequest({
 		request_id = requestId,
 		raw_text = trim(rawText),
-		parsed = parsed,
 		qualifiers = extractIntentQualifiers(designIntent.params_hint),
-		origin = "endurance",
-		design_intent = cloneDesignIntent(designIntent),
+		design_intent = designIntent,
 		memory_context = cloneMemory(memoryContext),
 		timestamp = os.time(),
-	}
+	})
 end
 
 local function actionSummary(action)

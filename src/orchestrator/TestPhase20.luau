@@ -11,6 +11,7 @@ local LapEvaluator = require(script.Parent.Parent.Integrity.LapEvaluator)
 local OrchestratorAgent = require(script.Parent.OrchestratorAgent)
 local OrchestratorPromptBuilder = require(script.Parent.Parent.Agent.OrchestratorPromptBuilder)
 local PromptBuilder = require(script.Parent.Parent.Agent.PromptBuilder)
+local TestFactories = require(script.Parent.TestFactories)
 local UIState = require(script.Parent.UIState)
 
 type MemoryEntry = Types.MemoryEntry
@@ -51,34 +52,21 @@ local function makeMemory()
 end
 
 local function makeDesignIntent()
-	return {
-		sector_id = 7,
-		mechanic = "RampJump",
-		params_hint = "extreme tall",
+	return TestFactories.designIntent({
 		rationale = "raise spectacle without repeating stale failures",
-		target_score_band = "extreme",
-		target_budget_tolerance = "medium",
-		target_reliability = "balanced",
-		spectacle_priority = "high",
-		novelty_priority = "high",
-		replacement_intent = "replace_if_gain",
-		desired_feel = "big airtime but still recoverable",
 		constraints = {
 			"preserve downstream stability",
 			"avoid overspending slowdown budget",
 		},
-	}
+	})
 end
 
 local function makeSubmitDecision()
-	local decision = makeDesignIntent()
-	decision.action = "submit_request"
-	return decision
+	return TestFactories.submitDecision(makeDesignIntent())
 end
 
 local function makeContext(memory)
-	return {
-		editable_sectors = { 2, 3, 4, 7, 8, 9 },
+	return TestFactories.orchestratorContext({
 		sector_states = {
 			[2] = { mechanic = nil, params = {}, score = 0 },
 			[3] = { mechanic = "Chicane", params = { amplitude = 8 }, score = 12 },
@@ -99,7 +87,7 @@ local function makeContext(memory)
 			diversity_pressure = {},
 		},
 		memory = EnduranceMemory.clone(memory),
-	}
+	})
 end
 
 local function makeRequest(memory)

@@ -43,7 +43,7 @@ make hygiene
 `make hygiene` runs:
 
 1. `fmt-check`
-2. `typecheck`
+2. full-repo `typecheck`
 3. `lint`
 
 No interactive prompts are used.
@@ -63,17 +63,15 @@ Examples now in scope for `fmt` / `fmt-check` / `lint`:
 
 Typecheck boundary:
 
-- `make typecheck` remains a documented green subset target.
-- `make typecheck-report` runs the analyzer across repo-wide tracked source without failing the overall hygiene contract.
-- Phase 31 makes standalone analysis Roblox-aware by generating `sourcemap.json` from `default.project.json` and passing the vendored Roblox definitions file to `luau-lsp analyze`.
-- The green subset now includes `src/common/Types.luau`, `src/agent/ActionValidator.luau`, and `src/client/TrackCamera.client.luau` in addition to the Phase 30 common-module subset.
-- Full-repo analysis remains non-gating because the remaining backlog is now primarily real module-level type work and later ratchet decisions, not missing Roblox globals or missing Rojo/DataModel resolution.
+- `make typecheck` is the authoritative full static-analysis gate for repo-tracked Luau source under `src/` and `studio/`.
+- `make typecheck-report` is a compatibility alias that delegates to `make typecheck`; do not treat it as a separate non-gating backlog report.
+- Standalone analysis remains Roblox-aware by generating `sourcemap.json` from `default.project.json` and passing the vendored Roblox definitions file to `luau-lsp analyze`.
 
 Formatting is non-negotiable across the repo-wide source hygiene set.
 
 ## Strict Mode Boundary
 
-No bulk `--!strict` migration in this milestone.
+No bulk `--!strict` migration.
 
 Reason:
 
@@ -82,6 +80,6 @@ Reason:
 
 Future ratchet:
 
-- Expand the green `make typecheck` subset in small, explicit batches.
+- Keep `make typecheck` full-repo green before and after any source change.
 - Convert leaf modules to `--!strict` only when they can be made green with small safe edits.
 - Treat analyzer-environment fixes and exported-type cleanup as their own tracked work rather than hiding them behind disabled checks.

@@ -116,13 +116,13 @@ make lint
 make hygiene
 ```
 
-`make hygiene` is the fast static gate (`fmt-check` + `typecheck` + `lint`) and is safe for frequent local/CI use.
+`make hygiene` is the authoritative static gate (`fmt-check` + full-repo `typecheck` + `lint`) and is safe for frequent local/CI use.
 
 Phase 30 expands `fmt` / `fmt-check` / `lint` repo-wide across tracked `.luau` source under `src/` and `studio/`.
 
 Phase 31 makes `make typecheck` and `make typecheck-report` Roblox-aware by generating a Rojo sourcemap and using a vendored Roblox definitions file for standalone `luau-lsp analyze` runs.
 
-`make typecheck` remains intentionally conservative and green on a documented subset while `make typecheck-report` exposes the current full-repo analyzer backlog without gating local iteration.
+Phase 36 promotes `make typecheck` to the full repo-wide analyzer surface. `make typecheck-report` remains as a compatibility alias for older workflows, but `typecheck` owns the static-analysis contract.
 
 See `docs/code-hygiene.md` for scope, rationale, and the current typecheck boundary.
 
