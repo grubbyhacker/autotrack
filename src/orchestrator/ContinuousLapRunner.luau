@@ -1,3 +1,5 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
@@ -12,6 +14,25 @@ local HotfixAgent = require(script.Parent.HotfixAgent)
 local Tracer = require(script.Parent.Tracer)
 
 type RunResult = Types.RunResult
+type SectorState = Types.SectorState
+type ContinuousLapDeps = {
+	tryAcquire: () -> boolean,
+	release: () -> (),
+	wait: (number) -> (),
+	runLap: () -> RunResult,
+	setPhase: (string, string) -> (),
+	appendLog: (string) -> (),
+	publishAttemptResult: (RunResult) -> (),
+	setLapCount: (number) -> (),
+	isTerminal: () -> boolean,
+	hotfixRun: (number, RunResult) -> boolean,
+	trace: (string) -> (),
+}
+type ContinuousLapArgs = {
+	deps: ContinuousLapDeps?,
+	maxCleanLaps: number?,
+	initialLapCount: number?,
+}?
 
 local ContinuousLapRunner = {}
 
@@ -19,8 +40,8 @@ local _active = false
 local _stopRequested = false
 local _lapCount = 0
 
-local function cloneCommittedOverrides()
-	local overrides = {}
+local function cloneCommittedOverrides(): { [number]: SectorState }
+	local overrides: { [number]: SectorState } = {}
 	for _, state in ipairs(SectorRegistry.getStraights()) do
 		if state.mechanic ~= nil then
 			overrides[state.sector_id] = state
@@ -55,7 +76,7 @@ local function defaultRunLap(): RunResult
 	)
 end
 
-local function defaultDeps()
+local function defaultDeps(): ContinuousLapDeps
 	return {
 		tryAcquire = function()
 			return JobLock.tryAcquire()
@@ -96,7 +117,7 @@ local function failureSector(result: RunResult?): number?
 	return result.failure.sector_id
 end
 
-local function runManagedLap(deps): RunResult?
+local function runManagedLap(deps: ContinuousLapDeps): RunResult?
 	while not _stopRequested do
 		if deps.tryAcquire() then
 			local ok, result = pcall(deps.runLap)
@@ -111,7 +132,7 @@ local function runManagedLap(deps): RunResult?
 	return nil
 end
 
-local function publishLapSuccess(deps, result: RunResult, prefix: string?)
+local function publishLapSuccess(deps: ContinuousLapDeps, result: RunResult, prefix: string?)
 	_lapCount += 1
 	deps.setLapCount(_lapCount)
 	deps.publishAttemptResult(result)
@@ -148,7 +169,7 @@ function ContinuousLapRunner.stop(): boolean
 	return true
 end
 
-function ContinuousLapRunner.run(args): (boolean, string?)
+function ContinuousLapRunner.run(args: ContinuousLapArgs): (boolean, string?)
 	if _active then
 		return false, "continuous lap runner already active"
 	end
@@ -220,7 +241,7 @@ function ContinuousLapRunner.run(args): (boolean, string?)
 	return true, nil
 end
 
-function ContinuousLapRunner.start(args): (boolean, string?)
+function ContinuousLapRunner.start(args: ContinuousLapArgs): (boolean, string?)
 	if _active then
 		return false, "continuous lap runner already active"
 	end
