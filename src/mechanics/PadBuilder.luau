@@ -1,3 +1,5 @@
+--!strict
+
 -- PadBuilder.luau
 -- Places ingress/egress pad geometry for a sector.
 -- prd_plan.md §5, Phase 4
@@ -14,12 +16,14 @@ local TrackVisuals = require(script.Parent.Parent.Track.TrackVisuals)
 
 type Pads = Types.Pads
 
-local PadBuilder = {}
+type PadBuilderModule = {
+	applyPads: (pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number) -> (),
+}
 
 -- Place (or remove) the ingress and egress pads for a sector.
 -- padAreaStart: CFrame where the ingress pad should be positioned
 -- padAreaEnd:   CFrame where the egress pad should be positioned
-function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number)
+local function applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFrame, sector_id: number): ()
 	local folder = TrackVisuals.getPadsFolder(sector_id)
 
 	for _, child in ipairs(folder:GetChildren()) do
@@ -31,7 +35,7 @@ function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFr
 	local padSize = Vector3.new(Constants.TRACK_WIDTH, 0.2, 4)
 	local yOff = Constants.TRACK_THICKNESS * 0.5 + 0.1
 
-	local function makePadPart(name: string, padValue: Types.PadValue, frame: CFrame)
+	local function makePadPart(name: string, padValue: Types.PadValue, frame: CFrame): ()
 		if padValue == "None" then
 			return
 		end
@@ -58,5 +62,9 @@ function PadBuilder.applyPads(pads: Pads, ingressFrame: CFrame, egressFrame: CFr
 	makePadPart("IngressPad", pads.ingress, ingressFrame)
 	makePadPart("EgressPad", pads.egress, egressFrame)
 end
+
+local PadBuilder: PadBuilderModule = {
+	applyPads = applyPads,
+}
 
 return PadBuilder
