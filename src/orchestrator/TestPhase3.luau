@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase3.luau
 -- Verifies the Phase 3 semi-rail controller, real metrics, and reacquire detection.
 
