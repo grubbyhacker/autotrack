@@ -1,3 +1,5 @@
+--!strict
+
 -- SectorApplier.luau
 -- Materialises a SectorState into live geometry via MCP.
 -- All geometry changes to the Workspace go through here.
@@ -16,13 +18,21 @@ local function getSectorFolder(sector_id: number): Folder
 	return TrackVisuals.getSectorFolder(sector_id)
 end
 
+local function getNumberAttribute(instance: Instance, name: string, defaultValue: number): number
+	local value = instance:GetAttribute(name)
+	if typeof(value) == "number" then
+		return value
+	end
+	return defaultValue
+end
+
 local function getSectorCellCFrameAndSize(folder: Folder): (CFrame, Vector3)
 	local anchor = folder:FindFirstChild("Anchor")
 	assert(anchor and anchor:IsA("BasePart"), "SectorApplier: missing sector Anchor")
 	local size = Vector3.new(
-		anchor:GetAttribute("CellSizeX") or 1,
-		anchor:GetAttribute("CellSizeY") or 1,
-		anchor:GetAttribute("CellSizeZ") or 1
+		getNumberAttribute(anchor, "CellSizeX", 1),
+		getNumberAttribute(anchor, "CellSizeY", 1),
+		getNumberAttribute(anchor, "CellSizeZ", 1)
 	)
 	return anchor.CFrame, size
 end
