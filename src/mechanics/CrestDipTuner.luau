@@ -1,9 +1,36 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
 
-local CrestDipTuner = {}
+type BoundPair = {
+	min: number?,
+	max: number?,
+}
+
+type CrestDipTuneBounds = {
+	minHeight: number?,
+	maxHeight: number?,
+	minLength: number?,
+	maxLength: number?,
+}
+
+type SearchWindow = {
+	heightMin: number,
+	heightMax: number,
+	lengthMin: number,
+	lengthMax: number,
+}
+
+type CrestDipTunerModule = {
+	tune: (height: number, sectorLength: number, bounds: CrestDipTuneBounds?) -> (number, number),
+	peakSlope: (height: number, sectorLength: number) -> number,
+	runout: (sectorLength: number) -> number,
+}
+
+local CrestDipTuner: CrestDipTunerModule = {} :: CrestDipTunerModule
 
 local HEIGHT_BOUNDS = LevelMappings.LEVER_BOUNDS.CrestDip.height_or_depth
 local LENGTH_BOUNDS = LevelMappings.LEVER_BOUNDS.CrestDip.sector_length
@@ -57,16 +84,14 @@ local function candidateScore(
 	return -(heightDistance * 0.7 + lengthDistance * 0.9) + slopeBonus * 0.08 + curvatureBonus * 0.04
 end
 
-local function normalizedBound(bounds, fallbackMin: number, fallbackMax: number)
+local function normalizedBound(bounds: BoundPair?, fallbackMin: number, fallbackMax: number): (number, number)
 	local minValue = fallbackMin
 	local maxValue = fallbackMax
-	if type(bounds) == "table" then
-		if type(bounds.min) == "number" then
-			minValue = math.max(fallbackMin, bounds.min)
-		end
-		if type(bounds.max) == "number" then
-			maxValue = math.min(fallbackMax, bounds.max)
-		end
+	if bounds ~= nil and type(bounds.min) == "number" then
+		minValue = math.max(fallbackMin, bounds.min)
+	end
+	if bounds ~= nil and type(bounds.max) == "number" then
+		maxValue = math.min(fallbackMax, bounds.max)
 	end
 	if minValue > maxValue then
 		return fallbackMin, fallbackMax
@@ -105,19 +130,31 @@ end
 function CrestDipTuner.tune(height: number, sectorLength: number, bounds): (number, number)
 	local desiredHeight = clampInt(height, HEIGHT_BOUNDS.min, HEIGHT_BOUNDS.max)
 	local desiredLength = clampInt(sectorLength, LENGTH_BOUNDS.min, LENGTH_BOUNDS.max)
-	local hasMinHeight = type(bounds) == "table" and type(bounds.minHeight) == "number"
-	local hasMaxHeight = type(bounds) == "table" and type(bounds.maxHeight) == "number"
-	local hasMinLength = type(bounds) == "table" and type(bounds.minLength) == "number"
-	local hasMaxLength = type(bounds) == "table" and type(bounds.maxLength) == "number"
-	local heightMin, heightMax = normalizedBound(bounds and {
-		min = bounds.minHeight,
-		max = bounds.maxHeight,
-	}, HEIGHT_BOUNDS.min, HEIGHT_BOUNDS.max)
-	local lengthMin, lengthMax = normalizedBound(bounds and {
-		min = bounds.minLength,
-		max = bounds.maxLength,
-	}, LENGTH_BOUNDS.min, LENGTH_BOUNDS.max)
-	local searches = {
+	local hasMinHeight = bounds ~= nil and type(bounds.minHeight) == "number"
+	local hasMaxHeight = bounds ~= nil and type(bounds.maxHeight) == "number"
+	local hasMinLength = bounds ~= nil and type(bounds.minLength) == "number"
+	local hasMaxLength = bounds ~= nil and type(bounds.maxLength) == "number"
+	local heightMin, heightMax = normalizedBound(
+		if bounds == nil
+			then nil
+			else {
+				min = bounds.minHeight,
+				max = bounds.maxHeight,
+			},
+		HEIGHT_BOUNDS.min,
+		HEIGHT_BOUNDS.max
+	)
+	local lengthMin, lengthMax = normalizedBound(
+		if bounds == nil
+			then nil
+			else {
+				min = bounds.minLength,
+				max = bounds.maxLength,
+			},
+		LENGTH_BOUNDS.min,
+		LENGTH_BOUNDS.max
+	)
+	local searches: { SearchWindow } = {
 		{ heightMin = heightMin, heightMax = heightMax, lengthMin = lengthMin, lengthMax = lengthMax },
 	}
 	if (hasMinHeight or hasMaxHeight) and (hasMinLength or hasMaxLength) then
