@@ -1,3 +1,5 @@
+--!strict
+
 -- CrestDipIntegrity.luau
 -- Evaluates whether a completed run satisfies CrestDip mechanic integrity.
 -- prd_plan.md §11.4, §15.7, Phase 5; curvature + airtime-cap added in Phase 9
