@@ -132,7 +132,7 @@ while true; do
 	log_file="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-$next_index.log"
 	printf '%s | launch index=%s file=%s commit=%s strict=%s elapsed=%s\n' "$(ts)" "$next_index" "$target" "$before_commit" "$before_strict" "$elapsed" >> "$CAMPAIGN_LOG"
 	set +e
-	prompt | timeout "$WORKER_TIMEOUT_SECONDS" "$CODEX_CMD" exec --cd "$ROOT" --sandbox danger-full-access --ask-for-approval never - 2>&1 | tee "$log_file"
+	prompt | timeout "$WORKER_TIMEOUT_SECONDS" "$CODEX_CMD" --ask-for-approval never exec --cd "$ROOT" --sandbox danger-full-access - 2>&1 | tee "$log_file"
 	worker_status=${PIPESTATUS[1]}
 	set -e
 	require_clean
