@@ -1,9 +1,12 @@
+--!strict
+
 -- TestPhase11.luau
 -- Unit tests for the Phase 11 ChallengeScore (plans/phase11.md §11).
 -- These tests are stateless and do not require a running lap, so they run
 -- under skip_baseline boot mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
 local T = require(script.Parent.TestUtils)
 local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
@@ -12,15 +15,82 @@ local MinimalProposer = require(script.Parent.MinimalProposer)
 local RequestParser = require(script.Parent.Parent.Agent.RequestParser)
 local JobRunner = require(script.Parent.JobRunner)
 
+type CIJob = Types.CIJob
+type ChallengeScoreData = Types.ChallengeScore
+type FailureInfo = Types.FailureInfo
+type RunMetrics = Types.RunMetrics
+type RunResult = Types.RunResult
+type SectorParams = Types.SectorParams
+type SectorState = Types.SectorState
+
+type MetricOverrides = {
+	entry_speed: number?,
+	exit_speed: number?,
+	airborne: boolean?,
+	air_distance: number?,
+	lateral_error: number?,
+	vertical_displacement: number?,
+	reacquired: boolean?,
+	airtime_distance: number?,
+	target_airborne: boolean?,
+	target_air_distance: number?,
+	target_vertical_displacement: number?,
+	target_reacquired: boolean?,
+	target_airtime_distance: number?,
+	target_left_offset: number?,
+	target_right_offset: number?,
+	target_lateral_band_changes: number?,
+	target_entered: boolean?,
+	target_exited: boolean?,
+	target_progress: number?,
+	lap_time: number?,
+	slowdown_ratio: number?,
+	hang_time: number?,
+	peak_lateral_g: number?,
+	target_min_speed: number?,
+}
+
 local TestPhase11 = {}
 
-local function stateCrest(overrides)
-	local params = { height_or_depth = 6, radius = 20, sector_length = 40 }
-	if overrides then
-		for k, v in pairs(overrides) do
-			params[k] = v
-		end
+local function applyParamOverrides(params: SectorParams, overrides: SectorParams?)
+	if overrides == nil then
+		return
 	end
+	if overrides.ramp_angle ~= nil then
+		params.ramp_angle = overrides.ramp_angle
+	end
+	if overrides.ramp_length ~= nil then
+		params.ramp_length = overrides.ramp_length
+	end
+	if overrides.gap_length ~= nil then
+		params.gap_length = overrides.gap_length
+	end
+	if overrides.landing_length ~= nil then
+		params.landing_length = overrides.landing_length
+	end
+	if overrides.amplitude ~= nil then
+		params.amplitude = overrides.amplitude
+	end
+	if overrides.transition_length ~= nil then
+		params.transition_length = overrides.transition_length
+	end
+	if overrides.corridor_width ~= nil then
+		params.corridor_width = overrides.corridor_width
+	end
+	if overrides.height_or_depth ~= nil then
+		params.height_or_depth = overrides.height_or_depth
+	end
+	if overrides.radius ~= nil then
+		params.radius = overrides.radius
+	end
+	if overrides.sector_length ~= nil then
+		params.sector_length = overrides.sector_length
+	end
+end
+
+local function stateCrest(overrides: SectorParams?): SectorState
+	local params: SectorParams = { height_or_depth = 6, radius = 20, sector_length = 40 }
+	applyParamOverrides(params, overrides)
 	return {
 		sector_id = 3,
 		mechanic = "CrestDip",
@@ -30,13 +100,9 @@ local function stateCrest(overrides)
 	}
 end
 
-local function stateJump(overrides)
-	local params = { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 }
-	if overrides then
-		for k, v in pairs(overrides) do
-			params[k] = v
-		end
-	end
+local function stateJump(overrides: SectorParams?): SectorState
+	local params: SectorParams = { ramp_angle = 8, ramp_length = 24, gap_length = 4, landing_length = 34 }
+	applyParamOverrides(params, overrides)
 	return {
 		sector_id = 3,
 		mechanic = "RampJump",
@@ -46,13 +112,9 @@ local function stateJump(overrides)
 	}
 end
 
-local function stateChicane(overrides)
-	local params = { amplitude = 8, transition_length = 15, corridor_width = 14 }
-	if overrides then
-		for k, v in pairs(overrides) do
-			params[k] = v
-		end
-	end
+local function stateChicane(overrides: SectorParams?): SectorState
+	local params: SectorParams = { amplitude = 8, transition_length = 15, corridor_width = 14 }
+	applyParamOverrides(params, overrides)
 	return {
 		sector_id = 3,
 		mechanic = "Chicane",
@@ -62,8 +124,86 @@ local function stateChicane(overrides)
 	}
 end
 
-local function metrics(overrides)
-	local m = {
+local function applyMetricOverrides(m: RunMetrics, overrides: MetricOverrides?)
+	if overrides == nil then
+		return
+	end
+	if overrides.entry_speed ~= nil then
+		m.entry_speed = overrides.entry_speed
+	end
+	if overrides.exit_speed ~= nil then
+		m.exit_speed = overrides.exit_speed
+	end
+	if overrides.airborne ~= nil then
+		m.airborne = overrides.airborne
+	end
+	if overrides.air_distance ~= nil then
+		m.air_distance = overrides.air_distance
+	end
+	if overrides.lateral_error ~= nil then
+		m.lateral_error = overrides.lateral_error
+	end
+	if overrides.vertical_displacement ~= nil then
+		m.vertical_displacement = overrides.vertical_displacement
+	end
+	if overrides.reacquired ~= nil then
+		m.reacquired = overrides.reacquired
+	end
+	if overrides.airtime_distance ~= nil then
+		m.airtime_distance = overrides.airtime_distance
+	end
+	if overrides.target_airborne ~= nil then
+		m.target_airborne = overrides.target_airborne
+	end
+	if overrides.target_air_distance ~= nil then
+		m.target_air_distance = overrides.target_air_distance
+	end
+	if overrides.target_vertical_displacement ~= nil then
+		m.target_vertical_displacement = overrides.target_vertical_displacement
+	end
+	if overrides.target_reacquired ~= nil then
+		m.target_reacquired = overrides.target_reacquired
+	end
+	if overrides.target_airtime_distance ~= nil then
+		m.target_airtime_distance = overrides.target_airtime_distance
+	end
+	if overrides.target_left_offset ~= nil then
+		m.target_left_offset = overrides.target_left_offset
+	end
+	if overrides.target_right_offset ~= nil then
+		m.target_right_offset = overrides.target_right_offset
+	end
+	if overrides.target_lateral_band_changes ~= nil then
+		m.target_lateral_band_changes = overrides.target_lateral_band_changes
+	end
+	if overrides.target_entered ~= nil then
+		m.target_entered = overrides.target_entered
+	end
+	if overrides.target_exited ~= nil then
+		m.target_exited = overrides.target_exited
+	end
+	if overrides.target_progress ~= nil then
+		m.target_progress = overrides.target_progress
+	end
+	if overrides.lap_time ~= nil then
+		m.lap_time = overrides.lap_time
+	end
+	if overrides.slowdown_ratio ~= nil then
+		m.slowdown_ratio = overrides.slowdown_ratio
+	end
+	if overrides.hang_time ~= nil then
+		m.hang_time = overrides.hang_time
+	end
+	if overrides.peak_lateral_g ~= nil then
+		m.peak_lateral_g = overrides.peak_lateral_g
+	end
+	if overrides.target_min_speed ~= nil then
+		m.target_min_speed = overrides.target_min_speed
+	end
+end
+
+local function metrics(overrides: MetricOverrides?): RunMetrics
+	local m: RunMetrics = {
 		entry_speed = 80,
 		exit_speed = 60,
 		airborne = false,
@@ -88,12 +228,25 @@ local function metrics(overrides)
 		peak_lateral_g = 0,
 		target_min_speed = 80,
 	}
-	if overrides then
-		for k, v in pairs(overrides) do
-			m[k] = v
-		end
-	end
+	applyMetricOverrides(m, overrides)
 	return m
+end
+
+local function runResult(
+	success: boolean,
+	failure: FailureInfo?,
+	metricOverrides: MetricOverrides?,
+	score: ChallengeScoreData?
+): RunResult
+	return {
+		success = success,
+		failure = failure,
+		metrics = metrics(metricOverrides),
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = score,
+	}
 end
 
 local function runUnit()
@@ -312,13 +465,12 @@ local function runUnit()
 			stateCrest(),
 			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
 		)
-		local braked = ChallengeScore.compute({
-			sector_id = 3,
-			mechanic = "CrestDip",
-			params = { height_or_depth = 6, radius = 20, sector_length = 40 },
-			pads = { ingress = "None", egress = "Brake10" },
-			version = 0,
-		}, metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 }))
+		local brakedState = stateCrest()
+		brakedState.pads.egress = "Brake10"
+		local braked = ChallengeScore.compute(
+			brakedState,
+			metrics({ target_airtime_distance = Constants.CRESTDIP_MAX_AIRTIME_DISTANCE * 0.7 })
+		)
 		T.expect(
 			"phase11_crestdip_egress_brake_not_explicitly_penalized",
 			math.abs(braked.total - free.total) < 1e-6,
@@ -365,14 +517,10 @@ local function runUnit()
 				target_min_speed = 80,
 			})
 		)
+		local brakedState = stateChicane({ corridor_width = 14 })
+		brakedState.pads.ingress = "Brake10"
 		local braked = ChallengeScore.compute(
-			{
-				sector_id = 3,
-				mechanic = "Chicane",
-				params = { amplitude = 8, transition_length = 15, corridor_width = 14 },
-				pads = { ingress = "Brake10", egress = "None" },
-				version = 0,
-			},
+			brakedState,
 			metrics({
 				target_left_offset = 6.5,
 				target_right_offset = 6.5,
@@ -460,6 +608,8 @@ local function runUnit()
 		local st = stateJump()
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever, reason = ChallengeRunner._escalateState(st, s)
+		local currentAngle = st.params.ramp_angle or 0
+		local nextAngle = if next_ ~= nil then next_.params.ramp_angle else nil
 		T.expect(
 			"phase11_runner_jump_lever",
 			lever == "ramp_angle",
@@ -467,7 +617,7 @@ local function runUnit()
 		)
 		T.expect(
 			"phase11_runner_jump_increases_angle",
-			next_ ~= nil and next_.params.ramp_angle > st.params.ramp_angle,
+			nextAngle ~= nil and nextAngle > currentAngle,
 			"expected ramp_angle to increase"
 		)
 	end
@@ -478,10 +628,12 @@ local function runUnit()
 		local st = stateChicane({ amplitude = 6 })
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever = ChallengeRunner._escalateState(st, s)
+		local currentAmplitude = st.params.amplitude or 0
+		local nextAmplitude = if next_ ~= nil then next_.params.amplitude else nil
 		T.expect("phase11_runner_chicane_lever", lever == "amplitude", "expected amplitude; got " .. tostring(lever))
 		T.expect(
 			"phase11_runner_chicane_mutates",
-			next_ ~= nil and next_.params.amplitude > st.params.amplitude,
+			nextAmplitude ~= nil and nextAmplitude > currentAmplitude,
 			"expected amplitude to increase"
 		)
 	end
@@ -491,6 +643,15 @@ local function runUnit()
 		local st = stateCrest()
 		local s = ChallengeScore.compute(st, metrics())
 		local next_, lever = ChallengeRunner._escalateState(st, s)
+		local currentValue: number? = nil
+		local nextValue: number? = nil
+		if lever == "height_or_depth" then
+			currentValue = st.params.height_or_depth
+			nextValue = if next_ ~= nil then next_.params.height_or_depth else nil
+		elseif lever == "sector_length" then
+			currentValue = st.params.sector_length
+			nextValue = if next_ ~= nil then next_.params.sector_length else nil
+		end
 		T.expect(
 			"phase11_runner_crest_lever",
 			lever == "height_or_depth" or lever == "sector_length",
@@ -498,7 +659,7 @@ local function runUnit()
 		)
 		T.expect(
 			"phase11_runner_crest_mutates",
-			next_ ~= nil and next_.params[lever] ~= st.params[lever],
+			nextValue ~= nil and currentValue ~= nil and nextValue ~= currentValue,
 			"expected lever value to change"
 		)
 	end
@@ -517,10 +678,11 @@ local function runUnit()
 		-- or it picks a different lever that is allowed. Both are acceptable —
 		-- the invariant we care about is "no floor underflow".
 		if next_ ~= nil then
+			local nextWidth = next_.params.corridor_width or 0
 			T.expect(
 				"phase11_runner_no_underflow",
-				next_.params.corridor_width >= 8,
-				"corridor_width dropped below floor to " .. tostring(next_.params.corridor_width)
+				nextWidth >= 8,
+				"corridor_width dropped below floor to " .. tostring(nextWidth)
 			)
 		else
 			T.expect("phase11_runner_rejects_with_reason", reason ~= nil and #reason > 0, "expected a rejection reason")
@@ -553,23 +715,23 @@ local function runUnit()
 		assert(normalState ~= nil, "expected normal initial state: " .. tostring(normalStateErr))
 		assert(extremeState ~= nil, "expected extreme initial state: " .. tostring(extremeStateErr))
 
+		local normalAngle = normalState.params.ramp_angle or 0
+		local extremeAngle = extremeState.params.ramp_angle or 0
 		T.expect(
 			"phase11_extreme_bias_jump_angle",
-			extremeState.params.ramp_angle > normalState.params.ramp_angle,
+			extremeAngle > normalAngle,
 			string.format(
 				"expected extreme angle > normal; got %s vs %s",
-				tostring(extremeState.params.ramp_angle),
-				tostring(normalState.params.ramp_angle)
+				tostring(extremeAngle),
+				tostring(normalAngle)
 			)
 		)
+		local normalGap = normalState.params.gap_length or 0
+		local extremeGap = extremeState.params.gap_length or 0
 		T.expect(
 			"phase11_extreme_bias_jump_gap",
-			extremeState.params.gap_length > normalState.params.gap_length,
-			string.format(
-				"expected extreme gap > normal; got %s vs %s",
-				tostring(extremeState.params.gap_length),
-				tostring(normalState.params.gap_length)
-			)
+			extremeGap > normalGap,
+			string.format("expected extreme gap > normal; got %s vs %s", tostring(extremeGap), tostring(normalGap))
 		)
 	end
 
@@ -592,19 +754,15 @@ local function runUnit()
 			desired_feel = "scoreable but recoverable",
 			constraints = { "stay under endurance budget" },
 		}
-		local result = {
-			success = true,
-			metrics = metrics(),
-			score = {
-				total = 5,
-				air = 2,
-				lateral = 0,
-				near_miss = 3,
-				time_cost = 0,
-				budget_used = 0.2,
-				over_budget = false,
-			},
-		}
+		local result = runResult(true, nil, nil, {
+			total = 5,
+			air = 2,
+			lateral = 0,
+			near_miss = 3,
+			time_cost = 0,
+			budget_used = 0.2,
+			over_budget = false,
+		})
 		local shouldRun, why, strategy = JobRunner._shouldRunChallengeUp(request, result, true)
 		T.expect(
 			"phase11_endurance_challenge_up_uses_proposal_do_over",
@@ -620,18 +778,14 @@ local function runUnit()
 
 	-- 28. Pre-target failures must revert instead of repairing the target sector.
 	do
-		local result = {
-			success = false,
-			failure = {
-				type = "local_execution_failure",
-				sector_id = 2,
-			},
-			metrics = metrics({
-				target_entered = true,
-				target_exited = false,
-				target_progress = 0.4,
-			}),
-		}
+		local result = runResult(false, {
+			type = "local_execution_failure",
+			sector_id = 2,
+		}, {
+			target_entered = true,
+			target_exited = false,
+			target_progress = 0.4,
+		}, nil)
 		T.expect(
 			"phase11_pre_target_failure_reverts",
 			JobRunner._shouldRevertPreTargetFailure(result, 3) == true,
@@ -641,18 +795,14 @@ local function runUnit()
 
 	-- 29. Once the target was entered, downstream failures remain repairable.
 	do
-		local result = {
-			success = false,
-			failure = {
-				type = "local_execution_failure",
-				sector_id = 4,
-			},
-			metrics = metrics({
-				target_entered = true,
-				target_exited = true,
-				target_progress = 1,
-			}),
-		}
+		local result = runResult(false, {
+			type = "local_execution_failure",
+			sector_id = 4,
+		}, {
+			target_entered = true,
+			target_exited = true,
+			target_progress = 1,
+		}, nil)
 		T.expect(
 			"phase11_post_target_failure_does_not_revert",
 			JobRunner._shouldRevertPreTargetFailure(result, 3) == false,
@@ -662,18 +812,14 @@ local function runUnit()
 
 	-- 30. Halfway target progress unlocks extra repair attempts.
 	do
-		local result = {
-			success = false,
-			failure = {
-				type = "local_execution_failure",
-				sector_id = 3,
-			},
-			metrics = metrics({
-				target_entered = true,
-				target_exited = false,
-				target_progress = 0.6,
-			}),
-		}
+		local result = runResult(false, {
+			type = "local_execution_failure",
+			sector_id = 3,
+		}, {
+			target_entered = true,
+			target_exited = false,
+			target_progress = 0.6,
+		}, nil)
 		T.expect(
 			"phase11_halfway_progress_gets_extra_attempts",
 			JobRunner._attemptLimitForResult(result, 3)
@@ -725,14 +871,14 @@ local function waitForIdle(timeoutSeconds: number): boolean
 	return JobRunner.isBusy() == false
 end
 
-local function summariseAttempts(job): string
-	if job == nil or job.attempts == nil or #job.attempts == 0 then
+local function summariseAttempts(job: CIJob?): string
+	if job == nil or #job.attempts == 0 then
 		return "no-attempts"
 	end
 
-	local parts = {}
+	local parts: { string } = {}
 	for _, attempt in ipairs(job.attempts) do
-		local result = attempt.result or {}
+		local result = attempt.result
 		local failure = result.failure
 		local hints = attempt.hints or {}
 		local action = attempt.action
