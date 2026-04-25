@@ -1,3 +1,5 @@
+--!strict
+
 -- CrestDipBuilder.luau
 -- Builds CrestDip (vertical crest or dip) geometry from a SectorState.
 -- prd_plan.md §4.3, Phase 4
@@ -13,7 +15,9 @@ local CrestDipPath = require(script.Parent.CrestDipPath)
 
 type SectorState = Types.SectorState
 
-local CrestDipBuilder = {}
+type CrestDipBuilderModule = {
+	build: (state: SectorState, entryFrame: CFrame, exitFrame: CFrame) -> (),
+}
 
 local function worldPoint(entryFrame: CFrame, point: Vector3): Vector3
 	return entryFrame.Position
@@ -60,17 +64,16 @@ local function makeSegment(
 	return makePart(name, Vector3.new(Constants.TRACK_WIDTH, Constants.TRACK_THICKNESS, length), cf, color, parent)
 end
 
-function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame)
+local function build(state: SectorState, entryFrame: CFrame, _exitFrame: CFrame): ()
 	local p = state.params
-	assert(p.height_or_depth, "CrestDipBuilder: missing height_or_depth")
+	local height = assert(p.height_or_depth, "CrestDipBuilder: missing height_or_depth")
 	assert(p.radius, "CrestDipBuilder: missing radius")
-	assert(p.sector_length, "CrestDipBuilder: missing sector_length")
-	assert(p.sector_length <= Constants.STRAIGHT_LENGTH, "CrestDipBuilder: sector_length exceeds STRAIGHT_LENGTH")
+	local sectorLength = assert(p.sector_length, "CrestDipBuilder: missing sector_length")
+	assert(sectorLength <= Constants.STRAIGHT_LENGTH, "CrestDipBuilder: sector_length exceeds STRAIGHT_LENGTH")
 
-	local height = p.height_or_depth
 	local folder = getSectorFolder(state.sector_id)
 	local color = BrickColor.new("Medium stone grey")
-	local points = CrestDipPath.buildLocalCenterlinePoints(height, p.sector_length)
+	local points = CrestDipPath.buildLocalCenterlinePoints(height, sectorLength)
 	local prefix = if height >= 0 then "Crest" else "Dip"
 	for index = 1, #points - 1 do
 		local startPoint = points[index]
@@ -85,5 +88,9 @@ function CrestDipBuilder.build(state: SectorState, entryFrame: CFrame, _exitFram
 		makeSegment(segmentName, startPoint, endPoint, entryFrame, color, folder)
 	end
 end
+
+local CrestDipBuilder: CrestDipBuilderModule = {
+	build = build,
+}
 
 return CrestDipBuilder
