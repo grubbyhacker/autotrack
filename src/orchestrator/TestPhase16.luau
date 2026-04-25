@@ -1,3 +1,4 @@
+--!strict
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -26,7 +27,12 @@ type SectorState = Types.SectorState
 local TestPhase16 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 
-local function makeState(sectorId: number, params, ingress: string?, egress: string?): SectorState
+local function makeState(
+	sectorId: number,
+	params: Types.SectorParams,
+	ingress: Types.PadValue?,
+	egress: Types.PadValue?
+): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = "RampJump",
@@ -57,7 +63,7 @@ end
 
 local function resetEditableSectors()
 	for _, sectorId in ipairs(EDITABLE_SECTORS) do
-		local flatState = {
+		local flatState: SectorState = {
 			sector_id = sectorId,
 			mechanic = nil,
 			params = {},
