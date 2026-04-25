@@ -1,3 +1,5 @@
+--!strict
+
 -- TestPhase4.luau
 -- Smoke tests for pads and the three mechanic builders.
 -- Geometry detail tests removed (phase 14 refactor: covered by phase 12 visuals now deleted;
@@ -41,7 +43,7 @@ local function makeState(
 	}
 end
 
-local function getSectorMeta(sectorId: number)
+local function getSectorMeta(sectorId: number): (Types.SectorMeta, { Types.SectorMeta })
 	local sectors = TrackGenerator.generate()
 	for _, sector in ipairs(sectors) do
 		if sector.id == sectorId then
@@ -116,7 +118,7 @@ local function waitForBaseline(): (boolean, number?)
 		local lapDone = workspace:GetAttribute("AutoTrack_BaselineLapDone")
 		local lapTime = workspace:GetAttribute("AutoTrack_BaselineLapTime")
 		if lapDone ~= nil and lapTime ~= nil then
-			return lapDone == true, lapTime
+			return lapDone == true, if typeof(lapTime) == "number" then lapTime else nil
 		end
 		task.wait(0.25)
 	end
@@ -249,7 +251,7 @@ function TestPhase4.runCrestDip()
 
 	local crestSector = getSectorMeta(TARGET_SECTOR_ID)
 	local crestWaypoints = TrackGenerator.getSectorPath(crestSector, crestState)
-	local crestExitLocal = nil
+	local crestExitLocal: Vector3? = nil
 	local maxCrestWaypointY = -math.huge
 	for _, waypoint in ipairs(crestWaypoints) do
 		maxCrestWaypointY = math.max(maxCrestWaypointY, waypoint.Position.Y)
@@ -286,8 +288,8 @@ function TestPhase4.runChicane()
 	local wavePoints = ChicanePath.buildLocalCenterlinePoints(6, 18, 64)
 	local coarsePoints = ChicanePath.buildLocalCenterlinePoints(6, 18)
 	local visualPoints = ChicanePath.buildLocalVisualCenterlinePoints(6, 18)
-	local positivePeak = nil
-	local negativePeak = nil
+	local positivePeak: Vector3? = nil
+	local negativePeak: Vector3? = nil
 	local zeroBetweenPeaks = false
 	for _, point in ipairs(wavePoints) do
 		if positivePeak == nil or point.X > positivePeak.X then
@@ -348,14 +350,14 @@ function TestPhase4.runChicane()
 
 	local chicaneSectorId = 3
 	local _, sectors = getSectorMeta(chicaneSectorId)
-	local chicaneState = {
+	local chicaneState: SectorState = {
 		sector_id = chicaneSectorId,
 		mechanic = "Chicane",
 		params = { amplitude = 4, transition_length = 24, corridor_width = 16 },
 		pads = { ingress = "None", egress = "None" },
 		version = 0,
 	}
-	local targetSector = nil
+	local targetSector: Types.SectorMeta? = nil
 	for _, sector in ipairs(sectors) do
 		if sector.id == chicaneSectorId then
 			targetSector = sector
@@ -366,7 +368,7 @@ function TestPhase4.runChicane()
 	SectorApplier.apply(chicaneState, targetSector.entry, targetSector.exit)
 
 	local chicaneWaypoints = TrackGenerator.getSectorPath(targetSector, chicaneState)
-	local chicaneExitLocal = nil
+	local chicaneExitLocal: Vector3? = nil
 	local maxAbsLateral = 0
 	for _, waypoint in ipairs(chicaneWaypoints) do
 		local localPoint = toSectorLocal(targetSector.entry, waypoint.Position)
