@@ -1,3 +1,5 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -13,10 +15,24 @@ local PromptBuilder = require(script.Parent.Parent.Agent.PromptBuilder)
 local LLMAdapter = require(script.Parent.Parent.Agent.LLMAdapter)
 
 type Request = Types.Request
+type AttemptRecord = Types.AttemptRecord
+type FailurePacket = Types.FailurePacket
+type FailureType = Types.FailureType
+type PadValue = Types.PadValue
+type RunMemory = Types.RunMemory
+type RunMetrics = Types.RunMetrics
+type SectorState = Types.SectorState
+type TargetScoreBand = Types.TargetScoreBand
+
+type MetricsOverrides = {
+	target_progress: number?,
+	target_reacquired: boolean?,
+	target_apex_min_speed: number?,
+}
 
 local TestPhase27 = {}
 
-local function makeRequest(scoreBand: string): Request
+local function makeRequest(scoreBand: TargetScoreBand): Request
 	return {
 		request_id = "phase27-retention",
 		raw_text = "add ramp jump sector 3",
@@ -48,7 +64,7 @@ local function makeRequest(scoreBand: string): Request
 	}
 end
 
-local function emptyMemory()
+local function emptyMemory(): RunMemory
 	return {
 		shared = {},
 		orchestrator = {},
@@ -57,8 +73,31 @@ local function emptyMemory()
 	}
 end
 
-local function makeRunMetrics(overrides)
-	local metrics = {
+local function makeRampJumpState(
+	version: number,
+	rampAngle: number,
+	rampLength: number,
+	gapLength: number,
+	landingLength: number,
+	ingress: PadValue,
+	egress: PadValue
+): SectorState
+	return {
+		sector_id = 3,
+		mechanic = "RampJump",
+		params = {
+			ramp_angle = rampAngle,
+			ramp_length = rampLength,
+			gap_length = gapLength,
+			landing_length = landingLength,
+		},
+		pads = { ingress = ingress, egress = egress },
+		version = version,
+	}
+end
+
+local function makeRunMetrics(overrides: MetricsOverrides?): RunMetrics
+	local metrics: RunMetrics = {
 		entry_speed = 34,
 		exit_speed = 0,
 		airborne = false,
@@ -87,20 +126,28 @@ local function makeRunMetrics(overrides)
 		lap_time = 0,
 		slowdown_ratio = 1.2,
 	}
-	for key, value in pairs(overrides or {}) do
-		metrics[key] = value
+	if overrides ~= nil then
+		if overrides.target_progress ~= nil then
+			metrics.target_progress = overrides.target_progress
+		end
+		if overrides.target_reacquired ~= nil then
+			metrics.target_reacquired = overrides.target_reacquired
+		end
+		if overrides.target_apex_min_speed ~= nil then
+			metrics.target_apex_min_speed = overrides.target_apex_min_speed
+		end
 	end
 	return metrics
 end
 
 local function makeRepairPacket(
 	request: Request,
-	state,
-	failureType: string,
+	state: SectorState,
+	failureType: FailureType,
 	failureDetail: string,
 	hints: { string },
-	metrics
-)
+	metrics: RunMetrics
+): FailurePacket
 	return {
 		request = request,
 		sector_state = state,
@@ -182,18 +229,7 @@ function TestPhase27.run()
 				over_budget = false,
 			},
 		}
-		local highEnergyRampState = {
-			sector_id = 3,
-			mechanic = "RampJump",
-			params = {
-				ramp_angle = 18,
-				ramp_length = 48,
-				gap_length = 12,
-				landing_length = 40,
-			},
-			pads = { ingress = "Boost50", egress = "Brake25" },
-			version = 2,
-		}
+		local highEnergyRampState = makeRampJumpState(2, 18, 48, 12, 40, "Boost50", "Brake25")
 		local repairedChallengeAllowed, repairedChallengeReason =
 			JobRunner._shouldRunChallengeUp(requestHigh, challengeProbeResult, true, 1, highEnergyRampState)
 		T.expect(
@@ -338,18 +374,7 @@ function TestPhase27.run()
 			HttpService:JSONEncode({ curved = attrCurved.profile_mode, linear = attrLinear.profile_mode })
 		)
 
-		local rampSurfaceState = {
-			sector_id = 3,
-			mechanic = "RampJump",
-			params = {
-				ramp_angle = 14,
-				ramp_length = 40,
-				gap_length = 10,
-				landing_length = 40,
-			},
-			pads = { ingress = "None", egress = "None" },
-			version = 1,
-		}
+		local rampSurfaceState = makeRampJumpState(1, 14, 40, 10, 40, "None", "None")
 		local rampSurfaceActive = VerifierController._isRampJumpGroundedSurfaceActive(rampSurfaceState, 0.45, false)
 		local rampSurfaceInactive = VerifierController._isRampJumpGroundedSurfaceActive(rampSurfaceState, 0.05, false)
 		local dampedAngular =
@@ -394,18 +419,7 @@ function TestPhase27.run()
 
 		local repairRequest = makeRequest("high")
 		repairRequest.memory_context = emptyMemory()
-		local currentState = {
-			sector_id = 3,
-			mechanic = "RampJump",
-			params = {
-				ramp_angle = 14,
-				ramp_length = 34,
-				gap_length = 10,
-				landing_length = 24,
-			},
-			pads = { ingress = "None", egress = "None" },
-			version = 1,
-		}
+		local currentState = makeRampJumpState(1, 14, 34, 10, 24, "None", "None")
 		local packet = makeRepairPacket(
 			repairRequest,
 			currentState,
@@ -414,22 +428,11 @@ function TestPhase27.run()
 			{ "no_progress", "speed bled off climbing the ramp" },
 			makeRunMetrics({ target_apex_min_speed = 9 })
 		)
-		local history = {
+		local history: { AttemptRecord } = {
 			{
 				attempt_index = 0,
 				action = nil,
-				proposed_state = {
-					sector_id = 3,
-					mechanic = "RampJump",
-					params = {
-						ramp_angle = 16,
-						ramp_length = 40,
-						gap_length = 12,
-						landing_length = 22,
-					},
-					pads = { ingress = "None", egress = "None" },
-					version = 0,
-				},
+				proposed_state = makeRampJumpState(0, 16, 40, 12, 22, "None", "None"),
 				result = packet.run_result,
 				hints = {},
 				memory_note = nil,
@@ -491,18 +494,7 @@ function TestPhase27.run()
 
 		local instabilityPacket = makeRepairPacket(
 			repairRequest,
-			{
-				sector_id = 3,
-				mechanic = "RampJump",
-				params = {
-					ramp_angle = 14,
-					ramp_length = 41,
-					gap_length = 11,
-					landing_length = 60,
-				},
-				pads = { ingress = "Boost50", egress = "Brake25" },
-				version = 7,
-			},
+			makeRampJumpState(7, 14, 41, 11, 60, "Boost50", "Brake25"),
 			"local_execution_failure",
 			"tumble",
 			{ "tumble", "body_off_track" },
@@ -511,22 +503,11 @@ function TestPhase27.run()
 				target_reacquired = false,
 			})
 		)
-		local instabilityHistory = {
+		local instabilityHistory: { AttemptRecord } = {
 			{
 				attempt_index = 5,
 				action = nil,
-				proposed_state = {
-					sector_id = 3,
-					mechanic = "RampJump",
-					params = {
-						ramp_angle = 14,
-						ramp_length = 41,
-						gap_length = 11,
-						landing_length = 60,
-					},
-					pads = { ingress = "Boost50", egress = "Brake25" },
-					version = 6,
-				},
+				proposed_state = makeRampJumpState(6, 14, 41, 11, 60, "Boost50", "Brake25"),
 				result = {
 					success = false,
 					failure = { type = "local_execution_failure", sector_id = 3, detail = "body_off_track" },
@@ -539,18 +520,7 @@ function TestPhase27.run()
 			{
 				attempt_index = 6,
 				action = nil,
-				proposed_state = {
-					sector_id = 3,
-					mechanic = "RampJump",
-					params = {
-						ramp_angle = 14,
-						ramp_length = 41,
-						gap_length = 11,
-						landing_length = 60,
-					},
-					pads = { ingress = "Boost50", egress = "Brake25" },
-					version = 7,
-				},
+				proposed_state = makeRampJumpState(7, 14, 41, 11, 60, "Boost50", "Brake25"),
 				result = {
 					success = false,
 					failure = { type = "local_execution_failure", sector_id = 3, detail = "tumble" },
