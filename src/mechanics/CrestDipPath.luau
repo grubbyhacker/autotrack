@@ -1,3 +1,5 @@
+--!strict
+
 -- CrestDipPath.luau
 -- Shared centerline helper for CrestDip geometry and verifier guidance.
 -- Mirrors the sampling used by CrestDipBuilder so the drive line matches the rendered surface.

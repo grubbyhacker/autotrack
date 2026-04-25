@@ -1,3 +1,5 @@
+--!strict
+
 local TestGates = {}
 
 function TestGates.runRefactorFast()

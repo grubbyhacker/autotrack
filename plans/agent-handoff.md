@@ -44,12 +44,13 @@
 | 36 | Complete — full-repo `make typecheck` gate promotion, shared contract builders/test factories, and selective `--!strict` ratchet |
 | 37 | Complete — shared JSON contracts, trace/export serializer strictness, builder/factory tightening, and `13 / 106` strict Luau files |
 | 38 Sidequest | Complete — bridge status UI, disabled-heartbeat protocol, and clearer live-session export diagnostics |
+| 39 | Complete — risk/return strictness expansion across small helper/config/path modules, Phase 39 suite wiring, and `27 / 107` strict Luau files |
 ## Current state
 
 - Public slash-command surface remains intentionally narrow: `/demo endurance|camera|rampitup|repair|llmerror|ui-hotfix`, `/test <suite>`, `/tune ...`; tune mode remains the Phase 21 lab with staged-by-default runs, baseline/candidate compare, auto-loop toggle, explicit promote snapshot, and production-baseline `reset`.
 - Endurance verification/objective state remains commit-authoritative: endurance-origin jobs still use isolated-sector vetting plus a commit lap, pad usage stays telemetry-only, and HUD `Last/%` reads committed lap attrs while per-sector committed scores stay Overview-only.
 - RampJump remains back in the high-risk/high-reward pool with repaired-score retention gating, profile-mode pathing (`linear_blend`/`curved_lift`), and upright-aware hard-landing integrity acceptance.
-- The Luau hygiene/typecheck toolchain now uses repo-wide formatting/lint/typecheck coverage, vendored Roblox definitions, generated Rojo sourcemaps, shared `JsonValue`/`JsonObject` contracts, and `13 / 106` strict files. `make typecheck` is the authoritative full static-analysis gate; `make typecheck-report` is only a compatibility alias.
+- The Luau hygiene/typecheck toolchain now uses repo-wide formatting/lint/typecheck coverage, vendored Roblox definitions, generated Rojo sourcemaps, shared `JsonValue`/`JsonObject` contracts, and `27 / 107` strict files. `make typecheck` is the authoritative full static-analysis gate; `make typecheck-report` is only a compatibility alias.
 
 ## Hard-won invariants
 
@@ -86,14 +87,14 @@
 - Endurance `challenge_up` for RampJump should be gated by baseline quality, not only score/headroom: skip do-over after repaired commits and skip when the committed ramp is already near top-end geometry with strong ingress boost.
 - `phase21_experiment_harness_distinguishes_better_candidate` should assert the comparison contract (winner labels and differing heuristic/challenge aggregates), not a hard-coded winner. Live experiment telemetry can legitimately change which candidate wins.
 - Standalone `luau-lsp analyze` for this repo needs both inputs: vendored Roblox definitions and a Rojo sourcemap. `--platform=roblox` alone is not enough for the maintained full-repo `make typecheck` gate.
+- Shared config maps read by both dynamic indexing and property access, such as `LevelMappings`, should use explicit mechanic-shaped record types instead of generic `{ [Mechanic]: T }`; Luau preserves `.RampJump`/`.Chicane` reads more reliably with explicit records.
 - `studio/AutoTrackTestBridge.server.lua` should only execute commands from Studio/edit or server-side Play contexts. Client-side Play polling is noise and should stay suppressed; idle `ConnectFail` is normal when no local `make/test` bridge process is running. Disabled bridge plugins still heartbeat with `enabled=false` so the CLI can fail fast instead of timing out as if the plugin were missing. Use `make install-test-bridge-plugin` from WSL to copy the checked-in plugin to `/mnt/c/Users/roger/AppData/Local/Roblox/Plugins`; Studio still needs a restart after plugin code changes. The Phase 38 bridge status UI has been manually verified working in Studio.
 - Trace/export payloads should cross the `LLMTraceJournal` sanitizer and use `Types.JsonObject`; do not reopen broad `{ [string]: any }` JSON surfaces. The `llm_trace_export` bridge path is live-session-only and reports `no active Play session` after sequential `make` suites stop Play.
 
 ## Maintained verification snapshot
 
-- Static/contract gates: `make test-contracts`, `make fmt-check`, `make typecheck`, `make typecheck-report`, `make lint`, `make hygiene`
+- Static/contract gates: `make test-contracts`, `make fmt-check`, `make typecheck`, `make typecheck-report`, `make lint`, `make hygiene`; type/refactor gates: `make phase30`, `make phase36`, `make phase37`, `make phase39`
 - Fast/regression gates: `make boot_smoke`, `make refactor_fast`, `make mechanics_regression`
 - Integration gates: `make test TEST=phase14_integration`, `make test TEST=phase21`, `make test TEST=phase21_unit`, `make test TEST=phase21_experiment`, `make test TEST=phase21_rampjump_torture`, `make test TEST=phase23`, `make test TEST=phase24`, `make test TEST=phase27`
-- Type/refactor milestone gates: `make phase30`, `make phase36`, `make phase37`
 - Live-session export gate: `make test TEST=llm_trace_export`
 - `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma-after-challenge-gate.json`, `make endurance-trace MODEL=google/gemma-3-4b-it DURATION=120 OUT=traces/endurance-gemma-after-challenge-gate-120.json`

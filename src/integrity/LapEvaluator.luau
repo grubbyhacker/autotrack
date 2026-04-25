@@ -200,7 +200,7 @@ function LapEvaluator.buildFailurePacket(
 	hints: { string },
 	extraDiagnostics
 ): Types.FailurePacket
-	local legalLevers = LevelMappings.NUMERIC_LEVERS[state.mechanic] or {}
+	local legalLevers = if state.mechanic ~= nil then LevelMappings.NUMERIC_LEVERS[state.mechanic] else {}
 	local diagnosticHints = {}
 	for _, hint in ipairs(hints) do
 		table.insert(diagnosticHints, hint)

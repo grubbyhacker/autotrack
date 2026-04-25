@@ -1,3 +1,5 @@
+--!strict
+
 -- TestUtils.luau
 -- Minimal pass/fail helpers for all phase test suites.
 

@@ -17,6 +17,7 @@ local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("PadValueUtils"))
 
 type Request = Types.Request
+type Mechanic = Types.Mechanic
 type PadSide = Types.PadSide
 type PadValue = Types.PadValue
 
@@ -98,11 +99,11 @@ function RequestParser.parse(rawText: string, requestId: string): (Request?, str
 		return nil, "sector is not an editable straight"
 	end
 
-	local mechanicsFound = {}
-	local seenMechanics = {}
-	local synonyms = {}
+	local mechanicsFound: { Mechanic } = {}
+	local seenMechanics: { [Mechanic]: boolean } = {}
+	local synonyms: { { synonym: string, mechanic: Mechanic } } = {}
 	for synonym, mechanic in pairs(LevelMappings.MECHANIC_SYNONYMS) do
-		table.insert(synonyms, { synonym = synonym, mechanic = mechanic })
+		table.insert(synonyms, { synonym = synonym, mechanic = mechanic :: Mechanic })
 	end
 	table.sort(synonyms, function(a, b)
 		return #a.synonym > #b.synonym

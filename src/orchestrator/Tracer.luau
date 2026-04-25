@@ -1,3 +1,5 @@
+--!strict
+
 -- In-memory trace log: prints and accumulates lines for test inspection.
 local _log: { string } = {}
 

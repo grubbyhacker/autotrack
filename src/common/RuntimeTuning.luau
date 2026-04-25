@@ -1,3 +1,5 @@
+--!strict
+
 local RuntimeTuning = {}
 
 function RuntimeTuning.numberAttr(name: string, fallback: number): number

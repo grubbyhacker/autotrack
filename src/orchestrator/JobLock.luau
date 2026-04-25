@@ -1,3 +1,5 @@
+--!strict
+
 local JobLock = {}
 
 local _held = false

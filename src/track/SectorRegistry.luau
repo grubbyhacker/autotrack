@@ -1,3 +1,5 @@
+--!strict
+
 -- SectorRegistry.luau
 -- Maintains the live committed state of all editable straight sectors.
 -- prd_plan.md §17 Phase 2
@@ -16,7 +18,7 @@ local SectorRegistry = {}
 -- Internal state
 local _committed: { [number]: SectorState } = {}
 local _straightCount: number = 0
-local _straightSectorIds = { 2, 3, 4, 7, 8, 9 }
+local _straightSectorIds: { number } = { 2, 3, 4, 7, 8, 9 }
 
 -- Called once by the orchestrator after TrackGenerator runs.
 function SectorRegistry.init(straightCount: number)
@@ -48,7 +50,7 @@ function SectorRegistry.get(sector_id: number): SectorState?
 end
 
 function SectorRegistry.getStraights(): { SectorState }
-	local states = {}
+	local states: { SectorState } = {}
 
 	for _, sectorId in ipairs(_straightSectorIds) do
 		local state = _committed[sectorId]

@@ -18,13 +18,6 @@ local PadValueUtils = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):
 type AgentAction = Types.AgentAction
 type SectorState = Types.SectorState
 type Mechanic = Types.Mechanic
-type SectorParams = Types.SectorParams
-
-local Mappings = LevelMappings :: {
-	NUMERIC_LEVERS: { [Mechanic]: { string } },
-	DEFAULTS: { [Mechanic]: SectorParams },
-}
-
 local ActionValidator = {}
 
 -- Validate an AgentAction against the legal actions for a mechanic.
@@ -34,7 +27,7 @@ function ActionValidator.validateAction(action: AgentAction, mechanic: Mechanic?
 		if mechanic == nil then
 			return false, "unknown mechanic: nil"
 		end
-		local legal = Mappings.NUMERIC_LEVERS[mechanic]
+		local legal = LevelMappings.NUMERIC_LEVERS[mechanic]
 		if not legal then
 			return false, "unknown mechanic: " .. tostring(mechanic)
 		end
@@ -90,10 +83,10 @@ function ActionValidator.validateSectorState(state: SectorState): (boolean, stri
 	end
 
 	if state.mechanic ~= nil then
-		if type(state.mechanic) ~= "string" or Mappings.DEFAULTS[state.mechanic] == nil then
+		if type(state.mechanic) ~= "string" or LevelMappings.DEFAULTS[state.mechanic] == nil then
 			return false, "mechanic must be a supported mechanic"
 		end
-		for _, lever in ipairs(Mappings.NUMERIC_LEVERS[state.mechanic]) do
+		for _, lever in ipairs(LevelMappings.NUMERIC_LEVERS[state.mechanic]) do
 			if type(state.params[lever]) ~= "number" then
 				return false, "missing numeric lever: " .. lever
 			end

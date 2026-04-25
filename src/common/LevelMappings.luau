@@ -1,9 +1,48 @@
+--!strict
+
 -- LevelMappings.luau
 -- Maps user-facing text synonyms to canonical mechanic names and
 -- defines the legal numeric levers per mechanic.
 -- prd_plan.md §3.2, §4
 
-local LevelMappings = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
+
+type Mechanic = Types.Mechanic
+type SectorParams = Types.SectorParams
+
+type LeverBounds = {
+	min: number,
+	max: number,
+}
+
+type NumericLeverMap = {
+	RampJump: { string },
+	Chicane: { string },
+	CrestDip: { string },
+}
+
+type LeverBoundsMap = {
+	RampJump: { [string]: LeverBounds },
+	Chicane: { [string]: LeverBounds },
+	CrestDip: { [string]: LeverBounds },
+}
+
+type DefaultParamsMap = {
+	RampJump: SectorParams,
+	Chicane: SectorParams,
+	CrestDip: SectorParams,
+}
+
+type LevelMappingsModule = {
+	MECHANIC_SYNONYMS: { [string]: Mechanic },
+	NUMERIC_LEVERS: NumericLeverMap,
+	LEVER_BOUNDS: LeverBoundsMap,
+	DEFAULTS: DefaultParamsMap,
+}
+
+local LevelMappings = {} :: LevelMappingsModule
 
 -- Synonym → canonical mechanic name
 -- Keys are lowercase for case-insensitive matching.

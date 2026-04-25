@@ -1,3 +1,5 @@
+--!strict
+
 type TestSnapshot = {
 	status: string,
 	pass_count: number,

@@ -1,3 +1,5 @@
+--!strict
+
 -- ReacquireDetector.luau
 -- Detects whether the verifier car has reacquired the track surface
 -- after becoming airborne or laterally displaced.

@@ -1,8 +1,34 @@
+--!strict
+
 -- LLMConfig.luau
 -- Central configuration for LLM provider selection.
 -- LLM usage is disabled by default; toggle via UIState or workspace attributes at boot.
 
-local LLMConfig = {}
+type ModelConfig = {
+	id: string,
+	displayName: string,
+	integerLevers: boolean,
+}
+
+type EffectiveConfig = {
+	enabled: boolean,
+	modelId: string,
+	displayName: string,
+	integerLevers: boolean,
+	isHeuristic: boolean,
+}
+
+type LLMConfigModule = {
+	MODELS: { ModelConfig },
+	MAX_HISTORY_DEPTH: number,
+	get: () -> EffectiveConfig,
+	setEnabled: (enabled: boolean) -> (),
+	setModel: (modelId: string) -> (),
+	getModelIndex: () -> number,
+	cycleModel: (delta: number) -> (),
+}
+
+local LLMConfig = {} :: LLMConfigModule
 
 -- Ordered model list. "heuristic" is always first and means MinimalProposer.
 -- integerLevers: when true, float lever values from the LLM are rounded to integers.
@@ -23,7 +49,7 @@ LLMConfig.MAX_HISTORY_DEPTH = 7
 local _enabled = false
 local _selectedModelId = "heuristic"
 
-local function findModel(id: string)
+local function findModel(id: string): ModelConfig?
 	for _, m in ipairs(LLMConfig.MODELS) do
 		if m.id == id then
 			return m
@@ -33,7 +59,7 @@ local function findModel(id: string)
 end
 
 -- Returns the current effective config snapshot.
-function LLMConfig.get()
+function LLMConfig.get(): EffectiveConfig
 	local model = findModel(_selectedModelId) or LLMConfig.MODELS[1]
 	return {
 		enabled = _enabled,
