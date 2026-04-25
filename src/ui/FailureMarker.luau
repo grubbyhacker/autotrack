@@ -1,3 +1,4 @@
+--!strict
 -- FailureMarker.luau
 -- Visual marker placed at the failure point during analysis/repair phases.
 -- prd_plan.md §13.3, Phase 8
@@ -22,7 +23,18 @@ local function ensureRoot(): Folder
 	return root
 end
 
-function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?)
+function FailureMarker.hide(): ()
+	local root = workspace:FindFirstChild(ROOT_NAME)
+	if not root then
+		return
+	end
+	local marker = root:FindFirstChild(MARKER_NAME)
+	if marker then
+		marker:Destroy()
+	end
+end
+
+function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?): ()
 	FailureMarker.hide()
 
 	local root = ensureRoot()
@@ -50,7 +62,7 @@ function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?)
 	ring.Adornee = core
 	ring.Parent = folder
 
-	local tailPoints = trajectoryTail or {}
+	local tailPoints: { Vector3 } = trajectoryTail or {}
 	local tailCount = math.max(#tailPoints, 1)
 	for index, point in ipairs(tailPoints) do
 		local dot = Instance.new("Part")
@@ -66,17 +78,6 @@ function FailureMarker.show(position: Vector3, trajectoryTail: { Vector3 }?)
 		dot.Size = Vector3.new(0.8, 0.8, 0.8)
 		dot.Position = point + Vector3.new(0, 0.6, 0)
 		dot.Parent = folder
-	end
-end
-
-function FailureMarker.hide()
-	local root = workspace:FindFirstChild(ROOT_NAME)
-	if not root then
-		return
-	end
-	local marker = root:FindFirstChild(MARKER_NAME)
-	if marker then
-		marker:Destroy()
 	end
 end
 
