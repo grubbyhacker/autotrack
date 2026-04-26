@@ -1,3 +1,5 @@
+--!strict
+
 -- ChallengeRunner.luau
 -- Phase 11b Stage B — after an initial integrity commit, attempt to escalate
 -- the committed SectorState so the score goes up while integrity still passes
@@ -17,7 +19,26 @@ local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
 local AttemptRunner = require(script.Parent.AttemptRunner)
 
 type SectorState = Types.SectorState
+type SectorMeta = Types.SectorMeta
 type RunResult = Types.RunResult
+type ChallengeScoreData = Types.ChallengeScore
+type ChallengeAttempt = {
+	state: SectorState,
+	lever: string,
+	from: number?,
+	to: number?,
+}
+type RunUpArgs = {
+	baseState: SectorState,
+	baseResult: RunResult,
+	targetSectorId: number,
+	targetSector: SectorMeta,
+	sectors: { SectorMeta },
+	car: BasePart,
+	canonicalStart: CFrame,
+	onSectorChange: ((number, boolean) -> ())?,
+	onRound: ((number, ChallengeAttempt?, boolean, string?) -> ())?,
+}
 
 local ChallengeRunner = {}
 
@@ -81,7 +102,7 @@ end
 -- ready to hand to AttemptRunner. Returns nil when no escalation is possible
 -- (no suggestion, no delta table entry, or the resulting value would drop
 -- below the floor).
-local function escalateState(state: SectorState, score: Types.ChallengeScore): (SectorState?, string?, string?)
+local function escalateState(state: SectorState, score: ChallengeScoreData): (SectorState?, string?, string?)
 	local lever, reason = ChallengeScore.suggestEscalation(state, score)
 	if lever == nil then
 		return nil, nil, reason
@@ -138,15 +159,16 @@ end
 --   onSectorChange : ((number, boolean) -> ())?,
 --   onRound        : ((round, attempt, improved) -> ())?,  -- UI callback
 -- }
-function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
+function ChallengeRunner.runUp(args: RunUpArgs): (SectorState, RunResult, number)
 	local bestState = cloneState(args.baseState)
 	local bestResult = args.baseResult
 	local rounds = 0
 
-	if bestResult == nil or bestResult.score == nil then
+	local bestScore = bestResult.score
+	if bestScore == nil then
 		return bestState, bestResult, 0
 	end
-	if bestResult.score.over_budget then
+	if bestScore.over_budget then
 		if args.onRound then
 			args.onRound(0, nil, false, "over budget; no escalation")
 		end
@@ -155,15 +177,15 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 
 	for round = 1, Constants.CHALLENGE_UP_ROUNDS do
 		rounds = round
-		local candidateState, lever, skipReason = escalateState(bestState, bestResult.score)
-		if not candidateState then
+		local candidateState, lever, skipReason = escalateState(bestState, bestScore)
+		if not candidateState or not lever then
 			if args.onRound then
 				args.onRound(round, nil, false, skipReason or "no candidate")
 			end
 			break
 		end
 
-		local attempt = {
+		local attempt: ChallengeAttempt = {
 			state = candidateState,
 			lever = lever,
 			from = bestState.params[lever],
@@ -188,19 +210,20 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 			end
 			break
 		end
-		if result.score == nil then
+		local resultScore = result.score
+		if resultScore == nil then
 			if args.onRound then
 				args.onRound(round, attempt, false, "no score on result")
 			end
 			break
 		end
-		if result.score.over_budget then
+		if resultScore.over_budget then
 			if args.onRound then
 				args.onRound(round, attempt, false, "over budget")
 			end
 			break
 		end
-		if result.score.total < bestResult.score.total + Constants.MIN_ESCALATION_DELTA then
+		if resultScore.total < bestScore.total + Constants.MIN_ESCALATION_DELTA then
 			if args.onRound then
 				args.onRound(round, attempt, false, "insufficient improvement")
 			end
@@ -209,6 +232,7 @@ function ChallengeRunner.runUp(args): (SectorState, RunResult, number)
 
 		bestState = cloneState(updatedState)
 		bestResult = result
+		bestScore = resultScore
 		if args.onRound then
 			args.onRound(round, attempt, true, nil)
 		end
@@ -219,7 +243,7 @@ end
 
 -- Test hook: exposes the private escalateState so unit tests can poke at the
 -- lever/sign/floor selection without a lap.
-function ChallengeRunner._escalateState(state: SectorState, score: Types.ChallengeScore)
+function ChallengeRunner._escalateState(state: SectorState, score: ChallengeScoreData)
 	return escalateState(state, score)
 end
 
