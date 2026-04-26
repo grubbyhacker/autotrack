@@ -1,3 +1,5 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
@@ -5,8 +7,11 @@ local UIState = require(script.Parent.UIState)
 
 local HUDPreviewDemo = {}
 
+type HUDAttributeValue = boolean | number | string
+type HUDSnapshot = { [string]: HUDAttributeValue? }
+
 local _activeKind: string? = nil
-local _snapshot = nil
+local _snapshot: HUDSnapshot? = nil
 
 local HUD_DEMO_ATTRS = {
 	"phase",
@@ -48,24 +53,39 @@ local HUD_DEMO_ATTRS = {
 	"endurance_attempt_budget_total",
 }
 
-local function captureSnapshot()
+local function captureSnapshot(): HUDSnapshot
 	local folder = UIState.getStateFolder()
-	local snapshot = {}
+	local snapshot: HUDSnapshot = {}
 	for _, attr in ipairs(HUD_DEMO_ATTRS) do
-		snapshot[attr] = folder:GetAttribute(attr)
+		local value = folder:GetAttribute(attr)
+		if value == nil then
+			snapshot[attr] = nil
+		elseif type(value) == "boolean" then
+			local booleanValue: boolean = value
+			snapshot[attr] = booleanValue
+		elseif type(value) == "number" then
+			local numberValue: number = value
+			snapshot[attr] = numberValue
+		elseif type(value) == "string" then
+			local stringValue: string = value
+			snapshot[attr] = stringValue
+		else
+			error(string.format("HUDPreviewDemo unsupported attribute value for %s", attr))
+		end
 	end
 	return snapshot
 end
 
-local function restoreSnapshot()
+local function restoreSnapshot(): ()
 	if _snapshot == nil then
 		_activeKind = nil
 		return
 	end
 
 	local folder = UIState.getStateFolder()
+	local snapshot = _snapshot
 	for _, attr in ipairs(HUD_DEMO_ATTRS) do
-		folder:SetAttribute(attr, _snapshot[attr])
+		folder:SetAttribute(attr, snapshot[attr])
 	end
 
 	_snapshot = nil
