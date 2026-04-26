@@ -1,3 +1,4 @@
+--!strict
 -- TestPhase14.luau
 -- Regression coverage for the tuned phase-14 reliability envelope.
 -- Focus:
@@ -32,6 +33,17 @@ local Tracer = require(script.Parent.Tracer)
 
 type SectorState = Types.SectorState
 type OrchestratorContext = Types.OrchestratorContext
+type Mechanic = Types.Mechanic
+type PadValue = Types.PadValue
+type RunMetrics = Types.RunMetrics
+type RunResult = Types.RunResult
+type FailurePacket = Types.FailurePacket
+type CIJob = Types.CIJob
+type OrchestratorSectorSnapshot = Types.OrchestratorSectorSnapshot
+type OrchestratorLastResult = Types.OrchestratorLastResult
+type OrchestratorSubmitDecision = Types.OrchestratorSubmitDecision
+type OrchestratorDecision = Types.OrchestratorDecision
+type MemoryEntry = Types.MemoryEntry
 
 local TestPhase14 = {}
 local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
@@ -40,19 +52,32 @@ local EDITABLE_SECTORS = { 2, 3, 4, 7, 8, 9 }
 -- | RampJump sector 2 | Small but credible launch that clears the current airtime floor without tumbling; guards the basic jump JobRunner path. |
 -- | Chicane sector 3 | Tightest currently reliable S-bend inside the real sector-length budget; guards against over-easing the shape into something trivial. |
 -- | CrestDip sector 3 | Standalone crest profile that survives without upstream conditioning; guards the solo CrestDip envelope used by the downstream pair test. |
-local GOLDEN_CHICANE_SECTOR3 = {
-	amplitude = 5,
-	transition_length = 26,
-	corridor_width = 18,
-	ingress = "Brake25",
-	egress = "Brake10",
-}
+local GOLDEN_CHICANE_SECTOR3: {
+	amplitude: number,
+	transition_length: number,
+	corridor_width: number,
+	ingress: PadValue,
+	egress: PadValue,
+} =
+	{
+		amplitude = 5,
+		transition_length = 26,
+		corridor_width = 18,
+		ingress = "Brake25",
+		egress = "Brake10",
+	}
 local CRESTDIP_SEARCH_HEIGHTS = { 3, 4, 5, 6 }
 local CRESTDIP_SEARCH_LENGTHS = { 30, 32, 34, 36, 38, 40 }
-local CRESTDIP_SEARCH_PADS = { "Brake50", "Brake25", "None" }
-local CRESTDIP_SEARCH_EGRESS_PADS = { "None", "Brake10", "Brake25" }
+local CRESTDIP_SEARCH_PADS: { PadValue } = { "Brake50", "Brake25", "None" }
+local CRESTDIP_SEARCH_EGRESS_PADS: { PadValue } = { "None", "Brake10", "Brake25" }
 
-local function makeState(sectorId: number, mechanic, params, ingress, egress): SectorState
+local function makeState(
+	sectorId: number,
+	mechanic: Mechanic?,
+	params: Types.SectorParams?,
+	ingress: PadValue?,
+	egress: PadValue?
+): SectorState
 	return {
 		sector_id = sectorId,
 		mechanic = mechanic,
@@ -65,7 +90,7 @@ local function makeState(sectorId: number, mechanic, params, ingress, egress): S
 	}
 end
 
-local function getSectorMeta(sectorId: number)
+local function getSectorMeta(sectorId: number): (Types.SectorMeta, { Types.SectorMeta })
 	local sectors = TrackGenerator.generate()
 	for _, sector in ipairs(sectors) do
 		if sector.id == sectorId then
@@ -121,7 +146,64 @@ local function resultSummary(result: Types.RunResult): string
 	)
 end
 
-local function makeOrchestratorContext(args): OrchestratorContext
+type OrchestratorContextArgs = {
+	sector_states: { [number]: OrchestratorSectorSnapshot },
+	budget: Types.OrchestratorBudget,
+	attempt_budget: Types.OrchestratorAttemptBudget,
+	last_result: OrchestratorLastResult?,
+}
+
+local function snapshot(mechanic: Mechanic?, score: number): OrchestratorSectorSnapshot
+	return {
+		mechanic = mechanic,
+		params = {},
+		score = score,
+	}
+end
+
+local function submitDecision(sectorId: number, mechanic: Mechanic, paramsHint: string): OrchestratorSubmitDecision
+	return {
+		action = "submit_request",
+		sector_id = sectorId,
+		mechanic = mechanic,
+		params_hint = paramsHint,
+		rationale = "test decision",
+		target_score_band = "high",
+		target_budget_tolerance = "medium",
+		target_reliability = "balanced",
+		spectacle_priority = "high",
+		novelty_priority = "medium",
+		replacement_intent = "open_slot_preferred",
+		desired_feel = "test fixture",
+		constraints = {},
+		memory_note = nil,
+	}
+end
+
+local function toPadValue(value: string): PadValue
+	if value == "None" then
+		return "None"
+	elseif value == "Boost5" then
+		return "Boost5"
+	elseif value == "Boost10" then
+		return "Boost10"
+	elseif value == "Boost25" then
+		return "Boost25"
+	elseif value == "Boost50" then
+		return "Boost50"
+	elseif value == "Brake5" then
+		return "Brake5"
+	elseif value == "Brake10" then
+		return "Brake10"
+	elseif value == "Brake25" then
+		return "Brake25"
+	elseif value == "Brake50" then
+		return "Brake50"
+	end
+	error("invalid pad value: " .. value)
+end
+
+local function makeOrchestratorContext(args: OrchestratorContextArgs): OrchestratorContext
 	return {
 		editable_sectors = { 2, 3, 4, 7, 8, 9 },
 		sector_states = args.sector_states,
@@ -147,15 +229,15 @@ local function waitForBaseline(): boolean
 	return false
 end
 
-local function summariseAttempts(job)
+local function summariseAttempts(job: CIJob?): string
 	if not job or not job.attempts then
 		return "no_job"
 	end
 
 	local parts = {}
 	for _, attempt in ipairs(job.attempts) do
-		local result = attempt.result or {}
-		local failure = result.failure or {}
+		local result = attempt.result
+		local failure = result.failure
 		local action = attempt.action
 		local actionLabel = "initial"
 		if action then
@@ -173,9 +255,9 @@ local function summariseAttempts(job)
 				"%d:%s/%s/%s progress=%.2f hints=%s action=%s",
 				attempt.attempt_index,
 				tostring(result.success),
-				tostring(failure.type),
-				tostring(failure.detail),
-				(result.metrics and result.metrics.target_progress) or 0,
+				tostring(failure and failure.type),
+				tostring(failure and failure.detail),
+				result.metrics.target_progress or 0,
 				(attempt.hints and #attempt.hints > 0) and table.concat(attempt.hints, "&") or "-",
 				actionLabel
 			)
@@ -185,9 +267,17 @@ local function summariseAttempts(job)
 	return table.concat(parts, " || ")
 end
 
-local function submitWithRetries(rawText: string, sectorId: number, expectedMechanic: string?, maxRuns: number)
+local function submitWithRetries(
+	rawText: string,
+	sectorId: number,
+	expectedMechanic: Mechanic?,
+	maxRuns: number
+): (boolean, boolean?, string?, CIJob?, SectorState?, string)
 	local logs = {}
-	local lastOk, lastReason, lastJob, lastState = nil, nil, nil, nil
+	local lastOk: boolean? = nil
+	local lastReason: string? = nil
+	local lastJob: CIJob? = nil
+	local lastState: SectorState? = nil
 
 	for run = 1, math.max(1, maxRuns) do
 		local ok, reason = JobRunner.submit(rawText)
@@ -241,7 +331,7 @@ local function debugValue(value): string
 	return tostring(value)
 end
 
-local function makeRequest(rawText: string)
+local function makeRequest(rawText: string): Types.Request
 	local request, err = RequestParser.parse(rawText, "phase14-req")
 	assert(request ~= nil, "request parse failed: " .. tostring(err))
 	return request
@@ -251,8 +341,8 @@ local function makeCrestCandidate(
 	sectorId: number,
 	height: number,
 	sectorLength: number,
-	ingress: string,
-	egress: string?
+	ingress: PadValue,
+	egress: PadValue?
 ): SectorState
 	return makeState(sectorId, "CrestDip", {
 		height_or_depth = height,
@@ -272,14 +362,16 @@ local function crestCandidateLabel(state: SectorState): string
 	)
 end
 
-local function findPassingCrestCandidate(sectorId: number, egressPads: { string }?): (SectorState?, string)
+local function findPassingCrestCandidate(sectorId: number, egressPads: { PadValue }?): (SectorState?, string)
 	local attempts = {}
-	local egressValues = egressPads or { "None" }
+	local defaultEgressValues: { PadValue } = { "None" }
+	local egressValues: { PadValue } = egressPads or defaultEgressValues
 	for _, ingress in ipairs(CRESTDIP_SEARCH_PADS) do
 		for _, egress in ipairs(egressValues) do
 			for _, height in ipairs(CRESTDIP_SEARCH_HEIGHTS) do
 				for _, sectorLength in ipairs(CRESTDIP_SEARCH_LENGTHS) do
-					local candidate = makeCrestCandidate(sectorId, height, sectorLength, ingress, egress)
+					local candidate =
+						makeCrestCandidate(sectorId, height, sectorLength, toPadValue(ingress), toPadValue(egress))
 					local result = select(1, runAttemptState(candidate))
 					local line = string.format(
 						"[SEARCH] CrestDip %s => %s",
@@ -298,7 +390,33 @@ local function findPassingCrestCandidate(sectorId: number, egressPads: { string 
 	return nil, table.concat(attempts, "\n")
 end
 
-local function fakePacket(request, state, attemptIndex)
+local function packetMetrics(): RunMetrics
+	return {
+		entry_speed = 120,
+		exit_speed = 0,
+		airborne = true,
+		air_distance = 0,
+		lateral_error = 0,
+		vertical_displacement = 0,
+		reacquired = false,
+		airtime_distance = 0,
+		target_airborne = true,
+		target_air_distance = 0,
+		target_vertical_displacement = 0,
+		target_reacquired = false,
+		target_airtime_distance = 0,
+		target_left_offset = 0,
+		target_right_offset = 0,
+		target_lateral_band_changes = 0,
+		target_entered = true,
+		target_exited = false,
+		target_progress = 0.15,
+		lap_time = 30,
+		slowdown_ratio = 1.1,
+	}
+end
+
+local function fakePacket(request: Types.Request, state: SectorState, attemptIndex: number?): FailurePacket
 	return {
 		request = request,
 		sector_state = state,
@@ -307,48 +425,46 @@ local function fakePacket(request, state, attemptIndex)
 		run_result = {
 			success = false,
 			failure = { type = "local_execution_failure", sector_id = state.sector_id, detail = "tumble" },
-			metrics = {
-				entry_speed = 120,
-				exit_speed = 0,
-				airborne = true,
-				air_distance = 0,
-				lateral_error = 0,
-				vertical_displacement = 0,
-				reacquired = false,
-				airtime_distance = 0,
-				target_airborne = true,
-				target_air_distance = 0,
-				target_vertical_displacement = 0,
-				target_reacquired = false,
-				target_airtime_distance = 0,
-				target_left_offset = 0,
-				target_right_offset = 0,
-				target_lateral_band_changes = 0,
-				target_entered = true,
-				target_exited = false,
-				target_progress = 0.15,
-				lap_time = 30,
-				slowdown_ratio = 1.1,
-			},
+			metrics = packetMetrics(),
+			failure_position = nil,
+			final_position = nil,
+			trajectory_tail = nil,
+			score = nil,
 		},
-		diagnostics = { failure_sector = state.sector_id, hints = { "tumble" } },
+		diagnostics = {
+			failure_sector = state.sector_id,
+			hints = { "tumble" },
+			failure_type = "local_execution_failure",
+			failure_detail = "tumble",
+			target_entry_speed = 120,
+			target_exit_speed = 0,
+			target_reacquired = false,
+			target_airtime_distance = 0,
+			target_apex_min_speed = nil,
+			downstream_sector_state = nil,
+		},
 		legal_actions = {
 			numeric_levers = { "ramp_angle", "ramp_length", "gap_length", "landing_length" },
 			pads = { "ingress", "egress" },
 		},
+		design_intent = nil,
+		memory_context = nil,
 	}
 end
 
-local function fakeResult(success: boolean, failureSector: number?, detail: string?): Types.RunResult
+local function fakeResult(success: boolean, failureSector: number?, detail: string?): RunResult
+	local failure: Types.FailureInfo? = nil
+	if not success then
+		failure = {
+			type = "local_execution_failure",
+			sector_id = failureSector or 0,
+			detail = detail or "tumble",
+		}
+	end
+
 	return {
 		success = success,
-		failure = if success
-			then nil
-			else {
-				type = "local_execution_failure",
-				sector_id = failureSector or 0,
-				detail = detail or "tumble",
-			},
+		failure = failure,
 		metrics = {
 			entry_speed = 100,
 			exit_speed = if success then 90 else 0,
@@ -372,16 +488,23 @@ local function fakeResult(success: boolean, failureSector: number?, detail: stri
 			lap_time = 24,
 			slowdown_ratio = 1.05,
 		},
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = nil,
 	}
 end
 
 function TestPhase14.runUnit()
 	local request = makeRequest("add a jump to sector 2")
+	local originalRampLength = 22
+	local originalGapLength = 6
+	local originalLandingLength = 30
 	local currentState = makeState(2, "RampJump", {
 		ramp_angle = 10,
-		ramp_length = 22,
-		gap_length = 6,
-		landing_length = 30,
+		ramp_length = originalRampLength,
+		gap_length = originalGapLength,
+		landing_length = originalLandingLength,
 	}, "None", "None")
 
 	LLMAdapter.setProvider("partial-repair-state", {
@@ -413,10 +536,11 @@ function TestPhase14.runUnit()
 			and newState.sector_id == 2
 			and newState.mechanic == "RampJump"
 			and newState.params.ramp_angle == 8
-			and newState.params.ramp_length == currentState.params.ramp_length
-			and newState.params.gap_length == currentState.params.gap_length
-			and newState.params.landing_length >= currentState.params.landing_length
-			and newState.params.landing_length <= currentState.params.landing_length + 6
+			and newState.params.ramp_length == originalRampLength
+			and newState.params.gap_length == originalGapLength
+			and newState.params.landing_length ~= nil
+			and newState.params.landing_length >= originalLandingLength
+			and newState.params.landing_length <= originalLandingLength + 6
 			and newState.pads.ingress == "Brake10"
 			and newState.pads.egress == currentState.pads.egress,
 		HttpService:JSONEncode(newState or {})
@@ -540,54 +664,60 @@ function TestPhase14.runUnit()
 	LLMAdapter.setProvider("orchestrate-test", orchestrateProvider)
 	local decision, _, orchestrateErr = LLMAdapter.orchestrate(makeOrchestratorContext({
 		sector_states = {
-			[2] = { mechanic = "RampJump", params = {}, score = 4 },
-			[3] = { mechanic = nil, params = {}, score = 0 },
-			[4] = { mechanic = nil, params = {}, score = 0 },
-			[7] = { mechanic = nil, params = {}, score = 0 },
-			[8] = { mechanic = nil, params = {}, score = 0 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
+			[2] = snapshot("RampJump", 4),
+			[3] = snapshot(nil, 0),
+			[4] = snapshot(nil, 0),
+			[7] = snapshot(nil, 0),
+			[8] = snapshot(nil, 0),
+			[9] = snapshot(nil, 0),
 		},
 		budget = { used = 0.25, over_budget = false },
 		attempt_budget = { used = 1, total = 12 },
 		last_result = nil,
 	}))
+	local orchestrateDecoded = false
+	if decision ~= nil and decision.action == "submit_request" then
+		orchestrateDecoded = decision.sector_id == 8 and decision.mechanic == "Chicane"
+	end
 	T.expect(
 		"phase14_orchestrate_decodes_decision",
-		orchestrateErr == nil and decision ~= nil and decision.sector_id == 8 and decision.mechanic == "Chicane",
+		orchestrateErr == nil and orchestrateDecoded,
 		tostring(orchestrateErr or HttpService:JSONEncode(decision or {}))
 	)
 	LLMAdapter.useMockProvider()
 
 	local minimalDecision = MinimalOrchestrator.decide(makeOrchestratorContext({
 		sector_states = {
-			[2] = { mechanic = "RampJump", params = {}, score = 10 },
-			[3] = { mechanic = "CrestDip", params = {}, score = 8 },
-			[4] = { mechanic = "Chicane", params = {}, score = 9 },
-			[7] = { mechanic = nil, params = {}, score = 0 },
-			[8] = { mechanic = nil, params = {}, score = 0 },
-			[9] = { mechanic = nil, params = {}, score = 0 },
+			[2] = snapshot("RampJump", 10),
+			[3] = snapshot("CrestDip", 8),
+			[4] = snapshot("Chicane", 9),
+			[7] = snapshot(nil, 0),
+			[8] = snapshot(nil, 0),
+			[9] = snapshot(nil, 0),
 		},
 		budget = { used = 0.2, over_budget = false },
 		attempt_budget = { used = 3, total = 12 },
 		last_result = { sector_id = 4, success = true, score = 9 },
 	}))
+	local minimalTargetsFirst = false
+	if minimalDecision.action == "submit_request" then
+		minimalTargetsFirst = minimalDecision.sector_id == 7 and minimalDecision.mechanic == "RampJump"
+	end
 	T.expect(
 		"phase14_minimal_orchestrator_targets_first_unfilled_sector",
-		minimalDecision.action == "submit_request"
-			and minimalDecision.sector_id == 7
-			and minimalDecision.mechanic == "RampJump",
+		minimalTargetsFirst,
 		HttpService:JSONEncode(minimalDecision)
 	)
 	T.expect(
 		"phase14_minimal_orchestrator_begins_loop_when_over_budget",
 		MinimalOrchestrator.decide(makeOrchestratorContext({
 			sector_states = {
-				[2] = { mechanic = "RampJump", params = {}, score = 10 },
-				[3] = { mechanic = "CrestDip", params = {}, score = 8 },
-				[4] = { mechanic = "Chicane", params = {}, score = 9 },
-				[7] = { mechanic = "RampJump", params = {}, score = 9 },
-				[8] = { mechanic = "Chicane", params = {}, score = 9 },
-				[9] = { mechanic = "CrestDip", params = {}, score = 9 },
+				[2] = snapshot("RampJump", 10),
+				[3] = snapshot("CrestDip", 8),
+				[4] = snapshot("Chicane", 9),
+				[7] = snapshot("RampJump", 9),
+				[8] = snapshot("Chicane", 9),
+				[9] = snapshot("CrestDip", 9),
 			},
 			budget = { used = 1, over_budget = true },
 			attempt_budget = { used = 6, total = 12 },
@@ -596,46 +726,59 @@ function TestPhase14.runUnit()
 		"expected over-budget heuristic to stop filling sectors"
 	)
 
-	local downstreamRepair = MinimalProposer.repair({
+	local downstreamState = makeState(2, "CrestDip", {
+		height_or_depth = 6,
+		radius = 24,
+		sector_length = 30,
+	}, "None", "Brake10")
+	local downstreamResult: RunResult = {
+		success = false,
+		failure = { type = "downstream_failure", sector_id = 3, detail = "no_progress" },
+		metrics = {
+			entry_speed = 100,
+			exit_speed = 58,
+			airborne = false,
+			air_distance = 0,
+			lateral_error = 0,
+			vertical_displacement = 6,
+			reacquired = true,
+			airtime_distance = 0,
+			target_airborne = false,
+			target_air_distance = 0,
+			target_vertical_displacement = 6,
+			target_reacquired = true,
+			target_airtime_distance = 0,
+			target_left_offset = 0,
+			target_right_offset = 0,
+			target_lateral_band_changes = 0,
+			target_entered = true,
+			target_exited = true,
+			target_progress = 1,
+			target_apex_min_speed = 30,
+			lap_time = 26,
+			slowdown_ratio = 1.08,
+		},
+		failure_position = nil,
+		final_position = nil,
+		trajectory_tail = nil,
+		score = nil,
+	}
+	local downstreamPacket: FailurePacket = {
 		request = makeRequest("add a crest in sector 2"),
-		sector_state = makeState(2, "CrestDip", {
-			height_or_depth = 6,
-			radius = 24,
-			sector_length = 30,
-		}, "None", "Brake10"),
+		sector_state = downstreamState,
 		attempt_index = 1,
 		last_action = nil,
-		run_result = {
-			success = false,
-			failure = { type = "downstream_failure", sector_id = 3, detail = "no_progress" },
-			metrics = {
-				entry_speed = 100,
-				exit_speed = 58,
-				airborne = false,
-				air_distance = 0,
-				lateral_error = 0,
-				vertical_displacement = 6,
-				reacquired = true,
-				airtime_distance = 0,
-				target_airborne = false,
-				target_air_distance = 0,
-				target_vertical_displacement = 6,
-				target_reacquired = true,
-				target_airtime_distance = 0,
-				target_left_offset = 0,
-				target_right_offset = 0,
-				target_lateral_band_changes = 0,
-				target_entered = true,
-				target_exited = true,
-				target_progress = 1,
-				target_apex_min_speed = 30,
-				lap_time = 26,
-				slowdown_ratio = 1.08,
-			},
-		},
+		run_result = downstreamResult,
 		diagnostics = {
 			failure_sector = 3,
 			hints = { "target sector exit speed too low for downstream" },
+			failure_type = "downstream_failure",
+			failure_detail = "no_progress",
+			target_entry_speed = 100,
+			target_exit_speed = 58,
+			target_reacquired = true,
+			target_airtime_distance = 0,
+			target_apex_min_speed = 30,
 			downstream_sector_state = makeState(3, "RampJump", {
 				ramp_angle = 9,
 				ramp_length = 18,
@@ -647,7 +790,10 @@ function TestPhase14.runUnit()
 			numeric_levers = { "height_or_depth", "radius", "sector_length" },
 			pads = { "ingress", "egress" },
 		},
-	})
+		design_intent = nil,
+		memory_context = nil,
+	}
+	local downstreamRepair = MinimalProposer.repair(downstreamPacket)
 	T.expect(
 		"phase14_crestdip_downstream_repair_prefers_carrying_speed",
 		downstreamRepair ~= nil
@@ -804,11 +950,11 @@ function TestPhase14.runUnit()
 		})
 	)
 
-	local orchestratorSubmits = {}
-	local orchestratorContexts = {}
-	local orchestratorBudgetUpdates = {}
+	local orchestratorSubmits: { string } = {}
+	local orchestratorContexts: { OrchestratorContext } = {}
+	local orchestratorBudgetUpdates: { string } = {}
 	local loopStarted = false
-	local loopInitialLapCount = nil
+	local loopInitialLapCount: number? = nil
 	local orchestratorRunOk, orchestratorRunErr = OrchestratorAgent.run({
 		submit = function(text: string)
 			table.insert(orchestratorSubmits, text)
@@ -853,24 +999,19 @@ function TestPhase14.runUnit()
 			ensureBaseline = function()
 				return true, nil
 			end,
-			orchestrate = function(context)
+			orchestrate = function(context: OrchestratorContext): (OrchestratorDecision?, MemoryEntry?, string?)
 				table.insert(orchestratorContexts, context)
 				if #orchestratorContexts == 1 then
-					return {
-						sector_id = 2,
-						mechanic = "RampJump",
-						params_hint = "extreme tall",
-					},
-						nil
+					return submitDecision(2, "RampJump", "extreme tall"), nil, nil
 				end
-				return { action = "begin_loop" }, nil
+				return { action = "begin_loop", rationale = nil, memory_note = nil }, nil, nil
 			end,
-			setPhase = function() end,
+			setPhase = function(_phase: string, _label: string) end,
 			setAttemptBudget = function(used: number, total: number)
 				table.insert(orchestratorBudgetUpdates, string.format("%d/%d", used, total))
 			end,
-			appendLog = function() end,
-			trace = function() end,
+			appendLog = function(_line: string) end,
+			trace = function(_line: string) end,
 			startContinuousLoop = function(initialLapCount: number)
 				loopStarted = true
 				loopInitialLapCount = initialLapCount
@@ -888,19 +1029,22 @@ function TestPhase14.runUnit()
 		orchestratorSubmits[1] == "add an extreme tall jump in sector 2",
 		tostring(orchestratorSubmits[1])
 	)
+	local secondContext = orchestratorContexts[2]
+	local secondLastResult = if secondContext ~= nil then secondContext.last_result else nil
+	local feedsLastResult = false
+	if secondContext ~= nil and secondLastResult ~= nil then
+		feedsLastResult = secondLastResult.sector_id == 2
+			and secondLastResult.success == true
+			and secondLastResult.score == 14
+			and math.abs(
+					secondContext.budget.used - math.clamp((1.12 - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)
+				)
+				< 0.001
+	end
 	T.expect(
 		"phase14_orchestrator_feeds_last_result_into_next_context",
-		#orchestratorContexts >= 2
-			and orchestratorContexts[2].last_result ~= nil
-			and orchestratorContexts[2].last_result.sector_id == 2
-			and orchestratorContexts[2].last_result.success == true
-			and orchestratorContexts[2].last_result.score == 14
-			and math.abs(
-					orchestratorContexts[2].budget.used
-						- math.clamp((1.12 - 1) / Constants.ENDURANCE_LAP_TIME_BUDGET_RATIO, 0, 1)
-				)
-				< 0.001,
-		HttpService:JSONEncode(orchestratorContexts[2] or {})
+		feedsLastResult,
+		HttpService:JSONEncode(secondContext or {})
 	)
 	T.expect(
 		"phase14_orchestrator_starts_continuous_loop",
