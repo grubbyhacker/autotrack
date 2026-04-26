@@ -1,3 +1,4 @@
+--!strict
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -7,7 +8,9 @@ type OrchestratorContext = Types.OrchestratorContext
 
 local OrchestratorPromptBuilder = {}
 
-local function encode(value): string
+local function encode(
+	value: OrchestratorContext | { shared: { Types.MemoryEntry }, orchestrator: { Types.MemoryEntry } }
+): string
 	return HttpService:JSONEncode(value)
 end
 
@@ -16,11 +19,13 @@ local SUBMIT_DECISION_SCHEMA =
 local MEMORY_NOTE_SCHEMA =
 	[[{"author":"orchestrator","scope":"orchestrator","note":"short text","confidence":"low|medium|high","source_type":"observed_result|inferred_pattern|downstream_warning|explicit_policy","source_ref":"short ref"}]]
 
-local function relevantMemory(context: OrchestratorContext)
-	local memory = context and context.memory or nil
+local function relevantMemory(
+	context: OrchestratorContext
+): { shared: { Types.MemoryEntry }, orchestrator: { Types.MemoryEntry } }
+	local memory = context.memory
 	return {
-		shared = if memory then memory.shared else {},
-		orchestrator = if memory then memory.orchestrator else {},
+		shared = memory.shared,
+		orchestrator = memory.orchestrator,
 	}
 end
 
