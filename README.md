@@ -1,41 +1,41 @@
 # AutoTrack
 
-AutoTrack is an autonomous level-design CI pipeline built inside a Roblox experience.
+AutoTrack is an autonomous level-design CI pipeline running inside a Roblox experience. It is a watchable simulation of agents designing obstacles on a live rectangular track, validating them with one visible verifier car, and committing only the changes that survive the real simulation.
 
-It is not a racing game. It is a watchable simulation of an agent modifying one straight sector of a live rectangular track, running a visible verifier lap, then deciding whether to commit, repair, or revert the change.
+## Endurance Mode
 
-## What It Does
+Endurance mode is the main experience. It continuously improves a single live track by choosing one editable straight sector at a time, adding or replacing an obstacle, testing it, repairing it when possible, and then either committing or reverting the result.
 
-For each job, the system:
+The objective is not "finish a race." The objective is to raise the committed track score while keeping the full-lap slowdown inside budget. The system treats committed full-lap results as authority: isolated checks are useful for fast vetting, but the track budget and HUD summary come from committed laps.
 
-1. Parses a plain-language request such as `Add a jump in sector 3`
-2. Proposes a mechanic configuration for one editable straight sector
-3. Builds that geometry into the live track
-4. Runs a full visible verifier lap with one car
-5. Measures traversal, integrity, and challenge metrics
-6. Repairs or reverts if the result is not acceptable
-7. Commits the sector state if the run succeeds
+Each endurance build follows the same visible loop:
 
-Supported v1 mechanics:
+1. Pick a target straight sector and mechanic.
+2. Build a proposed `RampJump`, `Chicane`, or `CrestDip`.
+3. Run repeated isolated sector checks for endurance-origin jobs.
+4. Run a full commit lap with the real verifier car.
+5. Repair from structured failure telemetry, or revert if the proposal cannot be saved.
+6. Commit successful geometry and update score, budget, memory, and HUD telemetry.
 
-- `RampJump`
-- `Chicane`
-- `CrestDip`
+The three LLM-facing agents are deliberately narrow:
 
-## Project Status
+- **Orchestrator agent**: the chief circuit designer. It sees the whole committed track, recent outcomes, budget pressure, score history, and endurance memory. It chooses the next sector and mechanic, or decides the track is ready for the continuous loop.
+- **Proposal agent**: the sector designer. It receives the orchestrator's structured `DesignIntent` and turns it into a complete `SectorState` for one sector only.
+- **Repair agent**: the failure specialist. It receives a `FailurePacket`, attempt history, the original design intent, and repair memory. It returns a bounded repair while preserving as much challenge as the failure evidence allows.
 
-Phase 17 is complete locally. Current implementation includes:
+There is also a hotfix path for already-committed sectors that start failing later. Hotfix is a safety path for endurance reliability, not a fourth planning role.
 
-- track generation and sector state management
-- rollback and full-lap verification
-- integrity evaluation and repair loops
-- narrow LLM adapter boundary
-- replicated HUD and scoring display
-- local Studio-backed test workflow through `make`
-- server-side LLM trace capture and JSON export
-- automated endurance trace capture for model comparison
+## What Is Editable
 
-See [plans/agent-handoff.md](plans/agent-handoff.md) for the current session history and [plans/phase17.md](plans/phase17.md) for the Phase 17 trace/export plan and final scope.
+AutoTrack has one live track, one verifier car, and one active job at a time. Only straight sectors are editable; corners, topology, and neighboring sectors are fixed.
+
+Supported mechanics:
+
+- `RampJump`: ramp, gap, landing, and recovery path.
+- `Chicane`: S-curve with lateral displacement and corridor width.
+- `CrestDip`: vertical crest or dip with curvature constraints.
+
+Pads can be placed at sector ingress or egress. Pad values are discrete speed commands such as `Boost10` or `Brake25`, not arbitrary numeric tuning knobs.
 
 ## Repository Layout
 
@@ -50,166 +50,104 @@ src/
   integrity/     -> ServerScriptService.AutoTrackCore.Integrity
   agent/         -> ServerScriptService.AutoTrackCore.Agent
   orchestrator/  -> ServerScriptService.AutoTrackCore.Orchestrator
-studio/
-tools/
-plans/
+studio/          -> local Studio bridge plugin source
+tools/           -> test bridge, trace tools, static checks
+plans/           -> implementation history and durable handoff notes
 ```
 
-## Development Model
+This is a Rojo + Git project. Edit Luau source in `src/`; Roblox Studio receives those files through Rojo sync. Do not edit synced gameplay scripts directly in Studio.
 
-This repo is built around Rojo and Git.
+## Makefile Workflow
 
-- Edit Luau source in `src/`
-- Treat local files as the source of truth
-- Use Roblox Studio and the bridge tooling for runtime validation
-- Do not edit synced gameplay scripts directly in Studio
-
-The canonical implementation rules are in [AGENTS.md](AGENTS.md).
-
-## Running Tests
-
-The maintained test path is the local CLI and Studio bridge workflow.
-
-List available suites:
-
-```sh
-make test-list
-```
-
-Run a specific suite:
-
-```sh
-make test TEST=phase13_unit
-```
-
-Direct targets also exist:
-
-```sh
-make phase13_unit
-make phase13_integration
-```
-
-Notes:
-
-- Studio-backed suites run sequentially against one live Studio session
-- Unit-style suites automatically choose `skip_baseline` when configured
-- Integration suites run against the normal baseline boot flow
-
-## Code Hygiene
-
-The repo now includes a deterministic Luau hygiene toolchain with pinned versions in `rokit.toml`.
-
-Install/update pinned tools:
+Install the pinned local tools:
 
 ```sh
 rokit install
 ```
 
-Run commands:
+Install the Studio bridge plugin:
 
 ```sh
-make fmt
-make fmt-check
-make typecheck
-make typecheck-report
-make lint
+make install-test-bridge-plugin
+```
+
+Restart Roblox Studio after installing or updating the plugin. The bridge is what lets terminal commands start Play, wait for boot readiness, run server-side suites, export traces, and stop Play.
+
+Useful commands:
+
+```sh
+make test-list
+make boot_smoke
+make refactor_fast
+make mechanics_regression
+make test TEST=mechanics_regression
 make hygiene
 ```
 
-`make hygiene` is the authoritative static gate (`fmt-check` + full-repo `typecheck` + `lint`) and is safe for frequent local/CI use.
+`make hygiene` runs the static gate: format check, full Luau typecheck, and Selene lint. The standalone typecheck is Roblox-aware; it generates a Rojo sourcemap and analyzes against the vendored Roblox definitions.
 
-Phase 30 expands `fmt` / `fmt-check` / `lint` repo-wide across tracked `.luau` source under `src/` and `studio/`.
+Studio-backed runs are sequential by design. Do not start multiple bridge-backed `make` commands against the same Studio session at once.
 
-Phase 31 makes `make typecheck` and `make typecheck-report` Roblox-aware by generating a Rojo sourcemap and using a vendored Roblox definitions file for standalone `luau-lsp analyze` runs.
+## Endurance Traces
 
-Phase 36 promotes `make typecheck` to the full repo-wide analyzer surface. `make typecheck-report` remains as a compatibility alias for older workflows, but `typecheck` owns the static-analysis contract.
-
-See `docs/code-hygiene.md` for scope, rationale, and the current typecheck boundary.
-
-## LLM Trace Capture
-
-The maintained local workflow for LLM transcript capture is the CLI plus Studio bridge. Full transcripts stay server-side during Play and are exported as JSON on demand.
-
-Export the latest trace from an already running Play session:
+Use the maintained one-command trace workflow to compare models or inspect the prompt/response stream:
 
 ```sh
-make export-llm-trace
+make endurance-trace MODEL=google/gemma-3-4b-it DURATION=90 OUT=traces/endurance-gemma.json
+make inspect-llm-trace TRACE=traces/endurance-gemma.json
 ```
 
-That command prints raw JSON to stdout, so it is easy to redirect to a file:
+That workflow starts Play through the bridge, enables the LLM backend, selects the model, starts endurance mode, waits for the requested duration, exports the server-side trace, and stops Play.
+
+To export the latest trace from an already running Play session:
 
 ```sh
 make export-llm-trace > traces/manual-session.json
 ```
 
-For repeatable endurance runs, use the automated one-command workflow:
+Trace captures are local artifacts; keep them under `traces/`, which is gitignored.
 
-```sh
-make endurance-trace MODEL=google/gemma-3-4b-it DURATION=60 OUT=traces/endurance-gemma.json
+## Obstacle Tuning
+
+The in-experience command bar includes a narrow tuning surface for isolated obstacle work:
+
+```text
+/tune rampjump
+/tune crestdip
+/tune chicane
+/tune run <n>
+/tune compare <n>
+/tune set <lever> <value>
+/tune pad <ingress|egress> <PadValue>
+/tune promote
+/tune stop
 ```
 
-This command:
+Tune mode owns the session while active. It is for controlled single-sector experiments and comparison telemetry; full-lap verification remains the authority for committed endurance behavior.
 
-- starts Play through the maintained Studio bridge
-- enables the LLM backend
-- sets the requested model
-- starts endurance mode automatically
-- waits for the requested duration in seconds
-- exports the latest server-side LLM trace to `OUT`
-- stops the Play session
+## Slash Commands
 
-No HUD interaction is required for `make endurance-trace ...`. You do not need to run `/llm on`, `/llm model ...`, or `/demo endurance` manually.
+The public HUD command surface is intentionally small:
 
-Recommended usage:
-
-- run one Play session per model to keep traces clean
-- export before stopping Play when using `make export-llm-trace`
-- keep local captures under `traces/` (already gitignored)
-
-Examples:
-
-```sh
-make endurance-trace MODEL=google/gemma-3-4b-it DURATION=90 OUT=traces/endurance-gemma.json
-make endurance-trace MODEL=qwen/qwen-turbo DURATION=90 OUT=traces/endurance-qwen.json
-make endurance-trace MODEL=google/gemini-2.5-flash-lite:nitro DURATION=90 OUT=traces/endurance-gemini-flash-lite.json
+```text
+/demo endurance
+/demo camera
+/demo rampitup
+/demo repair
+/demo llmerror
+/demo ui-hotfix
+/test <suite>
+/tune ...
 ```
 
-The default `DURATION` is `60` seconds if omitted.
-
-To inspect an exported trace as logical LLM calls instead of raw event triples:
-
-```sh
-make inspect-llm-trace TRACE=traces/endurance-gemma.json
-```
-
-That view includes the traced prompt content sent to the model:
-
-- `system` / `user` prompt bodies for proposal and repair calls
-- role-tagged orchestrator message entries for endurance decisions
-
-To include raw response snippets as well:
-
-```sh
-make inspect-llm-trace TRACE=traces/endurance-gemma.json RAW=1
-```
-
-## Scoring
-
-Phase 11 adds a simple challenge score breakdown to the HUD. The player-facing labels are intentionally minimal:
-
-- `Air`
-- `Lat`
-- `Edge`
-- `Cost`
-
-The canonical explanation of those terms lives in [plans/adr-phase11-scoring-reporting.md](plans/adr-phase11-scoring-reporting.md).
+Use `/demo endurance` for manual Studio observation. Use the Makefile for repeatable validation and trace capture.
 
 ## Key Documents
 
-- [prd_plan.md](prd_plan.md): product requirements, schemas, and architecture
-- [AGENTS.md](AGENTS.md): project rules for coding agents
-- [plans/agent-handoff.md](plans/agent-handoff.md): phase status and lessons learned
-- [plans/phase17.md](plans/phase17.md): current LLM trace/export milestone plan and completion notes
+- [AGENTS.md](AGENTS.md): coding-agent rules, invariants, and workflow contracts.
+- [prd_plan.md](prd_plan.md): original product requirements, schemas, and architecture.
+- [plans/agent-handoff.md](plans/agent-handoff.md): current implementation state and durable lessons.
+- [docs/code-hygiene.md](docs/code-hygiene.md): static tooling scope and typecheck notes.
 
 ## License
 
