@@ -1,3 +1,5 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LevelMappings = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("LevelMappings"))
@@ -11,6 +13,10 @@ local TuneMode = require(script.Parent.TuneMode)
 local UIState = require(script.Parent.UIState)
 
 local CommandRouter = {}
+
+type RouteDeps = {
+	startEndurance: (() -> (boolean, string?))?,
+}?
 
 local SUPPORTED_DEMO_USAGE =
 	"/demo endurance, /demo camera, /demo rampitup, /demo repair, /demo llmerror, /demo ui-hotfix"
@@ -214,7 +220,7 @@ local function handleTune(rawText: string, normalizedArg: string, rawArg: string
 	return reject(rawText, SUPPORTED_TUNE_USAGE, "Supported tune attrs: " .. supportedAttrs)
 end
 
-local function handleDemo(rawText: string, normalizedArg: string, deps): (boolean, string?)
+local function handleDemo(rawText: string, normalizedArg: string, deps: RouteDeps): (boolean, string?)
 	if normalizedArg == "repair" or normalizedArg == "llmerror" or normalizedArg == "ui-hotfix" then
 		if CameraDemo.isActive() then
 			return reject(rawText, activeDemoReason("/demo " .. normalizedArg), nil)
@@ -241,7 +247,8 @@ local function handleDemo(rawText: string, normalizedArg: string, deps): (boolea
 		if liveModeReason ~= nil then
 			return reject(rawText, liveModeReason, nil)
 		end
-		return CameraDemo.start({ preset = normalizedArg })
+		local preset: string = normalizedArg
+		return CameraDemo.start({ preset = preset })
 	end
 
 	if normalizedArg == "endurance" then
@@ -319,7 +326,7 @@ local function handleTest(rawText: string, rawArg: string): (boolean, string?)
 	return false, "test failed: " .. suite
 end
 
-function CommandRouter.route(rawText: string, deps): (boolean, boolean, string?)
+function CommandRouter.route(rawText: string, deps: RouteDeps): (boolean, boolean, string?)
 	local trimmed = trim(rawText)
 	local normalized = string.lower(trimmed)
 	local slashCommand, slashArg = parseSlashCommand(normalized)
