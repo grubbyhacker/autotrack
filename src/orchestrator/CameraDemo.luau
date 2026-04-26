@@ -1,3 +1,8 @@
+--!strict
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local RuntimeContext = require(script.Parent.RuntimeContext)
 local Tracer = require(script.Parent.Tracer)
 local UIState = require(script.Parent.UIState)
@@ -8,15 +13,39 @@ local TrackGenerator = require(script.Parent.Parent.Track.TrackGenerator)
 local VerifierCar = require(script.Parent.Parent.Verifier.VerifierCar)
 local VerifierController = require(script.Parent.Parent.Verifier.VerifierController)
 
+type Mechanic = Types.Mechanic
+type Pads = Types.Pads
+type SectorParams = Types.SectorParams
+type SectorState = Types.SectorState
+
+type DemoSectorState = {
+	mechanic: Mechanic,
+	params: SectorParams,
+	pads: Pads,
+}
+
+type DemoPreset = {
+	label: string,
+	description: string,
+	stop_hint: string,
+	sectors: { [number]: DemoSectorState },
+}
+
+type StartOptions = {
+	preset: string?,
+	loop: boolean?,
+	runVerifier: boolean?,
+}
+
 local CameraDemo = {}
 
 local _active = false
 local _token = 0
-local _priorStates = nil
+local _priorStates: { [number]: SectorState }? = nil
 local _restorePending = false
 local _activePreset = "camera"
 
-local DEMO_PRESETS = {
+local DEMO_PRESETS: { [string]: DemoPreset } = {
 	camera = {
 		label = "Camera demo",
 		description = "Playable RampJump in sectors 3 and 7",
@@ -85,11 +114,11 @@ local DEMO_PRESETS = {
 	},
 }
 
-local function cloneParams(params)
+local function cloneParams(params: SectorParams): SectorParams
 	return table.clone(params)
 end
 
-local function cloneState(state)
+local function cloneState(state: SectorState): SectorState
 	return {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
@@ -102,7 +131,7 @@ local function cloneState(state)
 	}
 end
 
-local function applyCommittedState(state)
+local function applyCommittedState(state: SectorState)
 	local targetSector = RuntimeContext.getSectorById(state.sector_id)
 	SectorApplier.apply(state, targetSector.entry, targetSector.exit)
 	SectorRegistry.commit(state)
@@ -136,7 +165,7 @@ function CameraDemo.activePreset(): string
 end
 
 function CameraDemo.supportedPresets(): { string }
-	local names = {}
+	local names: { string } = {}
 	for name in pairs(DEMO_PRESETS) do
 		table.insert(names, name)
 	end
@@ -144,32 +173,34 @@ function CameraDemo.supportedPresets(): { string }
 	return names
 end
 
-function CameraDemo.start(options): (boolean, string?)
-	options = options or {}
+function CameraDemo.start(options: StartOptions?): (boolean, string?)
+	local startOptions: StartOptions = options or {}
 	if _active then
 		return false, "camera demo already running"
 	end
 	assert(RuntimeContext.isReady(), "CameraDemo.start: runtime context not ready")
-	local presetName = tostring(options.preset or "camera")
+	local presetName = tostring(startOptions.preset or "camera")
 	local preset = DEMO_PRESETS[presetName]
 	assert(preset ~= nil, "CameraDemo.start: unsupported preset " .. presetName)
 
 	_active = true
 	_token += 1
 	local token = _token
-	local loop = options.loop ~= false
-	local runVerifier = options.runVerifier ~= false
+	local loop = startOptions.loop ~= false
+	local runVerifier = startOptions.runVerifier ~= false
 	_restorePending = false
 	_activePreset = presetName
 
-	_priorStates = {}
+	local priorStates: { [number]: SectorState } = {}
+	_priorStates = priorStates
 	for sectorId in pairs(preset.sectors) do
 		local committed = SectorRegistry.getCommitted(sectorId)
 		assert(committed ~= nil, "CameraDemo.start: missing committed state for sector " .. tostring(sectorId))
-		_priorStates[sectorId] = cloneState(committed)
+		priorStates[sectorId] = cloneState(committed)
 	end
 
 	for sectorId, demoState in pairs(preset.sectors) do
+		local priorState = priorStates[sectorId]
 		applyCommittedState({
 			sector_id = sectorId,
 			mechanic = demoState.mechanic,
@@ -178,7 +209,7 @@ function CameraDemo.start(options): (boolean, string?)
 				ingress = demoState.pads.ingress,
 				egress = demoState.pads.egress,
 			},
-			version = (_priorStates[sectorId] and _priorStates[sectorId].version or 0) + 1,
+			version = (if priorState then priorState.version else 0) + 1,
 		})
 	end
 
