@@ -1,8 +1,94 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Constants"))
+local Types = require(ReplicatedStorage:WaitForChild("AutoTrackCommon"):WaitForChild("Types"))
 local ChicanePath = require(script.Parent.Parent.Mechanics.ChicanePath)
 local ChallengeScore = require(script.Parent.Parent.Integrity.ChallengeScore)
+
+type Mechanic = Types.Mechanic
+type SectorParams = Types.SectorParams
+type Pads = Types.Pads
+type SectorState = Types.SectorState
+type RunResult = Types.RunResult
+type FailureInfo = Types.FailureInfo
+type ChallengeScoreValue = Types.ChallengeScore
+
+type NumberRange = {
+	min: number,
+	max: number,
+}
+type AttrSpec = {
+	workspace_attr: string,
+	min: number,
+	max: number,
+}
+type MechanicBounds = { [string]: NumberRange }
+type ExperimentalBounds = {
+	RampJump: MechanicBounds,
+	Chicane: MechanicBounds,
+	CrestDip: MechanicBounds,
+}
+type ScoreMetrics = {
+	entry_speed: number?,
+	exit_speed: number?,
+	lap_time: number?,
+	slowdown_ratio: number?,
+	air_distance: number?,
+	vertical_displacement: number?,
+	airtime_distance: number?,
+	target_airtime_distance: number?,
+	hang_time: number?,
+	target_min_speed: number?,
+	target_apex_min_speed: number?,
+	target_reacquired: boolean?,
+	target_reacquire_distance: number?,
+	target_peak_body_distance: number?,
+	sector_peak_body_distance: { [number]: number }?,
+	target_exit_angular_speed: number?,
+	target_exit_vertical_speed: number?,
+	lateral_error: number?,
+	launch_outlier: boolean?,
+	launch_outlier_reasons: { string }?,
+}
+type ScorePassInput = {
+	success: boolean,
+	failure: FailureInfo?,
+	metrics: ScoreMetrics?,
+}
+type TunePassRecord = {
+	pass_index: number,
+	success: boolean,
+	failure_type: string,
+	failure_detail: string?,
+	params: SectorParams,
+	pads: Pads,
+	attrs: { [string]: number },
+	metrics: ScoreMetrics?,
+	challenge_score: ChallengeScoreValue?,
+	score: number?,
+}
+type TuneAggregate = {
+	pass_count: number,
+	success_count: number,
+	failure_count: number,
+	average_score: number,
+	best_score: number,
+	challenge_success_count: number,
+	average_challenge_total: number,
+	best_challenge_total: number,
+	average_lap_time: number,
+	average_entry_speed: number,
+	average_exit_speed: number,
+	worst_body_distance: number,
+	last_failure: string,
+	score: number,
+}
+type TuneCandidateSummary = {
+	label: string?,
+	aggregate: TuneAggregate?,
+}
 
 local TuneLab = {}
 
@@ -11,7 +97,7 @@ TuneLab.CAR_TARGET_SPEED_BOUNDS = {
 	max = 160,
 }
 
-local function rangedAttr(workspaceAttr: string, minValue: number, maxValue: number)
+local function rangedAttr(workspaceAttr: string, minValue: number, maxValue: number): AttrSpec
 	return {
 		workspace_attr = workspaceAttr,
 		min = minValue,
@@ -80,9 +166,9 @@ TuneLab.ATTR_SPECS = {
 	crestdip_comfort_apex_speed_margin = rangedAttr("AutoTrack_CrestDipComfortApexSpeedMargin", 0, 20),
 	crestdip_comfort_exit_max_angular_speed = rangedAttr("AutoTrack_CrestDipComfortExitMaxAngularSpeed", 0.25, 12),
 	crestdip_comfort_exit_max_vertical_speed = rangedAttr("AutoTrack_CrestDipComfortExitMaxVerticalSpeed", 1, 24),
-}
+} :: { [string]: AttrSpec }
 
-local EXPERIMENTAL_BOUNDS = {
+local EXPERIMENTAL_BOUNDS: ExperimentalBounds = {
 	RampJump = {
 		ramp_angle = { min = 2, max = 18 },
 		ramp_length = { min = 12, max = 72 },
@@ -101,23 +187,59 @@ local EXPERIMENTAL_BOUNDS = {
 	},
 }
 
-local function cloneTable(source)
-	local result = {}
-	for key, value in pairs(source or {}) do
-		if type(value) == "table" then
-			result[key] = cloneTable(value)
-		else
-			result[key] = value
-		end
+local function cloneBounds(source: MechanicBounds?): MechanicBounds
+	local result: MechanicBounds = {}
+	if source == nil then
+		return result
+	end
+	for key, value in pairs(source) do
+		result[key] = {
+			min = value.min,
+			max = value.max,
+		}
 	end
 	return result
+end
+
+local function cloneParams(source: SectorParams): SectorParams
+	return {
+		ramp_angle = source.ramp_angle,
+		ramp_length = source.ramp_length,
+		gap_length = source.gap_length,
+		landing_length = source.landing_length,
+		amplitude = source.amplitude,
+		transition_length = source.transition_length,
+		corridor_width = source.corridor_width,
+		height_or_depth = source.height_or_depth,
+		radius = source.radius,
+		sector_length = source.sector_length,
+	}
+end
+
+local function clonePads(source: Pads): Pads
+	return {
+		ingress = source.ingress,
+		egress = source.egress,
+	}
+end
+
+local function cloneChallengeScore(source: ChallengeScoreValue): ChallengeScoreValue
+	return {
+		total = source.total,
+		air = source.air,
+		lateral = source.lateral,
+		near_miss = source.near_miss,
+		time_cost = source.time_cost,
+		budget_used = source.budget_used,
+		over_budget = source.over_budget,
+	}
 end
 
 local function clampRounded(value: number, minValue: number, maxValue: number): number
 	return math.clamp(math.round(value), minValue, maxValue)
 end
 
-local function targetBodyDistance(metrics): number
+local function targetBodyDistance(metrics: ScoreMetrics): number
 	if type(metrics.target_peak_body_distance) == "number" then
 		return metrics.target_peak_body_distance
 	end
@@ -131,12 +253,23 @@ local function targetBodyDistance(metrics): number
 	return 0
 end
 
-function TuneLab.experimentalBounds(mechanic: string)
-	return cloneTable(EXPERIMENTAL_BOUNDS[mechanic] or {})
+local function mechanicBoundsFor(mechanic: string): MechanicBounds?
+	if mechanic == "RampJump" then
+		return EXPERIMENTAL_BOUNDS.RampJump
+	elseif mechanic == "Chicane" then
+		return EXPERIMENTAL_BOUNDS.Chicane
+	elseif mechanic == "CrestDip" then
+		return EXPERIMENTAL_BOUNDS.CrestDip
+	end
+	return nil
+end
+
+function TuneLab.experimentalBounds(mechanic: string): MechanicBounds
+	return cloneBounds(mechanicBoundsFor(mechanic))
 end
 
 function TuneLab.formatBoundsSummary(mechanic: string): string
-	local bounds = EXPERIMENTAL_BOUNDS[mechanic]
+	local bounds = mechanicBoundsFor(mechanic)
 	if bounds == nil then
 		return ""
 	end
@@ -149,8 +282,13 @@ function TuneLab.formatBoundsSummary(mechanic: string): string
 	return table.concat(pieces, " | ")
 end
 
-function TuneLab.normalizeLever(mechanic: string, lever: string, requestedValue: number, currentParams)
-	local mechanicBounds = EXPERIMENTAL_BOUNDS[mechanic]
+function TuneLab.normalizeLever(
+	mechanic: string,
+	lever: string,
+	requestedValue: number,
+	currentParams: SectorParams?
+): (number?, string?)
+	local mechanicBounds = mechanicBoundsFor(mechanic)
 	local range = mechanicBounds and mechanicBounds[lever]
 	if range == nil then
 		return nil, string.format("missing experimental bounds for %s.%s", tostring(mechanic), tostring(lever))
@@ -184,16 +322,19 @@ function TuneLab.normalizeLever(mechanic: string, lever: string, requestedValue:
 	return clampRounded(requestedValue, appliedMin, appliedMax), nil
 end
 
-function TuneLab.normalizeState(state)
-	local normalized = {
+function TuneLab.normalizeState(state: SectorState): SectorState
+	local normalized: SectorState = {
 		sector_id = state.sector_id,
 		mechanic = state.mechanic,
-		params = cloneTable(state.params),
-		pads = cloneTable(state.pads),
+		params = cloneParams(state.params),
+		pads = clonePads(state.pads),
 		version = state.version,
 	}
 	local mechanic = normalized.mechanic
-	local bounds = EXPERIMENTAL_BOUNDS[mechanic]
+	if mechanic == nil then
+		return normalized
+	end
+	local bounds = mechanicBoundsFor(mechanic)
 	if bounds == nil then
 		return normalized
 	end
@@ -201,21 +342,23 @@ function TuneLab.normalizeState(state)
 	for lever, value in pairs(normalized.params) do
 		if type(value) == "number" and bounds[lever] ~= nil then
 			local clamped = TuneLab.normalizeLever(mechanic, lever, value, normalized.params)
-			normalized.params[lever] = clamped
+			if clamped ~= nil then
+				normalized.params[lever] = clamped
+			end
 		end
 	end
 
 	return normalized
 end
 
-function TuneLab.productionChallengeScore(state, result)
+function TuneLab.productionChallengeScore(state: SectorState?, result: RunResult?): ChallengeScoreValue?
 	if state == nil or result == nil or result.success ~= true then
 		return nil
 	end
 	if result.score ~= nil then
-		return cloneTable(result.score)
+		return cloneChallengeScore(result.score)
 	end
-	return ChallengeScore.compute(state, result.metrics or {})
+	return ChallengeScore.compute(state, result.metrics)
 end
 
 function TuneLab.clampTargetSpeed(value: number): number
@@ -236,8 +379,8 @@ function TuneLab.normalizeAttr(name: string, value: number): number?
 	return value
 end
 
-function TuneLab.scorePass(result): number
-	local metrics = result.metrics or {}
+function TuneLab.scorePass(result: ScorePassInput): number
+	local metrics: ScoreMetrics = result.metrics or {}
 	local successScore = if result.success then 1000 else 0
 	local failurePenalty = 0
 	if not result.success then
@@ -278,8 +421,8 @@ function TuneLab.scorePass(result): number
 		- lateralPenalty
 end
 
-function TuneLab.aggregateCandidate(records)
-	local summary = {
+function TuneLab.aggregateCandidate(records: { TunePassRecord }): TuneAggregate
+	local summary: TuneAggregate = {
 		pass_count = #records,
 		success_count = 0,
 		failure_count = 0,
@@ -312,7 +455,7 @@ function TuneLab.aggregateCandidate(records)
 		local challengeTotal = if type(record.challenge_score) == "table"
 			then (record.challenge_score.total or 0)
 			else 0
-		local metrics = record.metrics or {}
+		local metrics: ScoreMetrics = record.metrics or {}
 		totalScore += score
 		totalChallenge += challengeTotal
 		totalLapTime += metrics.lap_time or 0
@@ -341,15 +484,15 @@ function TuneLab.aggregateCandidate(records)
 	return summary
 end
 
-function TuneLab.compareAggregatePair(baselineResult, candidateResult)
-	local baselineAggregate = baselineResult and baselineResult.aggregate or {}
-	local candidateAggregate = candidateResult and candidateResult.aggregate or {}
-	local baselineScore = baselineAggregate.score or 0
-	local candidateScore = candidateAggregate.score or 0
-	local baselineChallenge = baselineAggregate.average_challenge_total or 0
-	local candidateChallenge = candidateAggregate.average_challenge_total or 0
-	local baselineSuccess = baselineAggregate.success_count or 0
-	local candidateSuccess = candidateAggregate.success_count or 0
+function TuneLab.compareAggregatePair(baselineResult: TuneCandidateSummary?, candidateResult: TuneCandidateSummary?)
+	local baselineAggregate = baselineResult and baselineResult.aggregate or nil
+	local candidateAggregate = candidateResult and candidateResult.aggregate or nil
+	local baselineScore = if baselineAggregate then baselineAggregate.score else 0
+	local candidateScore = if candidateAggregate then candidateAggregate.score else 0
+	local baselineChallenge = if baselineAggregate then baselineAggregate.average_challenge_total else 0
+	local candidateChallenge = if candidateAggregate then candidateAggregate.average_challenge_total else 0
+	local baselineSuccess = if baselineAggregate then baselineAggregate.success_count else 0
+	local candidateSuccess = if candidateAggregate then candidateAggregate.success_count else 0
 
 	return {
 		baseline_label = baselineResult and baselineResult.label or "baseline",
