@@ -1,3 +1,4 @@
+--!strict
 -- HotfixAgent.luau
 -- Emergency repair for a committed sector that has started failing.
 -- Called by JobRunner when a committed sector fails on two consecutive laps.
@@ -28,9 +29,10 @@ local Tracer = require(script.Parent.Tracer)
 
 type SectorState = Types.SectorState
 type RunResult = Types.RunResult
+type AttemptRecord = Types.AttemptRecord
 
 local HotfixAgent = {}
-local HOTFIX_ATTEMPT_MODE = "isolated_sector"
+local HOTFIX_ATTEMPT_MODE: "isolated_sector" = "isolated_sector"
 
 local _active = false
 
@@ -85,7 +87,13 @@ end
 --   getPending    — function() -> (rawText?) returns the queued job text (or nil)
 --   clearPending  — function() clears the queued job
 --   resubmit      — function(rawText) re-submits the dequeued job
-function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending, clearPending, resubmit)
+function HotfixAgent.run(
+	sectorId: number,
+	failureResult: RunResult,
+	getPending: (() -> string?)?,
+	clearPending: (() -> ())?,
+	resubmit: ((string) -> ())?
+): boolean
 	if _active then
 		Tracer.log("hotfix_agent_reject reason=already_active sector=" .. sectorId)
 		return false
@@ -112,7 +120,7 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 	local workingState = cloneState(committedState)
 	local attemptIndex = 0
 	local lastResult = failureResult
-	local history = {}
+	local history: { AttemptRecord } = {}
 
 	local succeeded = false
 
@@ -263,7 +271,9 @@ function HotfixAgent.run(sectorId: number, failureResult: RunResult, getPending,
 		-- Dequeue pending job if any
 		local pending = getPending and getPending()
 		if pending then
-			clearPending()
+			local clearPendingFn =
+				assert(clearPending, "HotfixAgent.run: clearPending callback required with pending job")
+			clearPendingFn()
 			UIState.appendLog("Dequeued job — resuming: " .. pending)
 			UIState.setPhase("DequeueJob", "Dequeued job — resuming sector")
 			Tracer.log("hotfix_dequeue raw=" .. pending)
