@@ -57,6 +57,12 @@ plans/           -> implementation history and durable handoff notes
 
 This is a Rojo + Git project. Edit Luau source in `src/`; Roblox Studio receives those files through Rojo sync. Do not edit synced gameplay scripts directly in Studio.
 
+## Runtime Access
+
+This repository is not a standalone runnable Roblox project for other users. The live experience depends on Roblox place settings, Studio-local configuration, and secret management that are intentionally kept outside the repo.
+
+The checked-in source, plans, and tooling document how the project is built and tested in the maintainer's local environment, but cloning the repo alone is not enough to run the full experience.
+
 ## Makefile Workflow
 
 Install the pinned local tools:
