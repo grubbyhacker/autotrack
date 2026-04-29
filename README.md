@@ -154,6 +154,8 @@ Use `/demo endurance` for manual Studio observation. Use the Makefile for repeat
 - [prd_plan.md](prd_plan.md): original product requirements, schemas, and architecture.
 - [plans/agent-handoff.md](plans/agent-handoff.md): current implementation state and durable lessons.
 - [docs/code-hygiene.md](docs/code-hygiene.md): static tooling scope and typecheck notes.
+- [Building AutoTrack](https://fleig.us/writing/autotrack/): long-form essay about building AutoTrack.
+- [Stop Calling Coding Agents Eager Interns](https://rogerfleig.substack.com/p/stop-calling-coding-agents-eager): shorter essay about the "agents as interns" trope.
 
 ## License
 
